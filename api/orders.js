@@ -10,13 +10,17 @@ export default async function handler(req, res) {
   try {
     // ── POST: Place New Order ──
     if (req.method === 'POST') {
-      const { tableNumber, items, total, specialInstructions, customerName, customerPhone, tableKey } = req.body;
+      const { items, total, specialInstructions, customerName, customerPhone } = req.body;
+
+      // Automatically fetch Table 1's secret to satisfy RLS for takeaway
+      const { data: tableData } = await supabase.from('tables').select('secret').eq('table_number', 1).single();
+      const validSecret = tableData ? tableData.secret : null;
 
       const { data, error } = await supabase
         .from('orders')
         .insert({
-          table_number: tableNumber,
-          table_key: tableKey || null,
+          table_number: 1,
+          table_key: validSecret,
           customer_name: customerName,
           customer_phone: customerPhone,
           items: items,
