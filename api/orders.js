@@ -36,11 +36,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ id: data.id });
     }
 
-    // ── GET: Fetch Orders (Kitchen Polling or Tracker Polling) ──
+    // ── GET: Fetch Orders (Kitchen Polling, Tracker Polling, or Table History) ──
     if (req.method === 'GET') {
-      const { id } = req.query;
+      const { id, table, key } = req.query;
       
-      // If ID is provided, it's the customer tracker asking for a single order
+      // 1. If ID is provided, it's the customer tracker asking for a single order
       if (id) {
         const { data, error } = await supabase
           .from('orders')
@@ -51,7 +51,21 @@ export default async function handler(req, res) {
         return res.status(200).json(data);
       } 
       
-      // Otherwise, it's the kitchen dashboard asking for all active orders
+      // 2. If table and key are provided, fetch all active orders for this specific customer
+      if (table && key) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('id, items, status, total, created_at')
+          .eq('table_number', parseInt(table))
+          .eq('table_key', key)
+          .in('status', ['received', 'preparing', 'ready'])
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        return res.status(200).json(data || []);
+      }
+      
+      // 3. Otherwise, it's the kitchen dashboard asking for all active orders globally
       const { data, error } = await supabase
         .from('orders')
         .select('*')

@@ -1,12 +1,12 @@
 import { buildMenu }    from './components/menuBuilder.js';
 import { initCart }     from './components/cart.js';
-import { initTracker }  from './components/tracker.js';
+import { initTracker, startTablePolling }  from './components/tracker.js';
 import { validateTable } from './supabase/tableAuth.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 
   // 0. Validate table secret from QR code (async, checked at checkout)
-  validateTable();
+  await validateTable();
 
   // 1. Table number from QR code URL param
   const urlParams   = new URLSearchParams(window.location.search);
@@ -18,10 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
   buildMenu();
   initCart();
 
-  // 3. Init tracker (order status updates)
-  setTimeout(() => {
-    initTracker();
-  }, 150);
+  // 3. Init tracker and start polling for any active orders on this table!
+  initTracker();
+  startTablePolling();
 
   // 4. Splash screen — hide after 2.3s (CSS animation handles it, just remove from DOM)
   const splash = document.getElementById('splash-screen');

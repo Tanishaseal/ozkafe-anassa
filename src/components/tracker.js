@@ -1,8 +1,10 @@
-import { subscribeToOrder } from '../supabase/orders.js';
+import { fetchActiveOrdersForTable } from '../supabase/orders.js';
 import { triggerConfetti } from './particles.js';
+import { getTableNumber, getTableKey } from '../supabase/tableAuth.js';
 
-let activeOrders = []; // Array of { id, status, summary }
+let activeOrders = []; // Array of { id, fullId, status, summary }
 let isTrackOpen = false;
+let pollInterval = null;
 
 // DOM Elements
 let trackBtn;
@@ -42,11 +44,60 @@ export function initTracker() {
   });
 
   // Listen to orderPlaced events from cart.js
-  window.addEventListener('orderPlaced', (e) => {
-    const { orderId, summary } = e.detail;
-    addOrderToTracker(orderId, summary);
+  window.addEventListener('orderPlaced', () => {
     triggerConfetti(); // Celebrate successful checkout!
+    pollTableOrders(); // Immediately refresh tracker
   });
+}
+
+export function startTablePolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollTableOrders(); // initial fetch
+  pollInterval = setInterval(pollTableOrders, 5000);
+}
+
+async function pollTableOrders() {
+  const tableNumber = getTableNumber();
+  const tableKey = getTableKey();
+
+  if (!tableNumber || !tableKey) return;
+
+  const orders = await fetchActiveOrdersForTable(tableNumber, tableKey);
+  
+  activeOrders = orders.map(o => {
+    // Generate a summary (e.g. "Single Espresso + 2 more")
+    let summary = 'Your order';
+    if (o.items && o.items.length > 0) {
+      const firstItem = `${o.items[0].quantity || o.items[0].qty || 1}x ${o.items[0].name}`;
+      summary = o.items.length > 1 ? `${firstItem} + ${o.items.length - 1} more` : firstItem;
+    }
+
+    return {
+      id: o.id.substring(0, 8).toUpperCase(),
+      fullId: o.id,
+      status: o.status,
+      summary: summary
+    };
+  });
+
+  // Update Header Button visibility and pulsing state
+  if (activeOrders.length > 0) {
+    trackBtn.classList.remove('hidden');
+    // Pulse if any order is not ready yet
+    if (activeOrders.some(o => o.status !== 'ready')) {
+      trackBtn.classList.add('active');
+    } else {
+      trackBtn.classList.remove('active');
+    }
+  } else {
+    trackBtn.classList.add('hidden');
+    trackBtn.classList.remove('active');
+  }
+
+  // Only re-render DOM if the modal is actually open to save CPU
+  if (isTrackOpen) {
+    renderTrackerUI();
+  }
 }
 
 function openTracker() {
@@ -55,6 +106,7 @@ function openTracker() {
   if(catSheet && catSheet.hasAttribute('open')) catSheet.close();
   if(cartSheet && cartSheet.hasAttribute('open')) cartSheet.close();
 
+  renderTrackerUI(); // Render right before opening to ensure fresh state
   trackModal.showModal();
   isTrackOpen = true;
   document.body.style.overflow = 'hidden';
@@ -66,34 +118,6 @@ export function closeTracker() {
   }
   isTrackOpen = false;
   document.body.style.overflow = '';
-}
-
-export function addOrderToTracker(orderId, summary) {
-  const newOrder = {
-    id: orderId,
-    status: 'received',
-    summary: summary || 'Your order',
-    unsub: null
-  };
-  
-  activeOrders.push(newOrder);
-  
-  // Update Header Button
-  trackBtn.classList.remove('hidden');
-  trackBtn.classList.add('active'); // Pulsing effect
-
-  // Subscribe to real-time status updates via WebSockets
-  newOrder.unsub = subscribeToOrder(orderId, (newStatus) => {
-    newOrder.status = newStatus;
-    renderTrackerUI();
-    
-    // Optional: Stop pulsing if order is ready
-    if (newStatus === 'ready') {
-      trackBtn.classList.remove('active');
-    }
-  });
-
-  renderTrackerUI();
 }
 
 function renderTrackerUI() {

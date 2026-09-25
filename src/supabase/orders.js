@@ -57,3 +57,17 @@ export function subscribeToOrder(orderId, callback) {
     clearInterval(intervalId);
   };
 }
+
+/**
+ * Fetch all active orders for a specific table session.
+ */
+export async function fetchActiveOrdersForTable(tableNumber, tableKey) {
+  try {
+    const res = await fetch(`/api/orders?table=${tableNumber}&key=${tableKey}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (err) {
+    console.error('Failed to fetch active orders:', err);
+    return [];
+  }
+}
