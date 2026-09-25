@@ -1,5 +1,3 @@
-import { fetchActiveOrdersForTable } from '../supabase/orders.js';
-import { triggerConfetti } from './particles.js';
 import { getTableNumber, getTableKey } from '../supabase/tableAuth.js';
 
 let activeOrders = []; // Array of { id, fullId, status, summary }
@@ -57,34 +55,59 @@ export function startTablePolling() {
 }
 
 async function pollTableOrders() {
-  const tableNumber = getTableNumber();
-  const tableKey = getTableKey();
+  const myOrders = JSON.parse(localStorage.getItem('myOrders') || '[]');
 
-  if (!tableNumber || !tableKey) return;
+  if (myOrders.length === 0) {
+    activeOrders = [];
+    trackBtn.classList.add('hidden');
+    trackBtn.classList.remove('active');
+    if (isTrackOpen) renderTrackerUI();
+    return;
+  }
 
-  const orders = await fetchActiveOrdersForTable(tableNumber, tableKey);
-  
-  activeOrders = orders.map(o => {
-    // Generate a summary (e.g. "Single Espresso + 2 more")
-    let summary = 'Your order';
-    if (o.items && o.items.length > 0) {
-      const firstItem = `${o.items[0].quantity || o.items[0].qty || 1}x ${o.items[0].name}`;
-      summary = o.items.length > 1 ? `${firstItem} + ${o.items.length - 1} more` : firstItem;
+  // Fetch updated status for each order
+  let activeCount = 0;
+  let hasPending = false;
+  let updatedOrders = [];
+
+  for (const order of myOrders) {
+    if (order.status === 'served') continue; // Stop polling served orders
+
+    try {
+      const res = await fetch(`/api/orders?id=${order.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        order.status = data.status || order.status;
+      }
+    } catch (err) {
+      console.warn('Tracker polling error:', err);
     }
+    
+    if (order.status !== 'served') {
+      activeCount++;
+      updatedOrders.push(order);
+      if (order.status !== 'ready') {
+        hasPending = true;
+      }
+    }
+  }
 
-    return {
-      id: o.id.substring(0, 8).toUpperCase(),
-      fullId: o.id,
-      status: o.status,
-      summary: summary
-    };
-  });
+  // Save back to localStorage (removes served orders over time, but we keep them active while they exist)
+  // For simplicity, we just keep all in localstorage and only filter active in memory
+  localStorage.setItem('myOrders', JSON.stringify(myOrders));
+
+  activeOrders = myOrders.filter(o => o.status !== 'served').map(o => ({
+    id: o.id.substring(0, 8).toUpperCase(),
+    fullId: o.id,
+    status: o.status,
+    summary: o.summary || 'Your order'
+  }));
 
   // Update Header Button visibility and pulsing state
   if (activeOrders.length > 0) {
     trackBtn.classList.remove('hidden');
     // Pulse if any order is not ready yet
-    if (activeOrders.some(o => o.status !== 'ready')) {
+    if (hasPending) {
       trackBtn.classList.add('active');
     } else {
       trackBtn.classList.remove('active');

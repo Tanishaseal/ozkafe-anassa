@@ -85,10 +85,10 @@
   <body>
     <div class="controls">
       <label>Base URL: <input type="text" id="base-url" value="" size="32" readonly style="background: #f0f0f0;"></label>
-      <label>Tables: <input type="number" id="num-tables" value="5" min="5" max="5" readonly style="background: #f0f0f0; width: 60px;"></label>
+      <input type="hidden" id="num-tables" value="1">
       <button id="generate-btn" style="display: none;">Generate QR Codes</button>
-      <button onclick="window.print()" style="background:#16A34A; margin-left: auto;">🖨️ Print QRs</button>
-      <span style="font-size: 12px; color: #666; margin-left: 10px;">(QR Codes are static & permanent)</span>
+      <button onclick="window.print()" style="background:#16A34A; margin-left: auto;">🖨️ Print QR</button>
+      <span style="font-size: 12px; color: #666; margin-left: 10px;">(Permanent Takeaway QR)</span>
     </div>
 
     <div class="qr-grid" id="qr-grid">

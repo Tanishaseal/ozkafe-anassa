@@ -132,9 +132,18 @@ function renderBoard() {
       card = clone.querySelector('.order-card');
       card.dataset.id = order.id;
       
-      clone.querySelector('.table-num').textContent = order.tableNumber || '—';
-      clone.querySelector('.order-id span').textContent = order.id.substring(0, 8).toUpperCase();
-      clone.querySelector('.customer-name').textContent = order.customerName || 'No Name';
+      const nameParts = (order.customerName || '').split('|');
+      let flatNo = '—';
+      let name = 'No Name';
+      if (nameParts.length > 1) {
+        flatNo = nameParts[0].trim();
+        name = nameParts[1].trim();
+      } else {
+        name = nameParts[0] ? nameParts[0].trim() : 'No Name';
+      }
+
+      clone.querySelector('.table-num').textContent = flatNo;
+      clone.querySelector('.customer-name').textContent = name;
       clone.querySelector('.customer-phone').textContent = order.customerPhone || '';
 
       // Elapsed time

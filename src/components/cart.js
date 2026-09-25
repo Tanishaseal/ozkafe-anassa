@@ -9,7 +9,7 @@ let isCartOpen = false;
 // DOM refs
 let cartBadge, cartToggle, cartSheet, closeCartBtn;
 let checkoutBtn, cartItemsContainer, cartTotalDisplay, instructionsInput;
-let customerNameInput, customerPhoneInput;
+let customerFlatInput, customerNameInput, customerPhoneInput;
 
 export function initCart() {
   cartBadge          = document.getElementById('cart-badge');
@@ -20,6 +20,7 @@ export function initCart() {
   cartItemsContainer = document.getElementById('cart-list');
   cartTotalDisplay   = document.getElementById('cart-total-price');
   instructionsInput  = document.getElementById('special-instructions');
+  customerFlatInput  = document.getElementById('customer-flat');
   customerNameInput  = document.getElementById('customer-name');
   customerPhoneInput = document.getElementById('customer-phone');
 
@@ -282,26 +283,15 @@ export function closeCart() {
 }
 
 async function handleCheckout() {
-  // ── Gate: ensure table QR key is verified ──
-  await ensureValidated();
-  if (!isTableVerified()) {
-    const t = new URLSearchParams(window.location.search).get('table') || 'none';
-    const k = getTableKey() ? getTableKey().substring(0, 4) + '...' : 'none';
-    alert(`📱 Table verification failed (Table: ${t}, Key: ${k}).\n\nPlease scan the QR code at your table to place an order.`);
-    checkoutBtn.disabled = false;
-    checkoutBtn.textContent = 'PLACE ORDER';
-    return;
-  }
+  const tableNum = getTableNumber() || 1;
+  const tableKey = getTableKey() || 'TAKEAWAY';
 
-  const tableParam = new URLSearchParams(window.location.search).get('table');
-  const tableNum   = tableParam ? parseInt(tableParam) : 0;
-  const tableKey   = getTableKey();
-
+  const flatNo = customerFlatInput ? customerFlatInput.value.trim() : '';
   const name = customerNameInput ? customerNameInput.value.trim() : '';
   const phone = customerPhoneInput ? customerPhoneInput.value.trim() : '';
 
-  if (!name || !phone) {
-    alert('Please provide your Name and Phone Number for billing details before placing the order.');
+  if (!flatNo || !name || !phone) {
+    alert('Please provide your Flat No, Name and Phone Number for billing details before placing the order.');
     return;
   }
 
@@ -319,8 +309,14 @@ async function handleCheckout() {
 
     const instructions = instructionsInput ? instructionsInput.value.trim() : '';
     const total        = getTotalPrice();
+    const formattedName = `${flatNo} | ${name}`;
 
-    const orderId = await placeOrder(tableNum, orderItems, total, instructions, name, phone, tableKey);
+    const orderId = await placeOrder(tableNum, orderItems, total, instructions, formattedName, phone, tableKey);
+
+    const summary = `${orderItems.length} item${orderItems.length > 1 ? 's' : ''}`;
+    let myOrders = JSON.parse(localStorage.getItem('myOrders') || '[]');
+    myOrders.push({ id: orderId, summary, status: 'received' });
+    localStorage.setItem('myOrders', JSON.stringify(myOrders));
 
     closeCart();
 
@@ -328,12 +324,12 @@ async function handleCheckout() {
     cart = {};
     updateCartUI();
     if (instructionsInput) instructionsInput.value = '';
+    if (customerFlatInput) customerFlatInput.value = '';
     if (customerNameInput) customerNameInput.value = '';
     if (customerPhoneInput) customerPhoneInput.value = '';
     checkoutBtn.textContent = 'PLACE ORDER';
 
     // Notify tracker component + confetti
-    const summary = `${orderItems.length} item${orderItems.length > 1 ? 's' : ''}`;
     window.dispatchEvent(new CustomEvent('orderPlaced', { detail: { orderId, summary } }));
 
   } catch (error) {

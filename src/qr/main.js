@@ -18,59 +18,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      // Fetch and upsert tables via Vercel API
-      const res = await fetch('/api/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numTables })
-      });
-      
-      if (!res.ok) {
-        let errText = 'Failed to generate tables';
-        try {
-          const errData = await res.json();
-          errText = errData.error || errData.message || JSON.stringify(errData);
-        } catch(e) {
-          errText += ' (Status: ' + res.status + ')';
-        }
-        throw new Error(`API Error: ${errText}`);
-      }
-      
-      const tables = await res.json();
-      if (!tables || tables.length === 0) throw new Error('No tables returned');
-
       grid.innerHTML = '';
 
-      for (const table of tables) {
-        const secureUrl = `${baseUrl}/?table=${table.table_number}&key=${table.secret}`;
+      const secureUrl = baseUrl;
 
-        const card = document.createElement('div');
-        card.className = 'qr-card';
+      const card = document.createElement('div');
+      card.className = 'qr-card';
 
-        const canvas = document.createElement('canvas');
+      const canvas = document.createElement('canvas');
 
-        const label = document.createElement('div');
-        label.className = 'table-label';
-        label.textContent = `Table ${table.table_number}`;
+      const label = document.createElement('div');
+      label.className = 'table-label';
+      label.textContent = `OZKAFE Takeaway`;
 
-        const scanText = document.createElement('div');
-        scanText.className = 'scan-text';
-        scanText.textContent = 'Scan to order';
+      const scanText = document.createElement('div');
+      scanText.className = 'scan-text';
+      scanText.textContent = 'Scan to order';
 
-        card.appendChild(canvas);
-        card.appendChild(label);
-        card.appendChild(scanText);
-        grid.appendChild(card);
+      card.appendChild(canvas);
+      card.appendChild(label);
+      card.appendChild(scanText);
+      grid.appendChild(card);
 
-        await QRCode.toCanvas(canvas, secureUrl, {
-          width: 150,
-          margin: 1,
-          color: {
-            dark: '#111111',
-            light: '#ffffff'
-          }
-        });
-      }
+      await QRCode.toCanvas(canvas, secureUrl, {
+        width: 250,
+        margin: 1,
+        color: {
+          dark: '#111111',
+          light: '#ffffff'
+        }
+      });
 
     } catch (err) {
       console.error('QR generation error:', err);
