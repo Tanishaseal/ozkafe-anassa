@@ -184,10 +184,16 @@ function renderBoard() {
     }
   });
 
-  // Update badges
-  document.getElementById('count-received').textContent  = counts.received  || 0;
-  document.getElementById('count-preparing').textContent = counts.preparing || 0;
-  document.getElementById('count-ready').textContent     = counts.ready     || 0;
+  // Update badges and Empty States
+  Object.keys(cols).forEach(status => {
+    const countBadge = document.getElementById(`count-${status}`);
+    if (countBadge) countBadge.textContent = counts[status] || 0;
+
+    const emptyCol = cols[status].querySelector('.empty-col');
+    if (emptyCol) {
+      emptyCol.style.display = counts[status] > 0 ? 'none' : 'block';
+    }
+  });
 }
 
 /* ── UPDATE STATUS VIA API ── */
