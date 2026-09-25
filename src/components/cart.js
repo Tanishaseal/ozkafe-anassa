@@ -285,7 +285,9 @@ async function handleCheckout() {
   // ── Gate: ensure table QR key is verified ──
   await ensureValidated();
   if (!isTableVerified()) {
-    alert('📱 Please scan the QR code at your table to place an order.\n\nEach table has a unique QR code that verifies your seating.');
+    const t = new URLSearchParams(window.location.search).get('table') || 'none';
+    const k = getTableKey() ? getTableKey().substring(0, 4) + '...' : 'none';
+    alert(`📱 Table verification failed (Table: ${t}, Key: ${k}).\n\nPlease scan the QR code at your table to place an order.`);
     checkoutBtn.disabled = false;
     checkoutBtn.textContent = 'PLACE ORDER';
     return;

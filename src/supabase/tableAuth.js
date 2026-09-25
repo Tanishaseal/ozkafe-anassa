@@ -37,7 +37,14 @@ async function _performValidation() {
 }
 
 export async function ensureValidated() {
-  if (_validationPromise) await _validationPromise;
+  if (_validationPromise) {
+    await _validationPromise;
+  }
+  // If it failed previously (e.g. weak mobile signal on page load), retry it now!
+  if (!_isVerified && _tableNumber && _tableKey) {
+    _validationPromise = _performValidation();
+    await _validationPromise;
+  }
 }
 
 export function getTableNumber() { return _tableNumber; }

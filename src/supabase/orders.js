@@ -63,7 +63,7 @@ export function subscribeToOrder(orderId, callback) {
  */
 export async function fetchActiveOrdersForTable(tableNumber, tableKey) {
   try {
-    const res = await fetch(`/api/orders?table=${tableNumber}&key=${tableKey}`);
+    const res = await fetch(`/api/orders?table=${tableNumber}&key=${tableKey}&_t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return [];
     return await res.json();
   } catch (err) {

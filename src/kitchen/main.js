@@ -17,7 +17,7 @@ async function initPollingKitchen() {
 
   async function poll() {
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch(`/api/orders?_t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('API fetch failed');
       const data = await res.json();
 
