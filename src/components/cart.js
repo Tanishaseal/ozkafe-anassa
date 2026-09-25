@@ -1,5 +1,5 @@
 import { placeOrder } from '../supabase/orders.js';
-import { ensureValidated, isTableVerified, getTableKey } from '../supabase/tableAuth.js';
+import { ensureValidated, isTableVerified, getTableKey, getTableNumber } from '../supabase/tableAuth.js';
 import { menuAddons } from '../data/menu.js';
 
 // State
