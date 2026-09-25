@@ -1,32 +1,26 @@
-import { supabase, IS_PRODUCTION } from './client.js';
-
 /**
- * Place a new order into Supabase.
- * The tableKey (from QR code URL) is sent along and verified by 
- * Supabase RLS policy server-side before allowing the insert.
+ * Place a new order via Vercel API Proxy.
  */
 export async function placeOrder(tableNumber, items, total, specialInstructions, customerName, customerPhone, tableKey) {
-  const { data, error } = await supabase
-    .from('orders')
-    .insert({
-      table_number: tableNumber,
-      table_key: tableKey || null,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      items: items,
-      total: total,
-      special_instructions: specialInstructions,
-      status: 'received',
+  const res = await fetch('/api/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tableNumber,
+      items,
+      total,
+      specialInstructions,
+      customerName,
+      customerPhone,
+      tableKey
     })
-    .select('id')
-    .single();
+  });
 
-  if (error) {
-    console.error('Supabase placeOrder error:', error);
-    if (error.code === '42501' || error.message?.includes('policy')) {
-      throw new Error('Invalid table verification. Please scan the QR code at your table to place orders.');
-    }
-    throw new Error(error.message || 'Failed to place order. Please try again.');
+  const data = await res.json();
+
+  if (!res.ok) {
+    console.error('API placeOrder error:', data.error);
+    throw new Error(data.error || 'Failed to place order. Please try again.');
   }
 
   return data.id;
@@ -34,65 +28,32 @@ export async function placeOrder(tableNumber, items, total, specialInstructions,
 
 /**
  * Subscribe to a specific order's status changes.
- * 
- * - Production (Vercel): Uses Supabase Realtime (WebSocket) for instant updates.
- * - Local dev (India): Falls back to polling every 5 seconds since ISPs block WebSocket.
- * 
- * Returns an unsubscribe function.
+ * Polls the Vercel API every 5 seconds.
  */
 export function subscribeToOrder(orderId, callback) {
-  // Fetch initial status immediately via REST (works everywhere)
-  supabase
-    .from('orders')
-    .select('status')
-    .eq('id', orderId)
-    .single()
-    .then(({ data }) => {
-      if (data) callback(data.status);
-    });
+  let active = true;
 
-  if (IS_PRODUCTION) {
-    // ── PRODUCTION: Supabase Realtime ──
-    const channel = supabase
-      .channel(`order-${orderId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'orders',
-          filter: `id=eq.${orderId}`,
-        },
-        (payload) => {
-          callback(payload.new.status);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  } else {
-    // ── LOCAL DEV: Polling fallback (every 5s) ──
-    let active = true;
-    const poll = async () => {
-      if (!active) return;
-      const { data } = await supabase
-        .from('orders')
-        .select('status')
-        .eq('id', orderId)
-        .single();
-
-      if (data && active) {
+  const poll = async () => {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/orders?id=${orderId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.status && active) {
         callback(data.status);
       }
-    };
+    } catch (err) {
+      console.warn('Polling error:', err);
+    }
+  };
 
-    const intervalId = setInterval(poll, 5000);
+  // Fetch initial status immediately
+  poll();
 
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }
+  const intervalId = setInterval(poll, 5000);
+
+  return () => {
+    active = false;
+    clearInterval(intervalId);
+  };
 }

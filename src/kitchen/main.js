@@ -1,5 +1,3 @@
-import { supabase, IS_PRODUCTION } from '../supabase/client.js';
-
 let orders = [];
 
 // Notification sound
@@ -7,112 +5,40 @@ const SOUND_NEW = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/28
 
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
-
-  if (IS_PRODUCTION) {
-    // ── PRODUCTION (Vercel): Supabase Realtime ──
-    initRealtimeKitchen();
-  } else {
-    // ── LOCAL DEV (India): Polling fallback ──
-    initPollingKitchen();
-  }
+  initPollingKitchen();
 
   // Refresh elapsed times every minute
   setInterval(() => renderBoard(), 60000);
 });
 
-/* ── REALTIME MODE (Production / Vercel) ── */
-async function initRealtimeKitchen() {
-  // 1. Fetch current active orders via REST
-  const { data: initialOrders } = await supabase
-    .from('orders')
-    .select('*')
-    .in('status', ['received', 'preparing', 'ready'])
-    .order('created_at', { ascending: true });
-
-  orders = (initialOrders || []).map(normalizeOrder);
-  renderBoard();
-
-  // 2. Subscribe to Realtime changes on the orders table
-  supabase
-    .channel('kitchen-board')
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'orders',
-      },
-      (payload) => {
-        const newOrder = normalizeOrder(payload.new);
-        // Only add if it's an active order and not already present
-        if (['received', 'preparing', 'ready'].includes(newOrder.status)) {
-          const existingIdx = orders.findIndex(o => o.id === newOrder.id);
-          if (existingIdx === -1) {
-            orders.push(newOrder);
-            flashColumn('col-received-wrapper');
-            SOUND_NEW.play().catch(() => {});
-          }
-        }
-        renderBoard();
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'orders',
-      },
-      (payload) => {
-        const updated = normalizeOrder(payload.new);
-        const idx = orders.findIndex(o => o.id === updated.id);
-
-        if (updated.status === 'served') {
-          // Remove served orders from the board
-          if (idx !== -1) orders.splice(idx, 1);
-        } else if (idx !== -1) {
-          orders[idx] = updated;
-        } else {
-          // Might be a re-activated order
-          orders.push(updated);
-        }
-        renderBoard();
-      }
-    )
-    .subscribe();
-}
-
-/* ── POLLING MODE (Local Dev / India ISP) ── */
+/* ── POLLING MODE VIA VERCEL API ── */
 async function initPollingKitchen() {
   let previousOrderIds = new Set();
 
   async function poll() {
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .in('status', ['received', 'preparing', 'ready'])
-      .order('created_at', { ascending: true });
+    try {
+      const res = await fetch('/api/orders');
+      if (!res.ok) throw new Error('API fetch failed');
+      const data = await res.json();
 
-    if (error) {
-      console.warn('Polling error:', error.message);
-      return;
-    }
+      const newOrders = (data || []).map(normalizeOrder);
+      const newOrderIds = new Set(newOrders.map(o => o.id));
 
-    const newOrders = (data || []).map(normalizeOrder);
-    const newOrderIds = new Set(newOrders.map(o => o.id));
-
-    // Detect truly new orders (not just status changes)
-    for (const order of newOrders) {
-      if (!previousOrderIds.has(order.id)) {
-        flashColumn('col-received-wrapper');
-        SOUND_NEW.play().catch(() => {});
-        break; // Only flash once per poll cycle
+      // Detect truly new orders (not just status changes)
+      for (const order of newOrders) {
+        if (!previousOrderIds.has(order.id)) {
+          flashColumn('col-received-wrapper');
+          SOUND_NEW.play().catch(() => {});
+          break; // Only flash once per poll cycle
+        }
       }
-    }
 
-    previousOrderIds = newOrderIds;
-    orders = newOrders;
-    renderBoard();
+      previousOrderIds = newOrderIds;
+      orders = newOrders;
+      renderBoard();
+    } catch (err) {
+      console.warn('Polling error:', err.message);
+    }
   }
 
   // Initial fetch
@@ -122,7 +48,7 @@ async function initPollingKitchen() {
   setInterval(poll, 3000);
 }
 
-/* ── NORMALIZE Supabase row → order object ── */
+/* ── NORMALIZE API row → order object ── */
 function normalizeOrder(row) {
   return {
     id: row.id,
@@ -226,19 +152,22 @@ function renderBoard() {
   document.getElementById('count-ready').textContent     = counts.ready     || 0;
 }
 
-/* ── UPDATE STATUS ── */
+/* ── UPDATE STATUS VIA API ── */
 async function updateStatus(id, newStatus) {
   // Optimistic local update
   const order = orders.find(o => o.id === id);
   if (order) { order.status = newStatus; renderBoard(); }
 
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: newStatus, updated_at: new Date().toISOString() })
-    .eq('id', id);
-
-  if (error) {
-    console.error('Failed to update order status:', error.message);
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status: newStatus })
+    });
+    
+    if (!res.ok) throw new Error('API update failed');
+  } catch (err) {
+    console.error('Failed to update order status:', err.message);
     // Revert optimistic update on failure
     if (order) { order.status = getStatusBefore(newStatus); renderBoard(); }
   }

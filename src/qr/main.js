@@ -1,5 +1,4 @@
 import QRCode from 'qrcode';
-import { supabase } from '../supabase/client.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const generateBtn = document.getElementById('generate-btn');
@@ -10,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   generateBtn.addEventListener('click', async () => {
     grid.innerHTML = '<p style="text-align:center;color:#888;padding:40px;">🔐 Generating secure QR codes...</p>';
 
-    const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, ''); // strip trailing slashes
+    const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, '');
     const numTables = parseInt(numTablesInput.value);
 
     if (!baseUrl || !numTables || numTables < 1) {
@@ -19,27 +18,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      // 1. Register any new tables (existing ones keep their secrets)
-      const tableEntries = Array.from({ length: numTables }, (_, i) => ({
-        table_number: i + 1
-      }));
+      // Fetch and upsert tables via Vercel API
+      const res = await fetch('/api/tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numTables })
+      });
+      
+      if (!res.ok) throw new Error('Failed to generate tables');
+      
+      const tables = await res.json();
+      if (!tables || tables.length === 0) throw new Error('No tables returned');
 
-      await supabase
-        .from('tables')
-        .upsert(tableEntries, { onConflict: 'table_number', ignoreDuplicates: true });
-
-      // 2. Fetch all table secrets (stable UUIDs — never change once created)
-      const { data: tables, error } = await supabase
-        .from('tables')
-        .select('table_number, secret')
-        .gte('table_number', 1)
-        .lte('table_number', numTables)
-        .order('table_number');
-
-      if (error) throw error;
-      if (!tables || tables.length === 0) throw new Error('No tables found. Check your Supabase setup.');
-
-      // 3. Render QR codes with secure, static URLs
       grid.innerHTML = '';
 
       for (const table of tables) {
@@ -79,14 +69,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="text-align:center;padding:40px;color:#666;">
           <p style="color:#c0392b;font-weight:600;">⚠️ Could not generate QR codes</p>
           <p style="font-size:14px;margin-top:8px;">${err.message}</p>
-          <p style="font-size:13px;margin-top:12px;color:#888;">
-            Make sure you've created the <code>tables</code> table in your Supabase database.<br/>
-            See the setup guide for the SQL to run.
-          </p>
         </div>`;
     }
   });
 
-  // Auto-generate on page load
   generateBtn.click();
 });
