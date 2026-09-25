@@ -33,6 +33,7 @@ export default async function handler(req, res) {
     
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    const debugUrl = process.env.SUPABASE_URL || 'https://cbgrwhdaxgttebxbaibx.supabase.co';
+    return res.status(500).json({ error: `${error.message} (Tried to connect to: ${debugUrl})` });
   }
 }
