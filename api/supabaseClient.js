@@ -1,11 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Vercel automatically injects these from your Project Environment Variables
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn('Missing Supabase Environment Variables in Vercel!');
-}
+// Use environment variables if set, otherwise fallback to hardcoded public keys
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cbgrwhdaxgttebybaibx.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNiZ3J3aGRheGd0dGVieGJhaWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMDMwMzcsImV4cCI6MjEwNTg3OTAzN30.8a43DrP6Q2sYiie3pMuhDdiefjtwtVHty9k1hxZ7F8E';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
