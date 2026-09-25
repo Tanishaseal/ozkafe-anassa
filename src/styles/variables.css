@@ -1,0 +1,74 @@
+:root {
+  /* ═══════════════════════════════════════
+     OZKAFE — White-Base Luxury Café Palette
+     Clean, bright, high-contrast & professional
+     ═══════════════════════════════════════ */
+
+  /* Backgrounds — crisp white & subtle warm undertones */
+  --bg-dark:          #FBF9F6;  /* outer page / subtle warm tint */
+  --bg-surface:       #FFFFFF;  /* main containers, cards & sheets */
+  --bg-surface-light: #F7F3EE;  /* hover states, subtle tracks, inactive pills */
+  --bg-card:          #FFFFFF;  /* elevated cards */
+  --bg-card-elevated: #FDFBF8;
+
+  /* Brand Accents — warm espresso, roast bronze, caramel & terracotta */
+  --brand-gold:        #A66B33;  /* warm artisan bronze */
+  --brand-gold-dark:   #7C4A1E;  /* deep rich coffee */
+  --brand-gold-dim:    rgba(166, 107, 51, 0.10);
+  --brand-cream:       #2A2118;  /* for text that was previously white-on-dark */
+  --brand-brown:       #5C381E;
+  --brand-accent:      #C8611E;  /* vibrant burnt orange / terracotta CTA */
+  --brand-accent-hover:#A94E14;
+  --brand-accent-glow: rgba(200, 97, 30, 0.25);
+
+  /* Vegetarian Indicator */
+  --veg-green:         #16A34A;
+  --veg-green-bg:      #F0FDF4;
+  --veg-green-border:  #86EFAC;
+
+  /* Text — ultra-crisp, professional & readable on white */
+  --text-white:        #1A1410;  /* primary dark espresso for maximum contrast */
+  --text-primary:      #1A1410;  /* heading / main text */
+  --text-secondary:    #4A3F35;  /* secondary readable body */
+  --text-grey:         #685E54;  /* muted descriptions & subtitles */
+  --text-grey-light:   #8C7F73;  /* subtle captions */
+
+  /* Borders & Dividers */
+  --border-subtle:   #EAE4DC;
+  --border-strong:   #DCD2C5;
+  --border-hover:    #B88656;
+
+  /* Shadows */
+  --shadow-sm:  0 2px 8px rgba(30, 20, 15, 0.04);
+  --shadow-md:  0 8px 24px rgba(30, 20, 15, 0.07);
+  --shadow-lg:  0 14px 38px rgba(30, 20, 15, 0.12);
+  --shadow-cta: 0 8px 24px rgba(200, 97, 30, 0.28);
+
+  /* Typography */
+  --font-display:  'Playfair Display', Georgia, serif;
+  --font-body:     'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-primary:  'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-currency: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:     'JetBrains Mono', 'Courier New', monospace;
+
+  /* Spacing */
+  --space-2:  2px;
+  --space-4:  4px;
+  --space-8:  8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* Layout */
+  --max-width: 480px;
+
+  /* Z-index */
+  --z-base:    1;
+  --z-overlay: 10;
+  --z-sticky:  100;
+  --z-modal:   1000;
+}

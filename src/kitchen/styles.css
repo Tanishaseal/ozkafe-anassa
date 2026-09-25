@@ -1,0 +1,416 @@
+/* ═══════════════════════════════════════════════════════
+   OZKAFE — Kitchen Dashboard (White-Base Theme)
+   Clean, bright, high-contrast & professional
+   ═══════════════════════════════════════════════════════ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #F8F6F2;
+  color: #1A1410;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── HEADER ── */
+.kitchen-header {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E5DFD7;
+  padding: 14px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  box-shadow: 0 2px 12px rgba(30, 20, 15, 0.05);
+}
+
+.kitchen-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.kitchen-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #A66B33;
+  box-shadow: 0 2px 8px rgba(166, 107, 51, 0.2);
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.brand-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1A1410;
+  letter-spacing: 2px;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: #7C4A1E;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.kitchen-header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.clock {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1A1410;
+  background: #F4EFEA;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid #DFD7CE;
+  letter-spacing: 2px;
+}
+
+.status-dot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #15803D;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.status-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #16A34A;
+  box-shadow: 0 0 8px rgba(22, 163, 74, 0.6);
+  animation: livePulse 2s infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── KANBAN BOARD ── */
+.board-container {
+  display: flex;
+  flex: 1;
+  padding: 20px;
+  gap: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 20px;
+  scrollbar-width: none;
+}
+
+.board-container::-webkit-scrollbar { display: none; }
+
+/* ── COLUMNS ── */
+.column {
+  flex: 1;
+  min-width: 320px;
+  background: #FFFFFF;
+  border: 1px solid #E2DCD3;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  scroll-snap-align: start;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(30, 20, 15, 0.04);
+}
+
+.column::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 4px;
+  z-index: 2;
+}
+
+.new-orders::before       { background: #DC2626; }
+.preparing-orders::before { background: #D97706; }
+.ready-orders::before     { background: #16A34A; }
+
+.col-title {
+  padding: 16px 20px;
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #EBE5DF;
+  background: #FCFAF7;
+  z-index: 1;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #1A1410;
+}
+
+.col-title .col-icon { margin-right: 8px; }
+
+.badge {
+  background: #F4EFEA;
+  color: #1A1410;
+  padding: 2px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border: 1px solid #DFD7CE;
+  min-width: 28px;
+  text-align: center;
+}
+
+/* ── ORDER LIST ── */
+.order-list {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #FAF8F5;
+  scrollbar-width: thin;
+  scrollbar-color: #D6CCC2 transparent;
+}
+
+.order-list::-webkit-scrollbar { width: 5px; }
+.order-list::-webkit-scrollbar-thumb {
+  background-color: #D6CCC2;
+  border-radius: 10px;
+}
+
+/* ── ORDER CARDS ── */
+.order-card {
+  background: #FFFFFF;
+  border: 1px solid #E2DCD3;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(30, 20, 15, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: cardSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.order-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(30, 20, 15, 0.09);
+  border-color: #A66B33;
+}
+
+@keyframes cardSlideIn {
+  from { opacity: 0; transform: translateY(-16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.table-tag {
+  background: #FBF4EA;
+  color: #7C4A1E;
+  border: 1px solid #E5D5C5;
+  font-weight: 800;
+  padding: 4px 14px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+}
+
+.time-elapsed {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 0.82rem;
+  color: #5C5248;
+  background: #F4EFEA;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #E2DCD3;
+  font-weight: 600;
+}
+
+.time-warning {
+  color: #B45309;
+  background: #FEF3C7;
+  border-color: #FCD34D;
+}
+
+.time-danger {
+  color: #DC2626;
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+  animation: dangerPulse 1.5s infinite;
+}
+
+@keyframes dangerPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.3); }
+  50%       { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
+}
+
+.order-id {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  color: #7C7165;
+  font-size: 11px;
+  margin-bottom: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.item-list {
+  margin: 0 0 14px 0;
+  padding: 10px 12px;
+  list-style: none;
+  background: #FDFBF8;
+  border-radius: 10px;
+  border: 1px solid #EBE5DF;
+}
+
+.item-list li {
+  padding: 8px 0;
+  border-bottom: 1px dashed #E2DCD3;
+  display: flex;
+  gap: 10px;
+  font-size: 0.92rem;
+  align-items: center;
+  color: #1A1410;
+  font-weight: 500;
+}
+
+.item-list li:last-child { border-bottom: none; }
+
+.qty {
+  font-weight: 800;
+  color: #7C4A1E;
+  background: #FBF4EA;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  border: 1px solid #E5D5C5;
+}
+
+.special-instructions {
+  background: #FEF2F2;
+  border-left: 3px solid #EF4444;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: #991B1B;
+  border-radius: 0 8px 8px 0;
+}
+
+.special-instructions strong {
+  color: #7F1D1D;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hidden { display: none !important; }
+
+/* ── ACTION BUTTONS ── */
+.action-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.18s ease;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: 'Inter', sans-serif;
+}
+
+.action-btn:active { transform: scale(0.97); }
+
+.new-orders .action-btn {
+  background: linear-gradient(135deg, #C8611E, #A94E14);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(200, 97, 30, 0.3);
+}
+
+.new-orders .action-btn:hover {
+  box-shadow: 0 6px 18px rgba(200, 97, 30, 0.45);
+}
+
+.preparing-orders .action-btn {
+  background: linear-gradient(135deg, #16A34A, #15803D);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.25);
+}
+
+.preparing-orders .action-btn:hover {
+  box-shadow: 0 6px 18px rgba(22, 163, 74, 0.4);
+}
+
+.ready-orders .action-btn {
+  background: #FFFFFF;
+  border: 1.5px solid #D1D5DB;
+  color: #4B5563;
+}
+
+.ready-orders .action-btn:hover {
+  background: #F3F4F6;
+  color: #111827;
+  border-color: #9CA3AF;
+}
+
+/* ── EMPTY STATE ── */
+.empty-col {
+  text-align: center;
+  padding: 50px 20px;
+  color: #9CA3AF;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.empty-col .empty-icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.6; }
+
+/* ── NEW ORDER NOTIFICATION FLASH ── */
+@keyframes newOrderFlash {
+  0%, 100% { background: #FFFFFF; }
+  30%       { background: #FEF3C7; }
+}
+
+.column.flash {
+  animation: newOrderFlash 1s ease;
+}
+
+/* ── RESPONSIVE MOBILE ── */
+@media (max-width: 900px) {
+  .board-container { padding: 14px; gap: 14px; }
+  .column { min-width: 84vw; }
+  .kitchen-header { padding: 12px 18px; }
+  .brand-name { font-size: 1.25rem; }
+  .clock { font-size: 1.1rem; padding: 5px 12px; }
+}

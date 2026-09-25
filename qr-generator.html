@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QR Generator | OZKAFE at Anassa</title>
+    <link rel="stylesheet" href="/src/styles/variables.css" />
+    <style>
+      body {
+        font-family: var(--font-body);
+        background: #F8F6F2;
+        color: #1A1410;
+        margin: 0;
+        padding: 24px;
+      }
+      .controls {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        margin-bottom: 24px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap;
+        border: 1px solid #E2DCD3;
+      }
+      @media print {
+        .controls { display: none; }
+        body { background: white; padding: 0; }
+      }
+      input, button {
+        padding: 10px 14px;
+        font-size: 15px;
+        border: 1px solid #D6CCC2;
+        border-radius: 8px;
+        outline: none;
+      }
+      input:focus {
+        border-color: #A66B33;
+      }
+      button {
+        background: #1A1410;
+        color: white;
+        cursor: pointer;
+        font-weight: 600;
+        transition: opacity 0.2s;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      .qr-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 20px;
+      }
+      .qr-card {
+        background: white;
+        border: 2px dashed #D6CCC2;
+        padding: 24px 20px;
+        text-align: center;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        page-break-inside: avoid;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+      }
+      .qr-card canvas {
+        margin-bottom: 15px;
+      }
+      .table-label {
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 4px;
+        color: #1A1410;
+      }
+      .scan-text {
+        font-size: 12.5px;
+        color: #685E54;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <label>Base URL: <input type="text" id="base-url" value="" size="32"></label>
+      <label>Number of Tables: <input type="number" id="num-tables" value="10" min="1" max="50"></label>
+      <button id="generate-btn">Generate QR Codes</button>
+      <button onclick="window.print()" style="background:#A66B33;">Print</button>
+    </div>
+
+    <div class="qr-grid" id="qr-grid">
+      <!-- QR Cards injected here -->
+    </div>
+
+    <script type="module" src="/src/qr/main.js"></script>
+    <script>
+      const host = window.location.host;
+      document.getElementById('base-url').value = window.location.protocol + '//' + host + '/';
+    </script>
+  </body>
+</html>

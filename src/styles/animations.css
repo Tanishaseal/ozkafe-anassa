@@ -1,0 +1,122 @@
+/* ═══════════════════════════════════════════════════════
+   MYSTIC ROAST — Animations (Redesign)
+   ═══════════════════════════════════════════════════════ */
+
+/* Splash Screen Fade */
+@keyframes splashFadeOut {
+  0% { opacity: 1; filter: blur(0); transform: scale(1); }
+  100% { opacity: 0; filter: blur(10px); transform: scale(1.1); display: none; }
+}
+
+@keyframes logoShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Ambient Particles */
+@keyframes particleFloat {
+  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(var(--drift-y)) translateX(var(--drift-x)) rotate(360deg); opacity: 0; }
+}
+
+@keyframes particleGlow {
+  0% { box-shadow: 0 0 5px var(--ambient-color, var(--accent-gold)); }
+  100% { box-shadow: 0 0 20px var(--ambient-color, var(--accent-gold)); }
+}
+
+/* Celebration Confetti */
+@keyframes confettiPiece {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0);
+    opacity: 1;
+  }
+  50% { opacity: 1; scale: 1; }
+  100% {
+    transform: translate(var(--end-x), var(--end-y)) rotate(var(--end-r));
+    opacity: 0;
+  }
+}
+
+/* Checkmark Draw */
+@keyframes checkDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Cart Sheet Slide */
+@keyframes sheetSlideUp {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes sheetSlideDown {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+@keyframes badgePop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+/* Scroll Reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), 
+              transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-stagger .reveal {
+  transition-delay: calc(var(--index, 0) * 0.1s);
+}
+
+/* 
+  View-Timeline Driven Animations (Supported in Chrome/Edge)
+  For the hologram 3D scroll effect
+*/
+@supports (animation-timeline: view()) {
+  .floating-hologram {
+    /* Scale up and rotate slightly as it enters the view */
+    animation: hologramParallax linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 50%;
+  }
+
+  @keyframes hologramParallax {
+    from {
+      transform: scale(0.8) translateY(100px) rotate(-5deg);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1.1) translateY(0) rotate(0deg);
+      opacity: 1;
+    }
+  }
+
+  .mystic-title {
+    animation: titleSlide linear both;
+    animation-timeline: view();
+    animation-range: entry 10% cover 50%;
+  }
+
+  @keyframes titleSlide {
+    from {
+      transform: translateY(50px);
+      opacity: 0;
+      letter-spacing: 20px;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+      letter-spacing: 2px;
+    }
+  }
+}

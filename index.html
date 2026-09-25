@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="OZKAFE at Anassa, Kolkata (Beside JW Marriott) – Pure Veg Coffee Experience Centre. Browse in-house roasted specialty coffee, teas, cold brews, and delicious cafe bites." />
+  <title>OZKAFE — Anassa, Kolkata | Menu</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/src/styles/variables.css" />
+  <link rel="stylesheet" href="/src/styles/base.css" />
+  <link rel="stylesheet" href="/src/styles/components.css" />
+</head>
+<body>
+
+  <!-- ════════════════════════════════════
+       SPLASH SCREEN
+  ════════════════════════════════════ -->
+  <div id="splash-screen">
+    <div class="splash-inner">
+      <img src="/images/ozkafe_logo.jpeg" alt="OZKAFE Logo" class="splash-logo" />
+      <p class="splash-tagline">Brewing Fresh · Anassa</p>
+      <div class="splash-dots">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       APP WRAPPER
+  ════════════════════════════════════ -->
+  <div id="app-wrapper">
+
+    <!-- HEADER -->
+    <header class="header">
+      <button id="btn-back" class="icon-btn header-btn-left" aria-label="Menu Categories" title="Categories">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+
+      <!-- Logo + Name -->
+      <div class="header-brand">
+        <img src="/images/ozkafe_logo.jpeg" alt="OZKAFE" class="header-logo" />
+        <div class="header-brand-text">
+          <span class="header-name">OZKAFE</span>
+          <span class="header-tagline">At Anassa · Kolkata</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button id="btn-track" class="icon-btn hidden" aria-label="Track Orders" title="Track Order">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </button>
+        <button id="btn-cart" class="icon-btn header-btn-right" aria-label="Cart" title="View Cart">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1"></circle>
+            <circle cx="20" cy="21" r="1"></circle>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+          </svg>
+          <span id="cart-badge" class="cart-badge hidden">0</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- TOP INFO BAR (TABLE & PURE VEG) -->
+    <div class="top-info-bar">
+      <div class="table-banner">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+        <span id="table-badge">Table —</span>
+      </div>
+      <div class="veg-indicator" title="100% Pure Vegetarian Cafe">
+        <span class="veg-icon-box"><span class="veg-icon-dot"></span></span>
+        <span>Pure Veg</span>
+      </div>
+    </div>
+
+    <!-- STICKY CATEGORY NAV BAR -->
+    <nav class="category-nav-bar" id="category-nav-bar" aria-label="Menu Categories">
+      <!-- Category navigation pills dynamically injected -->
+    </nav>
+
+    <!-- HERO SECTION SLIDER -->
+    <section class="hero-section">
+      <div class="light-ray"></div>
+      <div class="hero-slider" id="hero-slider">
+        <!-- Hero images injected by JS -->
+      </div>
+    </section>
+
+    <!-- CATEGORY CRUMB DIVIDER -->
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-icon" id="active-divider-icon">☕</div>
+      <div class="divider-line"></div>
+    </div>
+
+    <!-- THUMBNAIL CAROUSEL -->
+    <section class="carousel-section">
+      <div class="carousel-scroll" id="thumbnail-track">
+        <!-- Thumbnails injected by JS -->
+      </div>
+    </section>
+
+    <!-- DETAILS SECTION -->
+    <section class="details-section">
+      <div class="tag-wrapper">
+        <span class="pill-tag" id="item-tag">
+          <span id="item-tag-text">COFFEE</span>
+        </span>
+        <span class="veg-indicator" style="padding: 2px 8px; font-size: 9.5px;">
+          <span class="veg-icon-box" style="width: 11px; height: 11px;"><span class="veg-icon-dot" style="width: 5px; height: 5px;"></span></span>
+          <span>100% Veg</span>
+        </span>
+      </div>
+
+      <div class="title-price-row">
+        <div style="display: flex; flex-direction: column; gap: 4px; max-width: 65%;">
+          <h1 class="item-title" id="item-title" style="max-width: 100%;">Item Name</h1>
+          <div id="item-subheading-tag" style="display: none; font-weight: bold; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
+            <span id="item-subheading-text"></span>
+          </div>
+        </div>
+        <div class="item-price">
+          <span class="currency">₹</span>
+          <span class="price-int" id="price-int">0</span>
+          <span class="price-dec" id="price-dec">.00</span>
+        </div>
+      </div>
+
+      <p class="item-desc" id="item-desc">Prepared fresh with signature ingredients.</p>
+    </section>
+
+    <!-- CONTROLS SECTION -->
+    <section class="controls-section">
+      <div class="control-group">
+        <span class="control-label">SIZE / SELECTION</span>
+        <div class="segmented-control" id="serving-size-control">
+          <!-- Dynamically injected -->
+        </div>
+      </div>
+
+      <div class="control-group align-right">
+        <span class="control-label">QTY</span>
+        <div class="qty-stepper">
+          <button class="stepper-btn" id="btn-minus" aria-label="Decrease quantity">−</button>
+          <span class="stepper-val" id="qty-val">1</span>
+          <button class="stepper-btn" id="btn-plus" aria-label="Increase quantity">+</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTTOM ACTION BAR -->
+    <footer class="action-bar">
+      <button class="btn-outline" id="btn-addons">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        SPECIAL NOTE
+      </button>
+      <button class="btn-solid" id="btn-add-bag">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        ADD TO ORDER
+      </button>
+    </footer>
+
+    <!-- ════ MODALS ════ -->
+
+    <!-- Categories Sheet -->
+    <dialog id="modal-categories" class="bottom-sheet modal-categories-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="sheet-tag">OZKAFE DIRECTORY</span>
+          <h2>Menu Categories</h2>
+          <p class="sheet-subtitle">Handcrafted Artisanal Collection · 100% Pure Veg</p>
+        </div>
+        <button id="btn-close-categories" type="button" class="btn-close" aria-label="Close">×</button>
+      </div>
+      <div class="sheet-content" id="category-list"></div>
+    </dialog>
+
+    <!-- Cart Sheet -->
+    <dialog id="modal-cart" class="bottom-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Your Order Summary</h2>
+        <button id="btn-close-cart" type="button" class="btn-close" aria-label="Close">×</button>
+      </div>
+      <div class="sheet-content">
+        <div id="cart-list"></div>
+
+        <!-- EXTRA FLAVOURS & ADD-ONS SECTION -->
+        <div class="cart-addons-wrapper" id="cart-addons-wrapper">
+          <div class="cart-addons-header">
+            <div class="cart-addons-title-row">
+              <span class="cart-addons-icon">✨</span>
+              <span class="cart-addons-title">Extra Flavours & Add-ons</span>
+            </div>
+            <span class="cart-addons-badge">POPULAR</span>
+          </div>
+          <p class="cart-addons-hint">Customise with syrups, oat milk, or extra shots</p>
+          <div class="cart-addons-grid" id="cart-addons-grid"></div>
+        </div>
+
+        <textarea id="special-instructions" class="instructions-input" placeholder="Any special preparation requests? (e.g. Less sugar, extra hot...)"></textarea>
+
+        <!-- BILLING DETAILS -->
+        <div class="billing-details-wrapper" style="margin-top: 1rem;">
+          <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-dark);">Billing Details</h3>
+          <input type="text" id="customer-name" class="instructions-input" placeholder="Your Name" style="margin-bottom: 0.5rem;" required>
+          <input type="tel" id="customer-phone" class="instructions-input" placeholder="Your Phone Number" required>
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <div class="cart-total-row">
+          <div style="display: flex; flex-direction: column;">
+            <span class="cart-total-label">Grand Total</span>
+            <span style="font-size: 0.75rem; color: #666; font-weight: 500; margin-top: 2px;">(+ 5% gst)</span>
+          </div>
+          <span id="cart-total-price">₹0</span>
+        </div>
+        <button id="checkout-btn" class="btn-solid w-full" disabled>PLACE ORDER</button>
+      </div>
+    </dialog>
+
+    <!-- Order Tracker Sheet -->
+    <dialog id="modal-track" class="bottom-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Order Status</h2>
+        <button id="btn-close-track" type="button" class="btn-close" aria-label="Close">×</button>
+      </div>
+      <div class="sheet-content" id="track-list"></div>
+    </dialog>
+
+  </div><!-- end #app-wrapper -->
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OZKAFE — Kitchen Dashboard</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="/src/styles/variables.css" />
+    <link rel="stylesheet" href="/src/kitchen/styles.css" />
+  </head>
+  <body>
+
+    <!-- HEADER -->
+    <header class="kitchen-header">
+      <div class="kitchen-header-left">
+        <img src="/images/ozkafe_logo.jpeg" alt="OZKAFE" class="kitchen-logo" />
+        <div class="brand">
+          <span class="brand-name">OZKAFE</span>
+          <span class="brand-sub">Kitchen Dashboard</span>
+        </div>
+      </div>
+      <div class="kitchen-header-right">
+        <div class="status-dot">LIVE</div>
+        <div class="clock" id="clock">00:00:00</div>
+      </div>
+    </header>
+
+    <!-- KANBAN BOARD -->
+    <main class="board-container">
+
+      <!-- New Orders Column -->
+      <div class="column new-orders" id="col-received-wrapper">
+        <h2 class="col-title">
+          <span><span class="col-icon">🔔</span> New Orders</span>
+          <span class="badge" id="count-received">0</span>
+        </h2>
+        <div class="order-list" id="col-received">
+          <div class="empty-col">
+            <div class="empty-icon">📋</div>
+            No new orders yet
+          </div>
+        </div>
+      </div>
+
+      <!-- Preparing Column -->
+      <div class="column preparing-orders" id="col-preparing-wrapper">
+        <h2 class="col-title">
+          <span><span class="col-icon">🔥</span> Preparing</span>
+          <span class="badge" id="count-preparing">0</span>
+        </h2>
+        <div class="order-list" id="col-preparing">
+          <div class="empty-col">
+            <div class="empty-icon">🍳</div>
+            Nothing in preparation
+          </div>
+        </div>
+      </div>
+
+      <!-- Ready Column -->
+      <div class="column ready-orders" id="col-ready-wrapper">
+        <h2 class="col-title">
+          <span><span class="col-icon">✅</span> Ready for Pickup</span>
+          <span class="badge" id="count-ready">0</span>
+        </h2>
+        <div class="order-list" id="col-ready">
+          <div class="empty-col">
+            <div class="empty-icon">🛎️</div>
+            No orders ready yet
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Order Card Template -->
+    <template id="order-card-template">
+      <div class="order-card" data-id="">
+        <div class="card-header">
+          <span class="table-tag">Table <span class="table-num"></span></span>
+          <span class="time-elapsed">0m</span>
+        </div>
+        <div class="customer-info" style="font-size: 0.85rem; color: #555; margin-bottom: 8px;">
+          <strong class="customer-name"></strong> <br/>
+          <span class="customer-phone" style="font-size: 0.8rem;"></span>
+        </div>
+        <div class="order-id">Order #<span></span></div>
+        <ul class="item-list"></ul>
+        <div class="special-instructions hidden">
+          <strong>📝 Note:</strong> <span></span>
+        </div>
+        <div class="card-actions">
+          <button class="action-btn advance-btn">Start Preparing</button>
+        </div>
+      </div>
+    </template>
+
+    <script type="module" src="/src/kitchen/main.js"></script>
+  </body>
+</html>
