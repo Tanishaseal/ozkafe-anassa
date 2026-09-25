@@ -25,7 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ numTables })
       });
       
-      if (!res.ok) throw new Error('Failed to generate tables');
+      if (!res.ok) {
+        let errText = 'Failed to generate tables';
+        try {
+          const errData = await res.json();
+          errText = errData.error || errData.message || JSON.stringify(errData);
+        } catch(e) {
+          errText += ' (Status: ' + res.status + ')';
+        }
+        throw new Error(`API Error: ${errText}`);
+      }
       
       const tables = await res.json();
       if (!tables || tables.length === 0) throw new Error('No tables returned');
