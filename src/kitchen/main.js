@@ -75,7 +75,7 @@ function startClock() {
   setInterval(tick, 1000);
 }
 
-/* ── RENDER KANBAN BOARD ── */
+/* ── RENDER KANBAN BOARD (OPTIMIZED) ── */
 function renderBoard() {
   const cols = {
     received:  document.getElementById('col-received'),
@@ -84,66 +84,104 @@ function renderBoard() {
   };
 
   const counts = { received: 0, preparing: 0, ready: 0 };
-
-  // Clear all columns
-  Object.values(cols).forEach(col => col.innerHTML = '');
-
   const template = document.getElementById('order-card-template');
+
+  // Track which IDs are currently active
+  const currentOrderIds = new Set();
 
   orders.forEach(order => {
     if (order.status === 'served') return; // archived
 
+    currentOrderIds.add(order.id);
     counts[order.status] = (counts[order.status] || 0) + 1;
     const col = cols[order.status];
     if (!col) return;
 
-    const clone = template.content.cloneNode(true);
-    const card  = clone.querySelector('.order-card');
+    let card = document.querySelector(`.order-card[data-id="${order.id}"]`);
 
-    card.dataset.id = order.id;
-    clone.querySelector('.table-num').textContent = order.tableNumber || '—';
-    // Show short ID (first 8 chars of UUID) for readability
-    clone.querySelector('.order-id span').textContent = order.id.substring(0, 8).toUpperCase();
-    clone.querySelector('.customer-name').textContent = order.customerName || 'No Name';
-    clone.querySelector('.customer-phone').textContent = order.customerPhone || '';
+    if (card) {
+      // ── UPDATE EXISTING CARD ──
+      // Move to correct column if status changed
+      if (card.parentElement !== col) {
+        col.appendChild(card);
+      }
+      
+      // Update elapsed time smoothly
+      const elapsedMin = Math.floor((Date.now() - order.createdAt) / 60000);
+      const timeSpan = card.querySelector('.time-elapsed');
+      timeSpan.textContent = elapsedMin < 1 ? 'Just now' : `${elapsedMin}m ago`;
+      timeSpan.className = 'time-elapsed'; // reset classes
+      if (elapsedMin > 15) timeSpan.classList.add('time-danger');
+      else if (elapsedMin > 10) timeSpan.classList.add('time-warning');
 
-    // Elapsed time
-    const elapsedMin = Math.floor((Date.now() - order.createdAt) / 60000);
-    const timeSpan   = clone.querySelector('.time-elapsed');
-    timeSpan.textContent = elapsedMin < 1 ? 'Just now' : `${elapsedMin}m ago`;
-    if (elapsedMin > 15) timeSpan.classList.add('time-danger');
-    else if (elapsedMin > 10) timeSpan.classList.add('time-warning');
+      // Update action button smoothly
+      const btn = card.querySelector('.advance-btn');
+      if (order.status === 'received') {
+        btn.textContent = '▶ Start Preparing';
+        btn.onclick = () => updateStatus(order.id, 'preparing');
+      } else if (order.status === 'preparing') {
+        btn.textContent = '✓ Mark Ready';
+        btn.onclick = () => updateStatus(order.id, 'ready');
+      } else if (order.status === 'ready') {
+        btn.textContent = '✓ Mark Served';
+        btn.onclick = () => updateStatus(order.id, 'served');
+      }
+    } else {
+      // ── CREATE NEW CARD ──
+      const clone = template.content.cloneNode(true);
+      card = clone.querySelector('.order-card');
+      card.dataset.id = order.id;
+      
+      clone.querySelector('.table-num').textContent = order.tableNumber || '—';
+      clone.querySelector('.order-id span').textContent = order.id.substring(0, 8).toUpperCase();
+      clone.querySelector('.customer-name').textContent = order.customerName || 'No Name';
+      clone.querySelector('.customer-phone').textContent = order.customerPhone || '';
 
-    // Items
-    const ul = clone.querySelector('.item-list');
-    (order.items || []).forEach(item => {
-      const li = document.createElement('li');
-      const qty = item.quantity || item.qty || 1;
-      li.innerHTML = `<span class="qty">${qty}x</span> <span>${item.name}</span>`;
-      ul.appendChild(li);
-    });
+      // Elapsed time
+      const elapsedMin = Math.floor((Date.now() - order.createdAt) / 60000);
+      const timeSpan = clone.querySelector('.time-elapsed');
+      timeSpan.textContent = elapsedMin < 1 ? 'Just now' : `${elapsedMin}m ago`;
+      if (elapsedMin > 15) timeSpan.classList.add('time-danger');
+      else if (elapsedMin > 10) timeSpan.classList.add('time-warning');
 
-    // Special instructions
-    if (order.specialInstructions && order.specialInstructions.trim()) {
-      const instDiv = clone.querySelector('.special-instructions');
-      instDiv.classList.remove('hidden');
-      instDiv.querySelector('span').textContent = order.specialInstructions;
+      // Items
+      const ul = clone.querySelector('.item-list');
+      (order.items || []).forEach(item => {
+        const li = document.createElement('li');
+        const qty = item.quantity || item.qty || 1;
+        li.innerHTML = `<span class="qty">${qty}x</span> <span>${item.name}</span>`;
+        ul.appendChild(li);
+      });
+
+      // Special instructions
+      if (order.specialInstructions && order.specialInstructions.trim()) {
+        const instDiv = clone.querySelector('.special-instructions');
+        instDiv.classList.remove('hidden');
+        instDiv.querySelector('span').textContent = order.specialInstructions;
+      }
+
+      // Action button
+      const btn = clone.querySelector('.advance-btn');
+      if (order.status === 'received') {
+        btn.textContent = '▶ Start Preparing';
+        btn.onclick = () => updateStatus(order.id, 'preparing');
+      } else if (order.status === 'preparing') {
+        btn.textContent = '✓ Mark Ready';
+        btn.onclick = () => updateStatus(order.id, 'ready');
+      } else if (order.status === 'ready') {
+        btn.textContent = '✓ Mark Served';
+        btn.onclick = () => updateStatus(order.id, 'served');
+      }
+
+      col.appendChild(clone);
     }
+  });
 
-    // Action button
-    const btn = clone.querySelector('.advance-btn');
-    if (order.status === 'received') {
-      btn.textContent = '▶ Start Preparing';
-      btn.onclick = () => updateStatus(order.id, 'preparing');
-    } else if (order.status === 'preparing') {
-      btn.textContent = '✓ Mark Ready';
-      btn.onclick = () => updateStatus(order.id, 'ready');
-    } else if (order.status === 'ready') {
-      btn.textContent = '✓ Mark Served';
-      btn.onclick = () => updateStatus(order.id, 'served');
+  // 3. Remove old cards that are no longer active (e.g., served or deleted)
+  document.querySelectorAll('.order-card').forEach(card => {
+    if (!currentOrderIds.has(card.dataset.id)) {
+      card.remove();
     }
-
-    col.appendChild(clone);
   });
 
   // Update badges
