@@ -1,0 +1,437 @@
+/* ═══════════════════════════════════════════════════════
+   OZKAFE — Admin Panel System Styles
+   Dashboard, Menu CRUD, Stock Toggles, Orders Ledger & Settings
+   ═══════════════════════════════════════════════════════ */
+
+.admin-wrapper {
+  display: flex;
+  min-height: 100vh;
+  background: #F8F6F2;
+  color: #1A1410;
+  font-family: var(--font-body);
+}
+
+/* ── SIDEBAR ── */
+.admin-sidebar {
+  width: 250px;
+  background: #FFFFFF;
+  border-right: 1px solid #E5DFD7;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.admin-sidebar-header {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #EAE4DC;
+}
+
+.admin-nav-list {
+  list-style: none;
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #4A3F35;
+  text-decoration: none;
+  transition: all 0.15s;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.admin-nav-item:hover {
+  background: #F4EFEA;
+  color: #1A1410;
+}
+
+.admin-nav-item.active {
+  background: #2A2118;
+  color: #FFFFFF;
+}
+
+.admin-sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid #EAE4DC;
+}
+
+/* ── MAIN CONTENT ── */
+.admin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  height: 100vh;
+}
+
+.admin-topbar {
+  background: #FFFFFF;
+  padding: 16px 28px;
+  border-bottom: 1px solid #E5DFD7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-topbar-title {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.admin-body {
+  padding: 28px;
+  flex: 1;
+}
+
+/* ── STAT CARDS ── */
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.admin-stat-card {
+  background: #FFFFFF;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid #E2DCD3;
+  box-shadow: 0 2px 8px rgba(30, 20, 15, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-stat-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7C4A1E;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.admin-stat-val {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #1A1410;
+}
+
+.admin-stat-sub {
+  font-size: 12px;
+  color: #685E54;
+}
+
+/* ── DATA TABLES ── */
+.admin-table-card {
+  background: #FFFFFF;
+  border-radius: 14px;
+  border: 1px solid #E2DCD3;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(30, 20, 15, 0.04);
+  margin-bottom: 24px;
+}
+
+.admin-table-toolbar {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #EAE4DC;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-table th {
+  background: #FAF8F5;
+  padding: 12px 18px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #685E54;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid #EAE4DC;
+}
+
+.admin-table td {
+  padding: 14px 18px;
+  font-size: 13.5px;
+  border-bottom: 1px solid #F0EAE1;
+  vertical-align: middle;
+}
+
+.admin-table tr:hover td {
+  background: #FDFBF8;
+}
+
+/* ── STOCK AVAILABILITY SWITCH (iOS Style) ── */
+.stock-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stock-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  background: #D1D5DB;
+  border-radius: 999px;
+  transition: background 0.2s;
+  display: inline-block;
+}
+
+.stock-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+
+.stock-checkbox {
+  display: none;
+}
+
+.stock-checkbox:checked + .stock-switch {
+  background: #16A34A;
+}
+
+.stock-checkbox:checked + .stock-switch::after {
+  transform: translateX(18px);
+}
+
+.stock-status-text {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stock-status-in {
+  color: #16A34A;
+}
+
+.stock-status-out {
+  color: #DC2626;
+}
+
+/* ── FORM CONTROLS & MODALS ── */
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 10, 7, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.admin-modal-box {
+  background: #FFFFFF;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.admin-form-group label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4A3F35;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-input, .admin-select, .admin-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #DCD2C5;
+  border-radius: 8px;
+  font-size: 13.5px;
+  outline: none;
+  background: #FAF8F5;
+}
+
+.admin-input:focus, .admin-select:focus, .admin-textarea:focus {
+  border-color: #A66B33;
+  background: #FFFFFF;
+}
+
+/* ── PIN AUTH KEYPAD ── */
+.pin-dialog-card {
+  background: #FFFFFF;
+  border-radius: 20px;
+  padding: 32px 28px;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+  border: 1px solid #E2DCD3;
+}
+
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.pin-btn {
+  height: 54px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 1px solid #E2DCD3;
+  background: #FCFAF7;
+  color: #1A1410;
+  transition: all 0.15s;
+}
+
+.pin-btn:hover {
+  background: #F4EFEA;
+}
+
+.pin-btn:active {
+  transform: scale(0.95);
+  background: #2A2118;
+  color: #FFFFFF;
+}
+
+/* ── RESPONSIVE: MOBILE VIEWPORT (Android / Small Screens: 360px - 860px) ── */
+@media (max-width: 860px) {
+  .admin-wrapper {
+    flex-direction: column;
+    min-height: 100vh;
+    height: auto;
+  }
+  .admin-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #E5DFD7;
+  }
+  .admin-sidebar-header {
+    padding: 10px 14px;
+  }
+  .admin-nav-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px 12px;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-nav-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    width: auto;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .admin-sidebar-footer {
+    display: none;
+  }
+  .admin-main {
+    height: auto;
+    overflow-y: visible;
+    width: 100%;
+  }
+  .admin-topbar {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .admin-topbar-title {
+    font-size: 1.2rem;
+  }
+  .admin-body {
+    padding: 14px 10px;
+  }
+  .admin-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .admin-stat-card {
+    padding: 14px;
+  }
+  .admin-table-card {
+    padding: 14px 10px;
+  }
+  .admin-table-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .admin-table-toolbar > div {
+    max-width: 100% !important;
+  }
+  .admin-table-toolbar input,
+  .admin-table-toolbar select {
+    max-width: 100% !important;
+    width: 100%;
+  }
+  /* Force single column for configuration forms on mobile */
+  .admin-table-card div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── RESPONSIVE: LAPTOP & DESKTOP (1024px+) ── */
+@media (min-width: 1024px) {
+  .admin-sidebar {
+    width: 260px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+  }
+  .admin-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+  }
+  .admin-main {
+    height: 100vh;
+    overflow-y: auto;
+  }
+}

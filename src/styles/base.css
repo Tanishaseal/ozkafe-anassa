@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   OZKAFE — Base Styles (White-Base Luxury Theme)
+   OZKAFE — Base Reset & Core Styles
    ═══════════════════════════════════════════════════════ */
 
 *, *::before, *::after {
@@ -29,9 +29,11 @@ body {
 button {
   cursor: pointer;
   font-family: var(--font-body);
+  border: none;
+  background: transparent;
 }
 
-input, textarea {
+input, textarea, select {
   font-family: var(--font-body);
 }
 
@@ -77,7 +79,7 @@ img {
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  animation: splashFadeOut 0.7s ease-in-out 2.2s forwards;
+  animation: splashFadeOut 0.6s ease-in-out 1.8s forwards;
 }
 
 .splash-inner {
@@ -106,14 +108,14 @@ img {
   letter-spacing: 2px;
   font-weight: 600;
   opacity: 0;
-  animation: fadeUp 0.5s ease 0.5s forwards;
+  animation: fadeUp 0.5s ease 0.4s forwards;
 }
 
 .splash-dots {
   display: flex;
   gap: 8px;
   opacity: 0;
-  animation: fadeUp 0.4s ease 1s forwards;
+  animation: fadeUp 0.4s ease 0.8s forwards;
 }
 
 .splash-dots span {
@@ -127,7 +129,7 @@ img {
 .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes splashFadeOut {
-  to { opacity: 0; pointer-events: none; }
+  to { opacity: 0; pointer-events: none; visibility: hidden; }
 }
 @keyframes splashPop {
   from { transform: scale(0.7); opacity: 0; }
@@ -142,7 +144,6 @@ img {
   50%       { opacity: 1;   transform: scale(1.2); }
 }
 
-/* ── SUBTLE WARM ACCENT GRADIENT HEADER BEHIND APP ── */
 #app-wrapper::before {
   content: '';
   position: absolute;

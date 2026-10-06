@@ -1,9 +1,0 @@
-{
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "rewrites": [
-    { "source": "/kitchen", "destination": "/kitchen.html" },
-    { "source": "/qr-generator", "destination": "/qr-generator.html" },
-    { "source": "/qr", "destination": "/qr-generator.html" }
-  ]
-}
