@@ -1,23 +1,23 @@
 :root {
   /* ═══════════════════════════════════════
-     OZKAFE — White-Base Luxury Café Palette
-     Clean, bright, high-contrast & professional
+     OZKAFE — Luxury Café Design System
+     Artisanal Roast & Pure Veg Aesthetic
      ═══════════════════════════════════════ */
 
-  /* Backgrounds — crisp white & subtle warm undertones */
+  /* Backgrounds */
   --bg-dark:          #FBF9F6;  /* outer page / subtle warm tint */
   --bg-surface:       #FFFFFF;  /* main containers, cards & sheets */
   --bg-surface-light: #F7F3EE;  /* hover states, subtle tracks, inactive pills */
   --bg-card:          #FFFFFF;  /* elevated cards */
   --bg-card-elevated: #FDFBF8;
 
-  /* Brand Accents — warm espresso, roast bronze, caramel & terracotta */
+  /* Brand Accents */
   --brand-gold:        #A66B33;  /* warm artisan bronze */
   --brand-gold-dark:   #7C4A1E;  /* deep rich coffee */
   --brand-gold-dim:    rgba(166, 107, 51, 0.10);
-  --brand-cream:       #2A2118;  /* for text that was previously white-on-dark */
+  --brand-cream:       #2A2118;
   --brand-brown:       #5C381E;
-  --brand-accent:      #C8611E;  /* vibrant burnt orange / terracotta CTA */
+  --brand-accent:      #C8611E;  /* vibrant burnt terracotta CTA */
   --brand-accent-hover:#A94E14;
   --brand-accent-glow: rgba(200, 97, 30, 0.25);
 
@@ -26,7 +26,7 @@
   --veg-green-bg:      #F0FDF4;
   --veg-green-border:  #86EFAC;
 
-  /* Text — ultra-crisp, professional & readable on white */
+  /* Text Typography */
   --text-white:        #1A1410;  /* primary dark espresso for maximum contrast */
   --text-primary:      #1A1410;  /* heading / main text */
   --text-secondary:    #4A3F35;  /* secondary readable body */
@@ -50,18 +50,6 @@
   --font-primary:  'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-currency: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:     'JetBrains Mono', 'Courier New', monospace;
-
-  /* Spacing */
-  --space-2:  2px;
-  --space-4:  4px;
-  --space-8:  8px;
-  --space-12: 12px;
-  --space-16: 16px;
-  --space-20: 20px;
-  --space-24: 24px;
-  --space-32: 32px;
-  --space-48: 48px;
-  --space-64: 64px;
 
   /* Layout */
   --max-width: 480px;
