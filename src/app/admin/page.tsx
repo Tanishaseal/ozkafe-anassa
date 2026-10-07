@@ -93,7 +93,7 @@ export default function AdminPage() {
   const [formPrice, setFormPrice] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formImg, setFormImg] = useState('/images/americano.png');
-  const [formIsVeg, setFormIsVeg] = useState(true);
+  const [formIsVeg] = useState(true);
   const [formSizes, setFormSizes] = useState('Regular');
 
   // Check if session cookie exists
@@ -233,7 +233,7 @@ export default function AdminPage() {
         setFormSubheading('');
         fetchAdminData();
       }
-    } catch (err) {
+    } catch {
       alert('Failed to save item');
     }
   };

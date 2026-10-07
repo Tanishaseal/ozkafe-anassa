@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTables, validateTable, ensureTablesCount, getTableByNumber } from '@/lib/store';
+import { getTables, validateTable, ensureTablesCount } from '@/lib/store';
 import { verifyAuthHeaderOrCookie, signToken } from '@/lib/auth';
 
 export async function GET(request: Request) {

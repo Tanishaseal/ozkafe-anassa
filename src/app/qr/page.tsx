@@ -10,7 +10,7 @@ export default function QRGeneratorPage() {
   const [tables, setTables] = useState<TableSession[]>([]);
   const [baseUrl, setBaseUrl] = useState('');
   const [numTablesInput, setNumTablesInput] = useState(1);
-  const [includeTakeaway, setIncludeTakeaway] = useState(true);
+  const [includeTakeaway] = useState(true);
   const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);

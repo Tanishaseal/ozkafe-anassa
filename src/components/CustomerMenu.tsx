@@ -76,7 +76,7 @@ export default function CustomerMenu({
 
   // Table Session State
   const [tableSessionId, setTableSessionId] = useState<string>('');
-  const [isTableVerified, setIsTableVerified] = useState<boolean>(false);
+  const [, setIsTableVerified] = useState<boolean>(false);
 
   // Flat all items with category metadata
   const flattenedItems = useMemo(() => {
