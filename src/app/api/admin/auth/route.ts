@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const expectedPin = settings.adminPin || '1234';
 
     if (pin === expectedPin) {
-      const exp = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
+      const exp = Date.now() + 1000 * 60 * 60 * 12; // 12 hours
       const token = signToken({ role: 'admin', exp });
 
       await addAuditLog({
@@ -34,7 +34,6 @@ export async function POST(request: Request) {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7,
         path: '/',
       });
 

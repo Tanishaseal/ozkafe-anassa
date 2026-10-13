@@ -452,11 +452,17 @@ export default function CustomerMenu({
     });
   };
 
+const formatCurrency = (val: number): string => {
+  if (val === undefined || val === null || isNaN(val)) return '0';
+  return Number.isInteger(val) ? val.toString() : val.toFixed(2);
+};
+
   const totalCartCount = Object.values(cart).reduce((sum, it) => sum + it.quantity, 0);
   const cartSubtotal = Object.values(cart).reduce((sum, it) => sum + it.price * it.quantity, 0);
   const gstRate = (settings.gstPercent ?? 5) / 100;
-  const cartTax = Math.round(cartSubtotal * gstRate);
-  const cartGrandTotal = cartSubtotal + cartTax;
+  // Calculate 5% GST accurately with 2 decimal precision without integer truncating/rounding
+  const cartTax = Number((cartSubtotal * gstRate).toFixed(2));
+  const cartGrandTotal = Number((cartSubtotal + cartTax).toFixed(2));
 
   // Handle Checkout / Place Order
   const handlePlaceOrder = async () => {
@@ -468,7 +474,7 @@ export default function CustomerMenu({
     }
 
     if (settings.minOrderAmount && settings.minOrderAmount > 0 && cartSubtotal < settings.minOrderAmount) {
-      alert(`Minimum order amount is ₹${settings.minOrderAmount}. Please add ₹${settings.minOrderAmount - cartSubtotal} more to your cart.`);
+      alert(`Minimum order amount is ₹${settings.minOrderAmount}. Please add ₹${formatCurrency(settings.minOrderAmount - cartSubtotal)} more to your cart.`);
       return;
     }
 
@@ -1311,10 +1317,10 @@ export default function CustomerMenu({
                   <div>
                     <span className="cart-total-label">Grand Total</span>
                     <div style={{ fontSize: 11, color: 'var(--text-grey)' }}>
-                      ₹{cartSubtotal} + {settings.gstPercent}% GST (₹{cartTax})
+                      ₹{formatCurrency(cartSubtotal)} + {settings.gstPercent}% GST (₹{formatCurrency(cartTax)})
                     </div>
                   </div>
-                  <span className="cart-total-price">₹{cartGrandTotal}</span>
+                  <span className="cart-total-price">₹{formatCurrency(cartGrandTotal)}</span>
                 </div>
 
                 {!settings.isOpen ? (
@@ -1331,7 +1337,7 @@ export default function CustomerMenu({
                     style={{ width: '100%', background: '#D97706', cursor: 'not-allowed', opacity: 0.9 }}
                     disabled={true}
                   >
-                    Min Order: ₹{settings.minOrderAmount} (Add ₹{settings.minOrderAmount - cartSubtotal})
+                    Min Order: ₹{settings.minOrderAmount} (Add ₹{formatCurrency(settings.minOrderAmount - cartSubtotal)})
                   </button>
                 ) : (
                   <button
@@ -1340,7 +1346,7 @@ export default function CustomerMenu({
                     onClick={handlePlaceOrder}
                     disabled={isSubmittingOrder}
                   >
-                    {isSubmittingOrder ? 'Submitting Order to Kitchen...' : `SEND ORDER TO KITCHEN · ₹${cartGrandTotal}`}
+                    {isSubmittingOrder ? 'Submitting Order to Kitchen...' : `SEND ORDER TO KITCHEN · ₹${formatCurrency(cartGrandTotal)}`}
                   </button>
                 )}
               </div>

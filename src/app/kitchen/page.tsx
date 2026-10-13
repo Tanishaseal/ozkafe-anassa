@@ -47,13 +47,14 @@ export default function KitchenDashboard() {
     }
   };
 
-  // Check existing session
+  // Require PIN on every window access: clear any legacy persistent auth
   useEffect(() => {
     fetchKitchenSettings();
-    const isLocalAuthed = localStorage.getItem('anassa_kitchen_authed');
-    if (isLocalAuthed === 'true') {
-      setIsAuthenticated(true);
-      fetchOrders();
+    try {
+      localStorage.removeItem('anassa_kitchen_authed');
+      sessionStorage.removeItem('anassa_kitchen_authed');
+    } catch {
+      // silent
     }
   }, []);
 
@@ -70,7 +71,7 @@ export default function KitchenDashboard() {
 
       if (res.ok) {
         setIsAuthenticated(true);
-        localStorage.setItem('anassa_kitchen_authed', 'true');
+        setPinInput('');
         fetchOrders();
       } else {
         setPinError('Invalid Kitchen Staff PIN.');
@@ -82,8 +83,14 @@ export default function KitchenDashboard() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem('anassa_kitchen_authed');
+    try {
+      localStorage.removeItem('anassa_kitchen_authed');
+      sessionStorage.removeItem('anassa_kitchen_authed');
+    } catch {
+      // silent
+    }
     setIsAuthenticated(false);
+    setPinInput('');
     await fetch('/api/kitchen/auth', { method: 'DELETE' });
   };
 

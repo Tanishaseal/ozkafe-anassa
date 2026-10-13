@@ -10,11 +10,12 @@ export async function POST(request: Request) {
     const { pin } = await request.json();
     const settings = await getCafeSettings();
 
-    // Staff / Kitchen PIN can match admin PIN or default '1234'
-    const validPin = settings.adminPin || '1234';
+    // Staff / Kitchen PIN can match kitchenPin, adminPin or default '1234'
+    const validPin = settings.kitchenPin || settings.adminPin || '1234';
+    const isValid = pin === validPin || (settings.adminPin && pin === settings.adminPin);
 
-    if (pin === validPin) {
-      const exp = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
+    if (isValid) {
+      const exp = Date.now() + 1000 * 60 * 60 * 12; // 12 hours
       const token = signToken({ role: 'kitchen', exp });
 
       await addAuditLog({
@@ -34,7 +35,6 @@ export async function POST(request: Request) {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7,
         path: '/',
       });
       return response;

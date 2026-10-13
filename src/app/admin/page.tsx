@@ -5,6 +5,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { MenuItem, Category, Order, CafeSettings, AuditLog } from '@/lib/types';
 
+const formatCurrency = (val: number): string => {
+  if (val === undefined || val === null || isNaN(val)) return '0';
+  return Number.isInteger(val) ? val.toString() : val.toFixed(2);
+};
+
 export default function AdminPage() {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -97,12 +102,13 @@ export default function AdminPage() {
   const [formIsVeg] = useState(true);
   const [formSizes, setFormSizes] = useState('Regular');
 
-  // Check if session cookie exists
+  // Require PIN on every window access: clear legacy persistent auth tokens
   useEffect(() => {
-    const isLocalAuthed = localStorage.getItem('anassa_admin_authed');
-    if (isLocalAuthed === 'true') {
-      setIsAuthenticated(true);
-      fetchAdminData();
+    try {
+      localStorage.removeItem('anassa_admin_authed');
+      sessionStorage.removeItem('anassa_admin_authed');
+    } catch {
+      // silent
     }
   }, []);
 
@@ -119,7 +125,7 @@ export default function AdminPage() {
 
       if (res.ok) {
         setIsAuthenticated(true);
-        localStorage.setItem('anassa_admin_authed', 'true');
+        setPinInput('');
         fetchAdminData();
       } else {
         setPinError('Invalid Admin PIN. Please try again.');
@@ -131,8 +137,14 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem('anassa_admin_authed');
+    try {
+      localStorage.removeItem('anassa_admin_authed');
+      sessionStorage.removeItem('anassa_admin_authed');
+    } catch {
+      // silent
+    }
     setIsAuthenticated(false);
+    setPinInput('');
     await fetch('/api/admin/auth', { method: 'DELETE' });
   };
 
@@ -658,6 +670,23 @@ export default function AdminPage() {
             >
               👁️ View Customer App ↗
             </Link>
+            <button
+              onClick={handleLogout}
+              className="btn-outline"
+              style={{
+                height: 36,
+                padding: '0 14px',
+                fontSize: 12,
+                color: '#DC2626',
+                borderColor: '#FCA5A5',
+                background: '#FEF2F2',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Lock admin session immediately"
+            >
+              🔒 Lock Admin
+            </button>
           </div>
         </header>
 
@@ -668,7 +697,7 @@ export default function AdminPage() {
               <div className="admin-stats-grid">
                 <div className="admin-stat-card">
                   <span className="admin-stat-label">Today's Revenue</span>
-                  <span className="admin-stat-val">₹{stats.todayRevenue.toLocaleString()}</span>
+                  <span className="admin-stat-val">₹{formatCurrency(Number(stats.todayRevenue))}</span>
                   <span className="admin-stat-sub">From {stats.todayOrderCount} orders today</span>
                 </div>
 
@@ -948,7 +977,7 @@ export default function AdminPage() {
                             <td>{ord.customerFlat || '—'}</td>
                             <td>{ord.items.length} items</td>
                             <td style={{ fontWeight: 700, color: 'var(--brand-accent)' }}>
-                              ₹{ord.total}
+                              ₹{formatCurrency(Number(ord.total))}
                             </td>
                             <td>
                               <span style={{
@@ -1901,15 +1930,15 @@ export default function AdminPage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
               <span>Subtotal:</span>
-              <span>₹{selectedReceiptOrder.subtotal}</span>
+              <span>₹{formatCurrency(Number(selectedReceiptOrder.subtotal))}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-              <span>GST (5%):</span>
-              <span>₹{selectedReceiptOrder.taxAmount}</span>
+              <span>GST ({settings.gstPercent || 5}%):</span>
+              <span>₹{formatCurrency(Number(selectedReceiptOrder.taxAmount))}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, borderTop: '1px solid #000', paddingTop: 6 }}>
               <span>Grand Total:</span>
-              <span>₹{selectedReceiptOrder.total}</span>
+              <span>₹{formatCurrency(Number(selectedReceiptOrder.total))}</span>
             </div>
 
             <button
