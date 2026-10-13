@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCafeSettings, updateCafeSettings, resetCafeSettings, getOrders } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
+import { isSupabaseConfigured } from '@/lib/supabaseServer';
 
 export async function GET(request: Request) {
   // Guard: Admin auth required
@@ -49,6 +50,10 @@ export async function GET(request: Request) {
         totalOrders: orders.length,
         activeOrderCount: activeOrders.length,
         popularItems,
+      },
+      database: {
+        isConfigured: isSupabaseConfigured,
+        provider: isSupabaseConfigured ? 'supabase' : 'fallback-memory',
       },
       settings,
     });
