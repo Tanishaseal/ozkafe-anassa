@@ -154,6 +154,24 @@
   }
 }
 
+/* ── SINGLE SCANNER STANDEE LAYOUT ── */
+.qr-grid-single {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding-bottom: 30px;
+}
+
+.qr-card-single {
+  width: 380px;
+  max-width: 92vw;
+  border: 2.5px dashed #A66B33 !important;
+  border-radius: 28px !important;
+  padding: 30px 24px 26px !important;
+  box-shadow: 0 14px 40px rgba(166, 107, 51, 0.12) !important;
+}
+
 @media print {
   .qr-controls-card, header, nav, .admin-sidebar {
     display: none !important;
@@ -161,13 +179,18 @@
   body, .qr-page-container {
     background: #FFFFFF !important;
     padding: 0 !important;
+    margin: 0 !important;
   }
-  .qr-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 16px !important;
+  .qr-grid-single {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    height: 100vh !important;
+    padding: 0 !important;
   }
   .qr-card-item {
     box-shadow: none !important;
-    border: 1.5px dashed #A0A0A0 !important;
+    border: 2.5px dashed #A66B33 !important;
+    page-break-inside: avoid !important;
   }
 }

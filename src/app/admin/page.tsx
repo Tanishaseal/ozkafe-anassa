@@ -73,6 +73,7 @@ export default function AdminPage() {
     allowOrderCancellation: true,
   });
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [dbStatus, setDbStatus] = useState<{ isConfigured: boolean; provider: string } | null>(null);
 
   // Filter & Search states
   const [menuSearch, setMenuSearch] = useState('');
@@ -153,6 +154,7 @@ export default function AdminPage() {
         const data = await adminRes.json();
         setStats(data.stats);
         if (data.settings) setSettings(data.settings);
+        if (data.database) setDbStatus(data.database);
       }
 
       if (menuRes.ok) {
@@ -628,6 +630,26 @@ export default function AdminPage() {
           </h1>
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {dbStatus && (
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '6px 12px',
+                  borderRadius: 20,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: dbStatus.isConfigured ? '#DCFCE7' : '#FEF3C7',
+                  color: dbStatus.isConfigured ? '#166534' : '#92400E',
+                  border: `1px solid ${dbStatus.isConfigured ? '#86EFAC' : '#FCD34D'}`,
+                }}
+                title={dbStatus.isConfigured ? 'Connected to live Supabase PostgreSQL database' : 'Running in Local Memory Fallback (Configure SUPABASE_URL in Vercel to connect database)'}
+              >
+                <span>{dbStatus.isConfigured ? '🟢' : '🟡'}</span>
+                <span>{dbStatus.isConfigured ? 'Supabase Live' : 'In-Memory Mode'}</span>
+              </span>
+            )}
             <Link
               href="/"
               target="_blank"
