@@ -80,7 +80,7 @@ export async function getCategories(): Promise<Category[]> {
         .from('categories')
         .select('*')
         .order('sort_order', { ascending: true });
-      if (!error && data && data.length > 0) {
+      if (!error && data && data.length >= initialCategories.length) {
         return data.map((c) => ({
           id: c.id,
           title: c.title,
@@ -90,6 +90,9 @@ export async function getCategories(): Promise<Category[]> {
           iconSvg: c.icon_svg,
           sortOrder: c.sort_order,
         }));
+      } else {
+        // Auto-sync categories if Supabase table has fewer categories
+        syncMenuToDatabase().catch((e) => console.warn('Auto-sync categories error:', e));
       }
     } catch (err) {
       console.warn('Supabase getCategories error, falling back to memory store:', err);
@@ -103,7 +106,7 @@ export async function getCategories(): Promise<Category[]> {
     counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
   });
 
-  return (globalStore.__anassa_categories || []).map((cat) => ({
+  return (globalStore.__anassa_categories || initialCategories).map((cat) => ({
     ...cat,
     itemsCount: counts[cat.id] || 0,
   }));
@@ -120,7 +123,7 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
         query = query.eq('category_id', categoryId);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) {
+      if (!error && data && data.length >= (categoryId ? 1 : initialMenuItems.length)) {
         return data.map((i) => ({
           id: i.id,
           name: i.name,
@@ -136,13 +139,16 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
           sizePriceMultiplier: i.size_price_multiplier || null,
           sortOrder: i.sort_order,
         }));
+      } else if (!categoryId && (!data || data.length < initialMenuItems.length)) {
+        // Auto-sync full 76 PDF items to Supabase if Supabase has fewer items
+        syncMenuToDatabase().catch((e) => console.warn('Auto-sync menu items error:', e));
       }
     } catch (err) {
       console.warn('Supabase getMenuItems error, falling back to memory store:', err);
     }
   }
 
-  const items = globalStore.__anassa_items || [];
+  const items = globalStore.__anassa_items || initialMenuItems;
   if (categoryId) {
     return items.filter((it) => it.categoryId === categoryId);
   }
@@ -777,8 +783,15 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
+      // 1. Delete all orders from Supabase using multiple delete filters for total reliability
       await supabaseServer.from('orders').delete().neq('id', '');
+      await supabaseServer.from('orders').delete().not('id', 'is', null);
+      await supabaseServer.from('orders').delete().gt('created_at', '1970-01-01T00:00:00Z');
+
+      // 2. Delete all audit logs from Supabase
       await supabaseServer.from('audit_logs').delete().neq('id', '');
+      await supabaseServer.from('audit_logs').delete().not('id', 'is', null);
+      await supabaseServer.from('audit_logs').delete().gt('created_at', '1970-01-01T00:00:00Z');
     } catch (err) {
       console.warn('Supabase purgeAllOrdersAndLogs error:', err);
     }
@@ -786,6 +799,7 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
 
   globalStore.__anassa_orders = [];
   globalStore.__anassa_audit_logs = [];
+  globalStore.__anassa_inventory = [...initialInventory];
 
   // Log clean start audit entry
   addAuditLog({
@@ -795,6 +809,65 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
   });
 
   return { success: true, ordersCleared: ordersCount, logsCleared: logsCount };
+}
+
+// ──────────────────────────────────────────
+// SYNC MENU ITEMS & CATEGORIES TO DATABASE
+// ──────────────────────────────────────────
+export async function syncMenuToDatabase(): Promise<{ success: boolean; categoriesCount: number; itemsCount: number }> {
+  globalStore.__anassa_categories = [...initialCategories];
+  globalStore.__anassa_items = [...initialMenuItems];
+  globalStore.__anassa_addons = [...initialAddons];
+
+  const catCount = initialCategories.length;
+  const itemCount = initialMenuItems.length;
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      // Upsert categories
+      for (const cat of initialCategories) {
+        await supabaseServer.from('categories').upsert({
+          id: cat.id,
+          title: cat.title,
+          subtitle: cat.subtitle,
+          emoji: cat.emoji,
+          hero_label: cat.heroLabel,
+          icon_svg: cat.iconSvg,
+          sort_order: cat.sortOrder,
+          is_active: true,
+        });
+      }
+
+      // Upsert menu items
+      for (const it of initialMenuItems) {
+        await supabaseServer.from('menu_items').upsert({
+          id: it.id,
+          category_id: it.categoryId,
+          category_name: it.category,
+          name: it.name,
+          subheading: it.subheading || '',
+          desc: it.desc || '',
+          price: it.price,
+          image_url: it.img,
+          is_veg: it.isVeg,
+          is_available: it.isAvailable,
+          sizes: it.sizes,
+          size_price_multiplier: it.sizePriceMultiplier || null,
+          sort_order: it.sortOrder,
+        });
+      }
+
+      addAuditLog({
+        actor: 'admin',
+        action: 'MENU_ITEM_UPDATED',
+        details: `Synchronized ${itemCount} PDF menu dishes and ${catCount} categories with database.`,
+      });
+    } catch (err) {
+      console.warn('Supabase syncMenuToDatabase error:', err);
+    }
+  }
+
+  return { success: true, categoriesCount: catCount, itemsCount: itemCount };
 }
 
 // ──────────────────────────────────────────

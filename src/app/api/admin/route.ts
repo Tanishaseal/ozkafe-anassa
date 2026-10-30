@@ -5,6 +5,7 @@ import {
   resetCafeSettings, 
   getOrders, 
   purgeAllOrdersAndLogs, 
+  syncMenuToDatabase,
   getInventory, 
   restockInventoryItem, 
   updateInventoryItem, 
@@ -107,6 +108,16 @@ export async function POST(request: Request) {
         success: true,
         message: 'Database orders, sales ledger, and audit logs wiped cleanly for live launch.',
         cleared: result,
+      });
+    }
+
+    // Action 1b: Synchronize 76 PDF menu items to database
+    if (action === 'sync_menu' || body.action === 'sync_menu') {
+      const result = await syncMenuToDatabase();
+      return NextResponse.json({
+        success: true,
+        message: 'All 76 PDF menu dishes and categories synchronized with database.',
+        synced: result,
       });
     }
 

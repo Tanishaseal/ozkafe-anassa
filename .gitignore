@@ -49,3 +49,6 @@ next-env.d.ts
 # downloads & local docs
 OZKAFE_Anassa_Order_QR.png
 *.pdf
+
+__pycache__/
+*.pyc

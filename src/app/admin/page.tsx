@@ -532,6 +532,29 @@ export default function AdminPage() {
     }
   };
 
+  // ── SYNC 76 PDF MENU ITEMS TO SUPABASE ──
+  const [isSyncingMenu, setIsSyncingMenu] = useState(false);
+  const handleSyncMenu = async () => {
+    setIsSyncingMenu(true);
+    try {
+      const res = await fetch('/api/admin?action=sync_menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        await fetchAdminData();
+        setSaveSuccessMsg('✓ All 76 PDF menu items & categories synchronized to database!');
+        setTimeout(() => setSaveSuccessMsg(''), 5000);
+      } else {
+        alert('Failed to sync menu items to database');
+      }
+    } catch {
+      alert('Network error while syncing menu to database');
+    } finally {
+      setIsSyncingMenu(false);
+    }
+  };
+
   // ── CSV EXPORT ──
   const handleExportCSV = () => {
     if (orders.length === 0) {
@@ -1612,6 +1635,14 @@ export default function AdminPage() {
                     <button onClick={() => setQuickAddModalType('manual-order')} className="admin-quick-add-btn">
                       + Counter Order
                     </button>
+                    <button
+                      onClick={() => setIsWipeModalOpen(true)}
+                      className="admin-wipe-btn"
+                      style={{ height: 40, fontSize: 13, padding: '0 14px' }}
+                      title="Clear all test orders and sales history to start afresh"
+                    >
+                      🗑 Clear All Data
+                    </button>
                   </div>
                 </div>
 
@@ -1746,9 +1777,19 @@ export default function AdminPage() {
                     </select>
                   </div>
 
-                  <button onClick={() => setQuickAddModalType('item')} className="admin-quick-add-btn">
-                    + Add New Dish
-                  </button>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      onClick={handleSyncMenu}
+                      disabled={isSyncingMenu}
+                      className="admin-btn-gps-calibrate"
+                      title="Sync all 76 PDF dishes and categories to Supabase database"
+                    >
+                      {isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}
+                    </button>
+                    <button onClick={() => setQuickAddModalType('item')} className="admin-quick-add-btn">
+                      + Add New Dish
+                    </button>
+                  </div>
                 </div>
 
                 <div className="admin-table-container">
