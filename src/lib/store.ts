@@ -1,5 +1,5 @@
-import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction } from './types';
-import { initialCategories, initialMenuItems, initialAddons, initialSettings } from './initialData';
+import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction, InventoryItem, StaffShift } from './types';
+import { initialCategories, initialMenuItems, initialAddons, initialSettings, initialInventory, initialStaff } from './initialData';
 import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
 
 // In-memory persistent caches for ultra-fast response and zero-config local testing
@@ -11,6 +11,8 @@ const globalStore = globalThis as unknown as {
   __anassa_tables?: TableSession[];
   __anassa_settings?: CafeSettings;
   __anassa_audit_logs?: AuditLog[];
+  __anassa_inventory?: InventoryItem[];
+  __anassa_staff?: StaffShift[];
   __anassa_subscribers?: Set<(order: Order) => void>;
 };
 
@@ -28,6 +30,12 @@ if (!globalStore.__anassa_orders) {
 }
 if (!globalStore.__anassa_audit_logs) {
   globalStore.__anassa_audit_logs = [];
+}
+if (!globalStore.__anassa_inventory) {
+  globalStore.__anassa_inventory = [...initialInventory];
+}
+if (!globalStore.__anassa_staff) {
+  globalStore.__anassa_staff = [...initialStaff];
 }
 if (!globalStore.__anassa_settings) {
   globalStore.__anassa_settings = { ...initialSettings };
@@ -248,11 +256,14 @@ export async function deleteMenuItem(id: string): Promise<boolean> {
 
   if (globalStore.__anassa_items) {
     const deletedItem = globalStore.__anassa_items.find((i) => i.id === id);
+    if (!deletedItem) {
+      return false;
+    }
     globalStore.__anassa_items = globalStore.__anassa_items.filter((i) => i.id !== id);
     addAuditLog({
       actor: 'admin',
       action: 'MENU_ITEM_DELETED',
-      details: `Deleted dish "${deletedItem ? deletedItem.name : id}"`,
+      details: `Deleted dish "${deletedItem.name}"`,
     });
     return true;
   }
@@ -296,10 +307,15 @@ export async function createOrder(data: {
   customerLng?: number;
   distanceMeters?: number;
 }): Promise<Order> {
-  const shortNum = Math.floor(1000 + Math.random() * 9000);
   const now = Date.now();
+  let shortNum = Math.floor(1000 + Math.random() * 9000);
+  let orderNumber = `#OZ-${shortNum}`;
+  const existingOrders = globalStore.__anassa_orders || [];
+  if (existingOrders.some((o) => o.orderNumber === orderNumber)) {
+    shortNum = Math.floor(10000 + Math.random() * 90000);
+    orderNumber = `#OZ-${shortNum}`;
+  }
   const orderId = `oz-${now}-${shortNum}`;
-  const orderNumber = `#OZ-${shortNum}`;
 
   const newOrder: Order = {
     id: orderId,
@@ -463,8 +479,10 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
     broadcastOrder(order);
     addAuditLog({
       actor: 'kitchen',
-      action: 'ORDER_STATUS_CHANGED',
-      details: `Order #${order.orderNumber} (Table ${order.tableNumber}) status changed to "${status}"`,
+      action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
+      details: status === 'cancelled'
+        ? `Order #${order.orderNumber} (Table ${order.tableNumber}) rejected / cancelled by kitchen staff`
+        : `Order #${order.orderNumber} (Table ${order.tableNumber}) status changed to "${status}"`,
     });
     return order;
   }
@@ -526,14 +544,12 @@ export async function validateTable(tableNumber: number | string, key?: string):
     return { valid: false, isVerified: false, label: `Table ${tableNumber}` };
   }
 
-  if (key && table.secretKey && (table.secretKey === key || key.startsWith('oz-anassa-tbl-'))) {
-    return { valid: true, isVerified: true, label: table.label };
-  }
-
-  return { valid: true, isVerified: Boolean(key && table.secretKey === key), label: table.label };
+  const isKeyMatch = Boolean(key && table.secretKey && table.secretKey === key);
+  return { valid: true, isVerified: isKeyMatch, label: table.label };
 }
 
 export async function ensureTablesCount(numTables: number): Promise<TableSession[]> {
+  const safeCount = Math.min(Math.max(1, Math.floor(numTables) || 12), 100);
   const current = (await getTables(true)) || [];
   const takeaway = current.find((t) => t.tableNumber === 0) || {
     tableNumber: 0,
@@ -543,7 +559,7 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
   };
 
   const updatedTables: TableSession[] = [takeaway];
-  for (let i = 1; i <= numTables; i++) {
+  for (let i = 1; i <= safeCount; i++) {
     const existing = current.find((t) => t.tableNumber === i);
     if (existing) {
       updatedTables.push(existing);
@@ -751,4 +767,108 @@ export async function getAuditLogs(options?: {
   }
   return logs.slice(0, limit);
 }
+
+// ──────────────────────────────────────────
+// DATABASE PURGE (PRODUCTION LIVE LAUNCH)
+// ──────────────────────────────────────────
+export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; ordersCleared: number; logsCleared: number }> {
+  const ordersCount = globalStore.__anassa_orders?.length || 0;
+  const logsCount = globalStore.__anassa_audit_logs?.length || 0;
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer.from('orders').delete().neq('id', '');
+      await supabaseServer.from('audit_logs').delete().neq('id', '');
+    } catch (err) {
+      console.warn('Supabase purgeAllOrdersAndLogs error:', err);
+    }
+  }
+
+  globalStore.__anassa_orders = [];
+  globalStore.__anassa_audit_logs = [];
+
+  // Log clean start audit entry
+  addAuditLog({
+    actor: 'admin',
+    action: 'SETTINGS_RESET',
+    details: 'Database orders and sales ledger cleared cleanly for fresh live production launch',
+  });
+
+  return { success: true, ordersCleared: ordersCount, logsCleared: logsCount };
+}
+
+// ──────────────────────────────────────────
+// INVENTORY MANAGEMENT
+// ──────────────────────────────────────────
+export async function getInventory(): Promise<InventoryItem[]> {
+  return globalStore.__anassa_inventory || initialInventory;
+}
+
+export async function restockInventoryItem(id: string, amount: number): Promise<InventoryItem | null> {
+  const items = globalStore.__anassa_inventory || [];
+  const item = items.find((i) => i.id === id);
+  if (!item) return null;
+
+  item.currentStock = Math.max(0, Number((item.currentStock + amount).toFixed(2)));
+  item.lastRestocked = Date.now();
+  item.status = item.currentStock <= 0 
+    ? 'out_of_stock' 
+    : item.currentStock <= item.minThreshold 
+      ? 'low_stock' 
+      : 'in_stock';
+
+  addAuditLog({
+    actor: 'admin',
+    action: 'STOCK_TOGGLED',
+    details: `Restocked ${item.name}: +${amount} ${item.unit} (Current: ${item.currentStock} ${item.unit})`,
+  });
+
+  return item;
+}
+
+export async function updateInventoryItem(id: string, updates: Partial<InventoryItem>): Promise<InventoryItem | null> {
+  const items = globalStore.__anassa_inventory || [];
+  const index = items.findIndex((i) => i.id === id);
+  if (index === -1) return null;
+
+  const current = items[index];
+  const updated: InventoryItem = {
+    ...current,
+    ...updates,
+  };
+
+  if (updated.currentStock <= 0) {
+    updated.status = 'out_of_stock';
+  } else if (updated.currentStock <= updated.minThreshold) {
+    updated.status = 'low_stock';
+  } else {
+    updated.status = 'in_stock';
+  }
+
+  items[index] = updated;
+  return updated;
+}
+
+// ──────────────────────────────────────────
+// STAFF SCHEDULE & SHIFTS
+// ──────────────────────────────────────────
+export async function getStaffSchedule(): Promise<StaffShift[]> {
+  return globalStore.__anassa_staff || initialStaff;
+}
+
+export async function updateStaffStatus(id: string, status: 'on_duty' | 'break' | 'off_duty'): Promise<StaffShift | null> {
+  const roster = globalStore.__anassa_staff || [];
+  const staff = roster.find((s) => s.id === id);
+  if (!staff) return null;
+
+  staff.status = status;
+  addAuditLog({
+    actor: 'admin',
+    action: 'SETTINGS_UPDATED',
+    details: `Staff status updated: ${staff.name} is now ${status.replace('_', ' ').toUpperCase()} (${staff.station})`,
+  });
+
+  return staff;
+}
+
 

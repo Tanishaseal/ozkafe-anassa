@@ -45,15 +45,16 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { name, category, categoryId, price, desc, subheading, img, isVeg, sizes } = body;
 
-    if (!name || !price || !categoryId) {
-      return NextResponse.json({ error: 'Name, Price and Category are required' }, { status: 400 });
+    const numPrice = Number(price);
+    if (!name || !String(name).trim() || !categoryId || isNaN(numPrice) || numPrice < 0) {
+      return NextResponse.json({ error: 'Valid Name, non-negative Price and Category are required' }, { status: 400 });
     }
 
     const created = await addMenuItem({
-      name,
+      name: String(name).trim(),
       category: category || 'Hot Coffee',
       categoryId,
-      price: Number(price),
+      price: numPrice,
       desc: desc || '',
       subheading: subheading || '',
       img: img || '/images/americano.png',
@@ -83,12 +84,23 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
     }
 
+    if (updates.price !== undefined) {
+      const p = Number(updates.price);
+      if (isNaN(p) || p < 0) {
+        return NextResponse.json({ error: 'Price must be a valid non-negative number' }, { status: 400 });
+      }
+      updates.price = p;
+    }
+
     if (typeof isAvailable === 'boolean' && Object.keys(updates).length === 0) {
       const ok = await toggleItemAvailability(id, isAvailable);
       return NextResponse.json({ success: ok, isAvailable });
     }
 
     const updated = await updateMenuItem(id, updates);
+    if (!updated) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+    }
     return NextResponse.json({ success: true, item: updated });
   } catch (error) {
     console.error('API PATCH /api/menu error:', error);
@@ -111,7 +123,10 @@ export async function DELETE(request: Request) {
     }
 
     const ok = await deleteMenuItem(id);
-    return NextResponse.json({ success: ok });
+    if (!ok) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, message: 'Item deleted' });
   } catch (error) {
     console.error('API DELETE /api/menu error:', error);
     return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 });

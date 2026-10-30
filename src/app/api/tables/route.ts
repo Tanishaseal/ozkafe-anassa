@@ -12,21 +12,21 @@ export async function GET(request: Request) {
     if (tableNumber) {
       const result = await validateTable(tableNumber, key);
       
-      // If table is valid and verified, issue a cryptographically signed Table Session Token
-      let sessionToken = '';
-      const response = NextResponse.json({
-        ...result,
-        tableNumber,
-      });
-
       if (result.valid) {
         const exp = Date.now() + 1000 * 60 * 60 * 12; // 12-hour dining session
         const sessionId = `sess_${tableNumber}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        sessionToken = signToken({
+        const sessionToken = signToken({
           role: 'table',
           tableNumber,
           sessionId,
           exp,
+        });
+
+        const response = NextResponse.json({
+          ...result,
+          tableNumber,
+          sessionToken,
+          sessionId,
         });
 
         // Set table session cookie
@@ -38,17 +38,13 @@ export async function GET(request: Request) {
           path: '/',
         });
 
-        return NextResponse.json({
-          ...result,
-          tableNumber,
-          sessionToken,
-          sessionId,
-        }, {
-          headers: response.headers,
-        });
+        return response;
       }
 
-      return response;
+      return NextResponse.json({
+        ...result,
+        tableNumber,
+      });
     }
 
     // List tables
@@ -69,7 +65,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const count = parseInt(body.numTables) || 12;
+    const rawCount = parseInt(body?.numTables);
+    const count = isNaN(rawCount) ? 12 : Math.min(Math.max(1, rawCount), 100);
 
     const tables = await ensureTablesCount(count);
     return NextResponse.json({ success: true, tables });

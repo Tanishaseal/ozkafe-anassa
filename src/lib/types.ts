@@ -131,6 +131,29 @@ export interface CafeSettings {
   allowOrderCancellation?: boolean; // Kitchen reject button enabled (default true)
 }
 
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: 'Dairy & Milks' | 'Coffee Beans' | 'Syrups & Flavors' | 'Bakery' | 'Packaging';
+  currentStock: number;
+  unit: string;
+  minThreshold: number;
+  costPerUnit?: number;
+  status: 'in_stock' | 'low_stock' | 'out_of_stock';
+  lastRestocked: number;
+}
+
+export interface StaffShift {
+  id: string;
+  name: string;
+  role: 'Head Barista' | 'Barista' | 'Pastry Chef' | 'Floor Lead' | 'Cashier';
+  shift: 'Morning (07:30 - 15:30)' | 'Evening (14:30 - 22:30)' | 'All Day (10:00 - 19:00)';
+  status: 'on_duty' | 'break' | 'off_duty';
+  phone: string;
+  station: 'Espresso Bar' | 'Brew Bar & Teas' | 'Pastry & Kitchen' | 'Floor & POS';
+  avatarColor: string;
+}
+
 export type AuditAction = 
   | 'AUTH_ADMIN_SUCCESS'
   | 'AUTH_ADMIN_FAILED'

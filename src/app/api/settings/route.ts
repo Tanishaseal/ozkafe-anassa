@@ -54,6 +54,26 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid settings body' }, { status: 400 });
+    }
+    if (body.adminPin !== undefined && !String(body.adminPin).trim()) {
+      return NextResponse.json({ error: 'Master Admin PIN cannot be empty' }, { status: 400 });
+    }
+    if (body.gstPercent !== undefined) {
+      const gst = Number(body.gstPercent);
+      if (isNaN(gst) || gst < 0 || gst > 100) {
+        return NextResponse.json({ error: 'GST percent must be between 0 and 100' }, { status: 400 });
+      }
+      body.gstPercent = gst;
+    }
+    if (body.geofenceRadiusMeters !== undefined) {
+      const rad = Number(body.geofenceRadiusMeters);
+      if (isNaN(rad) || rad < 10 || rad > 10000) {
+        return NextResponse.json({ error: 'Geofence radius must be between 10 and 10000 meters' }, { status: 400 });
+      }
+      body.geofenceRadiusMeters = rad;
+    }
     const updated = await updateCafeSettings(body);
     return NextResponse.json({ success: true, settings: updated });
   } catch (error) {

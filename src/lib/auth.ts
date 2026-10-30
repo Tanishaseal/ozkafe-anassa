@@ -38,10 +38,9 @@ export function verifyToken(token: string): TokenPayload | null {
 
   // Timing-safe comparison to prevent timing attacks
   try {
-    const isSignatureValid = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expectedSignature);
+    const isSignatureValid = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
 
     if (!isSignatureValid) return null;
 
@@ -92,10 +91,9 @@ export function verifyTableQRToken(tableNumber: number | string, secretKey: stri
       .update(data)
       .digest('base64url');
 
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(sig),
-      Buffer.from(expectedSig)
-    );
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expectedSig);
+    const isValid = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
 
     if (!isValid) return false;
 
@@ -115,7 +113,7 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     const payload = verifyToken(token);
-    if (payload && allowedRoles.includes(payload.role as 'admin' | 'kitchen')) {
+    if (payload && (payload.role === 'admin' || allowedRoles.includes(payload.role as 'admin' | 'kitchen'))) {
       return true;
     }
   }

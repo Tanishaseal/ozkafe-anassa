@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createOrder, getOrders, getOrderById, updateOrderStatus, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog } from '@/lib/store';
+import { createOrder, getOrders, getOrderById, updateOrderStatus, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
 import { OrderStatus } from '@/lib/types';
 import { verifyAuthHeaderOrCookie, getTableSessionFromRequest } from '@/lib/auth';
 
@@ -65,6 +65,11 @@ export async function GET(request: Request) {
       // If not staff, enforce session filter so user only sees their own session's orders
       const filterSession = !isStaff ? (sessionId || tableSession?.sessionId) : undefined;
 
+      // Prevent data leakage: unauthenticated guest without a session cannot see any table orders
+      if (!isStaff && !filterSession) {
+        return NextResponse.json([]);
+      }
+
       const tableOrders = await getOrders({
         tableNumber: table,
         sessionId: filterSession,
@@ -101,9 +106,6 @@ export async function POST(request: Request) {
       customerLat,
       customerLng,
       items,
-      subtotal,
-      taxAmount,
-      total,
       specialInstructions,
     } = body;
 
@@ -126,8 +128,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Customer Name is required' }, { status: 400 });
     }
 
+    let cleanPhone = (customerPhone || '').replace(/\D/g, '');
+    if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.slice(2);
+    }
+    if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+      cleanPhone = cleanPhone.slice(1);
+    }
+
     if (settings.requireCustomerPhone !== false) {
-      const cleanPhone = (customerPhone || '').replace(/\D/g, '');
       if (cleanPhone.length !== 10) {
         return NextResponse.json({ error: 'A valid 10-digit mobile number is required' }, { status: 400 });
       }
@@ -144,16 +153,77 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // 3. Minimum Order Subtotal Check
-    if (settings.minOrderAmount && settings.minOrderAmount > 0 && Number(subtotal) < settings.minOrderAmount) {
+    // 3. Server-side Menu Validation & Anti-Tampering Price Calculation
+    const [menuItems, availableAddons] = await Promise.all([
+      getMenuItems(),
+      getAddons(),
+    ]);
+
+    const validatedItems: { id: string; name: string; price: number; quantity: number; selectedSize?: string; category?: string; isAddon?: boolean }[] = [];
+    let serverSubtotal = 0;
+
+    for (const it of items) {
+      if (!it || typeof it !== 'object' || !it.id) {
+        return NextResponse.json({ error: 'Invalid item data in order' }, { status: 400 });
+      }
+      const rawQty = Number(it.quantity);
+      if (!Number.isInteger(rawQty) || rawQty < 1 || rawQty > 50) {
+        return NextResponse.json({ error: `Invalid quantity for item "${it.name || it.id}"` }, { status: 400 });
+      }
+
+      const regularItem = menuItems.find((m) => m.id === it.id);
+      const addonItem = !regularItem ? availableAddons.find((a) => a.id === it.id || `addon_${a.id}` === it.id) : null;
+
+      if (!regularItem && !addonItem) {
+        return NextResponse.json({ error: `Dish "${it.name || it.id}" is not on our current menu` }, { status: 400 });
+      }
+
+      if (regularItem) {
+        if (!regularItem.isAvailable) {
+          return NextResponse.json({
+            error: `"${regularItem.name}" is currently sold out and cannot be ordered.`,
+            code: 'ITEM_SOLD_OUT',
+          }, { status: 400 });
+        }
+        const unitPrice = Number(regularItem.price);
+        serverSubtotal += unitPrice * rawQty;
+        validatedItems.push({
+          id: regularItem.id,
+          name: regularItem.name,
+          price: unitPrice,
+          quantity: rawQty,
+          selectedSize: it.selectedSize || 'Regular',
+          category: regularItem.category,
+          isAddon: false,
+        });
+      } else if (addonItem) {
+        const unitPrice = Number(addonItem.price);
+        serverSubtotal += unitPrice * rawQty;
+        validatedItems.push({
+          id: addonItem.id,
+          name: addonItem.name,
+          price: unitPrice,
+          quantity: rawQty,
+          category: 'Add-on',
+          isAddon: true,
+        });
+      }
+    }
+
+    const gstRate = (settings.gstPercent ?? 5) / 100;
+    const serverTax = Number((serverSubtotal * gstRate).toFixed(2));
+    const serverTotal = Number((serverSubtotal + serverTax).toFixed(2));
+
+    // 4. Minimum Order Subtotal Check
+    if (settings.minOrderAmount && settings.minOrderAmount > 0 && serverSubtotal < settings.minOrderAmount) {
       return NextResponse.json({
-        error: `Minimum order amount is ₹${settings.minOrderAmount}. Current subtotal is ₹${subtotal}.`,
+        error: `Minimum order amount is ₹${settings.minOrderAmount}. Current subtotal is ₹${serverSubtotal}.`,
         code: 'MIN_ORDER_AMOUNT_NOT_MET',
       }, { status: 400 });
     }
 
-    // 4. Maximum Items Limit Check
-    const totalItemsCount = items.reduce((sum: number, it: { quantity?: number }) => sum + (Number(it.quantity) || 1), 0);
+    // 5. Maximum Items Limit Check
+    const totalItemsCount = validatedItems.reduce((sum, it) => sum + it.quantity, 0);
     if (settings.maxItemsPerOrder && totalItemsCount > settings.maxItemsPerOrder) {
       return NextResponse.json({
         error: `Maximum items per order is ${settings.maxItemsPerOrder}. You have ${totalItemsCount} items.`,
@@ -235,20 +305,36 @@ export async function POST(request: Request) {
     // Generate or preserve session ID
     const effectiveSessionId = sessionId || `sess_${targetTable}_${Date.now()}`;
 
+    // Spam prevention cooldown check
+    const cooldownSec = settings.orderCooldownSeconds ?? 10;
+    if (cooldownSec > 0) {
+      const recentOrders = await getOrders({ sessionId: effectiveSessionId, limit: 1 });
+      if (recentOrders.length > 0) {
+        const elapsedSec = (Date.now() - recentOrders[0].createdAt) / 1000;
+        if (elapsedSec < cooldownSec) {
+          const waitTime = Math.ceil(cooldownSec - elapsedSec);
+          return NextResponse.json({
+            error: `Please wait ${waitTime} second${waitTime > 1 ? 's' : ''} before placing another order.`,
+            code: 'ORDER_COOLDOWN',
+          }, { status: 429 });
+        }
+      }
+    }
+
     const order = await createOrder({
       tableNumber: targetTable,
       tableKey,
       sessionId: effectiveSessionId,
       customerName,
-      customerPhone,
+      customerPhone: cleanPhone,
       customerFlat,
       customerLat,
       customerLng,
       distanceMeters,
-      items,
-      subtotal: Number(subtotal) || Number(total),
-      taxAmount: Number(taxAmount) || 0,
-      total: Number(total),
+      items: validatedItems,
+      subtotal: serverSubtotal,
+      taxAmount: serverTax,
+      total: serverTotal,
       specialInstructions: specialInstructions || '',
     });
 
@@ -286,16 +372,6 @@ export async function PATCH(request: Request) {
     const updated = await updateOrderStatus(id, status as OrderStatus);
     if (!updated) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-    }
-
-    if (status === 'cancelled') {
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || '127.0.0.1';
-      await addAuditLog({
-        actor: 'kitchen',
-        action: 'ORDER_REJECTED',
-        details: `Order #${updated.orderNumber} rejected / cancelled by kitchen staff`,
-        ipAddress: ip,
-      });
     }
 
     return NextResponse.json({ success: true, order: updated });

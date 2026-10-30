@@ -45,3 +45,7 @@ test_screenshots_responsive/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# downloads & local docs
+OZKAFE_Anassa_Order_QR.png
+*.pdf

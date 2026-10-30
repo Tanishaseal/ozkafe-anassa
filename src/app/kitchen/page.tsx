@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { Order, OrderStatus } from '@/lib/types';
 
@@ -113,7 +113,7 @@ export default function KitchenDashboard() {
   }, []);
 
   // Fetch active orders
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       const res = await fetch(`/api/orders?status=active&_t=${Date.now()}`);
       if (res.status === 401) {
@@ -143,7 +143,7 @@ export default function KitchenDashboard() {
     } catch (err) {
       console.warn('KDS fetch error:', err);
     }
-  };
+  }, [soundEnabled]);
 
   // Sound chime
   const playChime = () => {
@@ -189,7 +189,7 @@ export default function KitchenDashboard() {
       clearInterval(interval);
       if (eventSource) eventSource.close();
     };
-  }, [isAuthenticated, soundEnabled]);
+  }, [isAuthenticated, fetchOrders]);
 
   // Advance Order Status
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
@@ -199,8 +199,16 @@ export default function KitchenDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: orderId, status: nextStatus }),
       });
+      if (res.status === 401) {
+        setIsAuthenticated(false);
+        alert('Session expired. Please re-enter Kitchen Staff PIN.');
+        return;
+      }
       if (res.ok) {
         fetchOrders();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Failed to update order status');
       }
     } catch {
       alert('Failed to update order status');
