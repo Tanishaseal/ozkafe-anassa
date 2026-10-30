@@ -800,6 +800,7 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
   globalStore.__anassa_orders = [];
   globalStore.__anassa_audit_logs = [];
   globalStore.__anassa_inventory = [...initialInventory];
+  globalStore.__anassa_staff = [...initialStaff];
 
   // Log clean start audit entry
   addAuditLog({
@@ -926,7 +927,10 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
 // STAFF SCHEDULE & SHIFTS
 // ──────────────────────────────────────────
 export async function getStaffSchedule(): Promise<StaffShift[]> {
-  return globalStore.__anassa_staff || initialStaff;
+  if (!globalStore.__anassa_staff || globalStore.__anassa_staff.some((s) => s.name === 'Rahul Sharma' || s.name === 'Vikram Ghosh')) {
+    globalStore.__anassa_staff = [...initialStaff];
+  }
+  return globalStore.__anassa_staff;
 }
 
 export async function updateStaffStatus(id: string, status: 'on_duty' | 'break' | 'off_duty'): Promise<StaffShift | null> {

@@ -146,11 +146,11 @@ export interface InventoryItem {
 export interface StaffShift {
   id: string;
   name: string;
-  role: 'Head Barista' | 'Barista' | 'Pastry Chef' | 'Floor Lead' | 'Cashier';
-  shift: 'Morning (07:30 - 15:30)' | 'Evening (14:30 - 22:30)' | 'All Day (10:00 - 19:00)';
+  role: 'Head Barista' | 'Barista' | 'Pastry Chef' | 'Floor Lead' | 'Cashier' | 'Cafe Lead' | 'Operations Lead' | string;
+  shift: 'Morning (07:30 - 15:30)' | 'Evening (14:30 - 22:30)' | 'All Day (10:00 - 19:00)' | string;
   status: 'on_duty' | 'break' | 'off_duty';
   phone: string;
-  station: 'Espresso Bar' | 'Brew Bar & Teas' | 'Pastry & Kitchen' | 'Floor & POS';
+  station: 'Espresso Bar' | 'Brew Bar & Teas' | 'Pastry & Kitchen' | 'Floor & POS' | string;
   avatarColor: string;
 }
 
