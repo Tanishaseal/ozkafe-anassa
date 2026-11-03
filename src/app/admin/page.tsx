@@ -1603,46 +1603,61 @@ export default function AdminPage() {
                   </div>
 
                   <div className="admin-table-actions">
-                    <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
-                      📥 Export CSV
-                    </button>
-                    <button onClick={() => setQuickAddModalType('manual-order')} className="admin-btn-primary">
-                      + Counter Order
-                    </button>
                     <button
-                      onClick={() => setIsWipeModalOpen(true)}
-                      className="admin-wipe-btn"
-                      style={{ height: 40, fontSize: 13, padding: '0 14px' }}
-                      title="Clear all test orders and sales history to start afresh"
+                      onClick={() => setQuickAddModalType('manual-order')}
+                      className="admin-btn-primary admin-btn-prominent"
+                      title="Create a manual counter order for walk-in guest"
                     >
-                      🗑 Clear All Data
+                      + Counter Order (Walk-in)
                     </button>
+                    <div className="admin-table-actions-row">
+                      <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
+                        📥 Export CSV
+                      </button>
+                      <button
+                        onClick={() => setIsWipeModalOpen(true)}
+                        className="admin-wipe-btn"
+                        style={{ height: 40, fontSize: 13, padding: '0 12px', justifyContent: 'center' }}
+                        title="Clear all test orders and sales history to start afresh"
+                      >
+                        🗑 Clear All Data
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="admin-table-container">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Order #</th>
-                        <th>Time</th>
-                        <th>Table</th>
-                        <th>Customer</th>
-                        <th>Items Summary</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredOrders.length === 0 ? (
+                {filteredOrders.length === 0 ? (
+                  <div className="admin-empty-card">
+                    <div className="admin-empty-icon">📋</div>
+                    <h3 className="admin-empty-title">No Orders in Live Feed</h3>
+                    <p className="admin-empty-desc">
+                      Customer dining and takeaway orders will appear here automatically in real time as guests place them.
+                    </p>
+                    <button
+                      onClick={() => setQuickAddModalType('manual-order')}
+                      className="admin-btn-primary"
+                      style={{ padding: '0 24px', height: 42, fontSize: 13.5 }}
+                    >
+                      + Place Walk-in Counter Order
+                    </button>
+                  </div>
+                ) : (
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
                         <tr>
-                          <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--adm-text-muted)' }}>
-                            No orders match current filter.
-                          </td>
+                          <th>Order #</th>
+                          <th>Time</th>
+                          <th>Table</th>
+                          <th>Customer</th>
+                          <th>Items Summary</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                          <th>Actions</th>
                         </tr>
-                      ) : (
-                        filteredOrders.map((ord) => (
+                      </thead>
+                      <tbody>
+                        {filteredOrders.map((ord) => (
                           <tr key={ord.id}>
                             <td><strong>{ord.orderNumber}</strong></td>
                             <td style={{ fontSize: 12 }}>{new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
@@ -1711,11 +1726,11 @@ export default function AdminPage() {
                               </div>
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1750,101 +1765,113 @@ export default function AdminPage() {
                   </div>
 
                   <div className="admin-table-actions">
-                    <button
-                      onClick={handleSyncMenu}
-                      disabled={isSyncingMenu}
-                      className="admin-btn-gps-calibrate"
-                      title="Sync all 76 PDF dishes and categories to Supabase database"
-                    >
-                      {isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}
-                    </button>
-                    <button onClick={() => setQuickAddModalType('item')} className="admin-btn-primary">
+                    <button onClick={() => setQuickAddModalType('item')} className="admin-btn-primary admin-btn-prominent">
                       + Add New Dish
                     </button>
+                    <div className="admin-table-actions-row">
+                      <button
+                        onClick={handleSyncMenu}
+                        disabled={isSyncingMenu}
+                        className="admin-btn-gps-calibrate"
+                        title="Sync all 76 PDF dishes and categories to Supabase database"
+                      >
+                        {isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="admin-table-container">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Dish / Drink</th>
-                        <th>Category</th>
-                        <th>Price</th>
-                        <th>Availability (Live Stock)</th>
-                        <th>Sizes</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMenuItems.map((item) => (
-                        <tr key={item.id}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              <Image
-                                src={item.img || '/images/americano.png'}
-                                alt={item.name}
-                                width={44}
-                                height={44}
-                                style={{ borderRadius: 10, objectFit: 'cover' }}
-                              />
-                              <div>
-                                <div style={{ fontWeight: 700, color: 'var(--adm-text-main)' }}>{item.name}</div>
-                                <div style={{ fontSize: 11, color: 'var(--adm-text-muted)' }}>{item.subheading || item.desc}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--adm-text-secondary)' }}>
-                              {item.category}
-                            </span>
-                          </td>
-                          <td><strong>₹{item.price}</strong></td>
-                          <td>
-                            <label className="admin-switch">
-                              <input
-                                type="checkbox"
-                                checked={item.isAvailable}
-                                onChange={() => handleToggleStock(item.id, item.isAvailable)}
-                              />
-                              <span className="admin-slider"></span>
-                            </label>
-                            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: item.isAvailable ? 'var(--adm-matcha)' : 'var(--adm-terracotta)' }}>
-                              {item.isAvailable ? 'IN STOCK' : '86ed (OUT)'}
-                            </span>
-                          </td>
-                          <td style={{ fontSize: 12 }}>{item.sizes.join(', ')}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <button
-                                onClick={() => setEditingItem(item)}
-                                className="admin-alert-action-btn"
-                                style={{ padding: '6px 12px' }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid #FCA5A5',
-                                  color: '#DC2626',
-                                  borderRadius: 8,
-                                  padding: '6px 10px',
-                                  cursor: 'pointer',
-                                  fontWeight: 600,
-                                  fontSize: 12,
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
+                {filteredMenuItems.length === 0 ? (
+                  <div className="admin-empty-card">
+                    <div className="admin-empty-icon">🔍</div>
+                    <h3 className="admin-empty-title">No Dishes Match Your Search</h3>
+                    <p className="admin-empty-desc">
+                      Try clearing the search query or selecting another category to view dishes.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Dish / Drink</th>
+                          <th>Category</th>
+                          <th>Price</th>
+                          <th>Availability (Live Stock)</th>
+                          <th>Sizes</th>
+                          <th>Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {filteredMenuItems.map((item) => (
+                          <tr key={item.id}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <Image
+                                  src={item.img || '/images/americano.png'}
+                                  alt={item.name}
+                                  width={44}
+                                  height={44}
+                                  style={{ borderRadius: 10, objectFit: 'cover' }}
+                                />
+                                <div>
+                                  <div style={{ fontWeight: 700, color: 'var(--adm-text-main)' }}>{item.name}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--adm-text-muted)' }}>{item.subheading || item.desc}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--adm-text-secondary)' }}>
+                                {item.category}
+                              </span>
+                            </td>
+                            <td><strong>₹{item.price}</strong></td>
+                            <td>
+                              <label className="admin-switch">
+                                <input
+                                  type="checkbox"
+                                  checked={item.isAvailable}
+                                  onChange={() => handleToggleStock(item.id, item.isAvailable)}
+                                />
+                                <span className="admin-slider"></span>
+                              </label>
+                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: item.isAvailable ? 'var(--adm-matcha)' : 'var(--adm-terracotta)' }}>
+                                {item.isAvailable ? 'IN STOCK' : '86ed (OUT)'}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 12 }}>{item.sizes.join(', ')}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                  onClick={() => setEditingItem(item)}
+                                  className="admin-alert-action-btn"
+                                  style={{ padding: '6px 12px' }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteItem(item.id)}
+                                  style={{
+                                    background: 'none',
+                                    border: '1px solid #FCA5A5',
+                                    color: '#DC2626',
+                                    borderRadius: 8,
+                                    padding: '6px 10px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}

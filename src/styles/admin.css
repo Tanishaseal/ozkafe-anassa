@@ -1117,6 +1117,48 @@
   flex-wrap: wrap;
 }
 
+.admin-table-actions-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-btn-prominent {
+  height: 40px;
+  font-size: 13.5px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(92, 56, 30, 0.28);
+}
+
+/* Empty State Card (Friendly & Intuitive for Non-Technical Staff) */
+.admin-empty-card {
+  text-align: center;
+  padding: 44px 20px;
+  background: var(--adm-surface-elevated);
+  border-radius: 16px;
+  border: 1px dashed var(--adm-border);
+  margin: 12px 0 20px;
+}
+
+.admin-empty-icon {
+  font-size: 38px;
+  margin-bottom: 10px;
+}
+
+.admin-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: var(--adm-text-main);
+}
+
+.admin-empty-desc {
+  font-size: 12.5px;
+  color: var(--adm-text-muted);
+  margin: 0 auto 16px;
+  max-width: 380px;
+  line-height: 1.45;
+}
+
 .admin-table th {
   background: var(--adm-surface-dim);
   color: var(--adm-text-muted);
@@ -1983,15 +2025,37 @@ input:checked + .admin-slider:before {
   }
 
   .admin-table-actions {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     gap: 8px;
   }
 
-  .admin-table-actions button {
-    flex: 1;
+  .admin-table-actions > button,
+  .admin-table-actions > .admin-btn-primary,
+  .admin-table-actions > .admin-btn-prominent {
+    width: 100%;
+    height: 44px;
+    font-size: 13.5px;
     justify-content: center;
-    height: 38px;
-    font-size: 12px;
+  }
+
+  .admin-table-actions-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .admin-table-actions-row button {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    font-size: 12.5px;
+    padding: 0 10px;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Forms & Grids on Phone */
