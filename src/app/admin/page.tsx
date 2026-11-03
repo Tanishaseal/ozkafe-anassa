@@ -1010,15 +1010,15 @@ export default function AdminPage() {
 
             <div className="admin-header-title-block">
               <h1 className="admin-header-title">
-                {activeTab === 'dashboard' && 'Dashboard Overview'}
-                {activeTab === 'live-orders' && 'Live Orders Feed & KDS'}
-                {activeTab === 'menu' && 'Menu & Stock Control'}
-                {activeTab === 'inventory' && 'Inventory & Ingredients'}
-                {activeTab === 'staff' && 'Floor & Kitchen Staff'}
-                {activeTab === 'analytics' && 'Financial Records & Analytics'}
-                {activeTab === 'settings' && 'Store Configuration & Geofence'}
-                {activeTab === 'tables' && 'Table Sessions & QR Keys'}
-                {activeTab === 'logs' && 'Security Audit Trail'}
+                {activeTab === 'dashboard' && <><span className="title-full">Dashboard Overview</span><span className="title-short">Dashboard</span></>}
+                {activeTab === 'live-orders' && <><span className="title-full">Live Orders Feed & KDS</span><span className="title-short">Live Orders</span></>}
+                {activeTab === 'menu' && <><span className="title-full">Menu & Stock Control</span><span className="title-short">Menu</span></>}
+                {activeTab === 'inventory' && <><span className="title-full">Inventory & Ingredients</span><span className="title-short">Inventory</span></>}
+                {activeTab === 'staff' && <><span className="title-full">Floor & Kitchen Staff</span><span className="title-short">Staff</span></>}
+                {activeTab === 'analytics' && <><span className="title-full">Financial Records & Analytics</span><span className="title-short">Analytics</span></>}
+                {activeTab === 'settings' && <><span className="title-full">Store Configuration & Geofence</span><span className="title-short">Settings</span></>}
+                {activeTab === 'tables' && <><span className="title-full">Table Sessions & QR Keys</span><span className="title-short">Tables</span></>}
+                {activeTab === 'logs' && <><span className="title-full">Security Audit Trail</span><span className="title-short">Audit Logs</span></>}
               </h1>
               <span className="admin-header-breadcrumb">
                 OZKAFE Floor Console · Anassa EM Bypass
@@ -1084,60 +1084,50 @@ export default function AdminPage() {
                 {activeAlerts.length > 0 && <span className="admin-notification-pulse" />}
               </button>
 
-              {/* Notification Popover */}
+              {/* Notification Popover (Fixed on mobile to prevent clipping) */}
               {isNotificationsOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 48,
-                    right: 0,
-                    width: 320,
-                    background: 'var(--adm-card-bg)',
-                    border: '1px solid var(--adm-border)',
-                    borderRadius: 14,
-                    boxShadow: 'var(--adm-shadow-lg)',
-                    padding: 14,
-                    zIndex: 200,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <strong style={{ fontSize: 13, color: 'var(--adm-text-main)' }}>Floor Alerts ({activeAlerts.length})</strong>
-                    <button onClick={() => setIsNotificationsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--adm-text-muted)' }}>✕</button>
+                <>
+                  <div className="admin-popover-backdrop" onClick={() => setIsNotificationsOpen(false)} />
+                  <div className="admin-notification-popover">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <strong style={{ fontSize: 13, color: 'var(--adm-text-main)' }}>Floor Alerts ({activeAlerts.length})</strong>
+                      <button onClick={() => setIsNotificationsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--adm-text-muted)' }}>✕</button>
+                    </div>
+                    {activeAlerts.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--adm-text-muted)', padding: '12px 0', textAlign: 'center' }}>
+                        All systems operating smoothly. No urgent alerts.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto' }}>
+                        {activeAlerts.map((alt) => (
+                          <div key={alt.id} style={{ fontSize: 12, padding: 8, borderRadius: 8, background: 'var(--adm-surface-dim)' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--adm-text-main)', marginBottom: 4 }}>{alt.title}</div>
+                            {alt.actionLabel && (
+                              <button
+                                onClick={() => {
+                                  setIsNotificationsOpen(false);
+                                  alt.onAction?.();
+                                }}
+                                style={{
+                                  padding: '4px 10px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  borderRadius: 6,
+                                  background: 'var(--adm-coffee)',
+                                  color: '#fff',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {alt.actionLabel}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {activeAlerts.length === 0 ? (
-                    <div style={{ fontSize: 12, color: 'var(--adm-text-muted)', padding: '12px 0', textAlign: 'center' }}>
-                      All systems operating smoothly. No urgent alerts.
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto' }}>
-                      {activeAlerts.map((alt) => (
-                        <div key={alt.id} style={{ fontSize: 12, padding: 8, borderRadius: 8, background: 'var(--adm-surface-dim)' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--adm-text-main)', marginBottom: 4 }}>{alt.title}</div>
-                          {alt.actionLabel && (
-                            <button
-                              onClick={() => {
-                                setIsNotificationsOpen(false);
-                                alt.onAction?.();
-                              }}
-                              style={{
-                                padding: '3px 8px',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                borderRadius: 6,
-                                background: 'var(--adm-coffee)',
-                                color: '#fff',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {alt.actionLabel}
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                </>
               )}
             </div>
 
@@ -1152,61 +1142,47 @@ export default function AdminPage() {
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>Quick Add</span>
+                <span className="quick-add-text">Quick Add</span>
               </button>
 
               {isQuickAddOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 48,
-                    right: 0,
-                    width: 220,
-                    background: 'var(--adm-card-bg)',
-                    border: '1px solid var(--adm-border)',
-                    borderRadius: 12,
-                    boxShadow: 'var(--adm-shadow-lg)',
-                    padding: 6,
-                    zIndex: 200,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                  }}
-                >
-                  <button
-                    onClick={() => {
-                      setIsQuickAddOpen(false);
-                      setQuickAddModalType('item');
-                    }}
-                    className="admin-nav-item"
-                    style={{ padding: '8px 12px', fontSize: 12.5 }}
-                  >
-                    + New Menu Dish
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsQuickAddOpen(false);
-                      setQuickAddModalType('manual-order');
-                    }}
-                    className="admin-nav-item"
-                    style={{ padding: '8px 12px', fontSize: 12.5 }}
-                  >
-                    + Manual Counter Order
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsQuickAddOpen(false);
-                      setQuickAddModalType('restock');
-                    }}
-                    className="admin-nav-item"
-                    style={{ padding: '8px 12px', fontSize: 12.5 }}
-                  >
-                    + Restock Ingredient
-                  </button>
-                </div>
+                <>
+                  <div className="admin-popover-backdrop" onClick={() => setIsQuickAddOpen(false)} />
+                  <div className="admin-quickadd-popover">
+                    <button
+                      onClick={() => {
+                        setIsQuickAddOpen(false);
+                        setQuickAddModalType('item');
+                      }}
+                      className="admin-nav-item"
+                      style={{ padding: '8px 12px', fontSize: 12.5 }}
+                    >
+                      + New Menu Dish
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsQuickAddOpen(false);
+                        setQuickAddModalType('manual-order');
+                      }}
+                      className="admin-nav-item"
+                      style={{ padding: '8px 12px', fontSize: 12.5 }}
+                    >
+                      + Manual Counter Order
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsQuickAddOpen(false);
+                        setQuickAddModalType('restock');
+                      }}
+                      className="admin-nav-item"
+                      style={{ padding: '8px 12px', fontSize: 12.5 }}
+                    >
+                      + Restock Ingredient
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-
             {/* View Customer App */}
             <Link
               href="/"
@@ -1603,21 +1579,19 @@ export default function AdminPage() {
           {activeTab === 'live-orders' && (
             <div>
               <div className="admin-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-                  <div style={{ display: 'flex', gap: 10, flex: 1, minWidth: 260 }}>
+                <div className="admin-table-toolbar">
+                  <div className="admin-table-filters">
                     <input
                       type="text"
                       placeholder="Search order #, customer phone, flat..."
                       value={orderSearch}
                       onChange={(e) => setOrderSearch(e.target.value)}
                       className="admin-form-input"
-                      style={{ maxWidth: 320 }}
                     />
                     <select
                       value={orderStatusFilter}
                       onChange={(e) => setOrderStatusFilter(e.target.value)}
                       className="admin-form-select"
-                      style={{ maxWidth: 160 }}
                     >
                       <option value="all">All Statuses</option>
                       <option value="received">Received</option>
@@ -1628,7 +1602,7 @@ export default function AdminPage() {
                     </select>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  <div className="admin-table-actions">
                     <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
                       📥 Export CSV
                     </button>
@@ -1752,21 +1726,19 @@ export default function AdminPage() {
           {activeTab === 'menu' && (
             <div>
               <div className="admin-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-                  <div style={{ display: 'flex', gap: 10, flex: 1, minWidth: 260 }}>
+                <div className="admin-table-toolbar">
+                  <div className="admin-table-filters">
                     <input
                       type="text"
                       placeholder="Search menu dishes..."
                       value={menuSearch}
                       onChange={(e) => setMenuSearch(e.target.value)}
                       className="admin-form-input"
-                      style={{ maxWidth: 300 }}
                     />
                     <select
                       value={menuCatFilter}
                       onChange={(e) => setMenuCatFilter(e.target.value)}
                       className="admin-form-select"
-                      style={{ maxWidth: 200 }}
                     >
                       <option value="all">All Categories ({menuItems.length})</option>
                       {categories.map((c) => (
@@ -1777,7 +1749,7 @@ export default function AdminPage() {
                     </select>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  <div className="admin-table-actions">
                     <button
                       onClick={handleSyncMenu}
                       disabled={isSyncingMenu}

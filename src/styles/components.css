@@ -965,16 +965,44 @@
   border-color: var(--brand-gold);
 }
 
-/* ── RESPONSIVE MOBILE TWEAKS (360px - 480px) ── */
+/* ── RESPONSIVE MOBILE TWEAKS (320px - 480px) ── */
 @media (max-width: 480px) {
   .header {
-    padding: 12px 14px 10px;
+    padding: 10px 14px;
   }
   .header-name {
     font-size: 1.05rem;
   }
+  .top-info-bar {
+    padding: 8px 14px 4px;
+    gap: 6px;
+  }
+  .table-banner {
+    font-size: 10px;
+    padding: 3px 10px;
+  }
+  .veg-indicator {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+  .guest-login-bar {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+  .guest-login-text {
+    max-width: calc(100vw - 150px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+  }
+  .guest-login-edit-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
   .spotlight-card {
-    padding: 14px;
+    padding: 12px;
   }
   .cart-sheet, .modal-sheet {
     max-height: 92vh;
