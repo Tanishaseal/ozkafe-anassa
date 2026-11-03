@@ -547,6 +547,59 @@
   transform: translateY(-1px);
 }
 
+/* Primary Action Button (General) */
+.admin-btn-primary {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: var(--adm-coffee);
+  color: #FFFFFF;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(92, 56, 30, 0.25);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.admin-btn-primary:hover {
+  background: var(--adm-coffee-dark);
+  transform: translateY(-1px);
+}
+
+.admin-btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Login Submit Button */
+.admin-login-btn {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--adm-coffee);
+  color: #FFFFFF;
+  border: none;
+  font-size: 14.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px rgba(92, 56, 30, 0.3);
+  letter-spacing: 0.3px;
+}
+
+.admin-login-btn:hover {
+  background: var(--adm-coffee-dark);
+}
+
 /* Customer App Link */
 .admin-customer-link {
   height: 40px;
@@ -1783,7 +1836,7 @@ input:checked + .admin-slider:before {
     flex-shrink: 0;
   }
 
-  .admin-quick-add-btn {
+  .admin-header-actions .admin-quick-add-btn {
     width: 36px;
     height: 36px;
     padding: 0;
@@ -1792,7 +1845,7 @@ input:checked + .admin-slider:before {
     flex-shrink: 0;
   }
 
-  .admin-quick-add-btn .quick-add-text {
+  .admin-header-actions .admin-quick-add-btn .quick-add-text {
     display: none;
   }
 

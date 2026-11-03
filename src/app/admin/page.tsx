@@ -752,7 +752,7 @@ export default function AdminPage() {
               inputMode="numeric"
               maxLength={8}
               autoFocus
-              placeholder="Enter Master PIN (Default: 1234)"
+              placeholder="Master PIN (1234)"
               value={pinInput}
               onChange={(e) => {
                 setPinInput(e.target.value);
@@ -768,7 +768,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            <button type="submit" className="admin-quick-add-btn" style={{ justifyContent: 'center', height: 46, fontSize: 14 }}>
+            <button type="submit" className="admin-login-btn">
               Unlock Floor Admin
             </button>
           </form>
@@ -1606,7 +1606,7 @@ export default function AdminPage() {
                     <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
                       📥 Export CSV
                     </button>
-                    <button onClick={() => setQuickAddModalType('manual-order')} className="admin-quick-add-btn">
+                    <button onClick={() => setQuickAddModalType('manual-order')} className="admin-btn-primary">
                       + Counter Order
                     </button>
                     <button
@@ -1758,7 +1758,7 @@ export default function AdminPage() {
                     >
                       {isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}
                     </button>
-                    <button onClick={() => setQuickAddModalType('item')} className="admin-quick-add-btn">
+                    <button onClick={() => setQuickAddModalType('item')} className="admin-btn-primary">
                       + Add New Dish
                     </button>
                   </div>
@@ -1854,26 +1854,27 @@ export default function AdminPage() {
               ══════════════════════════════════════════ */}
           {activeTab === 'inventory' && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-                <div style={{ display: 'flex', gap: 10 }}>
+              <div className="admin-table-toolbar">
+                <div className="admin-table-filters">
                   <select
                     value={inventoryCatFilter}
                     onChange={(e) => setInventoryCatFilter(e.target.value)}
                     className="admin-form-select"
-                    style={{ maxWidth: 220 }}
                   >
-                    <option value="all">All Categories</option>
+                    <option value="all">All Categories ({inventory.length})</option>
                     <option value="Dairy & Milks">Dairy & Milks</option>
-                    <option value="Coffee Beans">Coffee Beans</option>
-                    <option value="Syrups & Flavors">Syrups & Flavors</option>
                     <option value="Bakery">Bakery</option>
+                    <option value="Syrups & Flavors">Syrups & Flavors</option>
+                    <option value="Coffee Beans">Coffee Beans</option>
                     <option value="Packaging">Packaging</option>
                   </select>
                 </div>
 
-                <button onClick={() => setQuickAddModalType('restock')} className="admin-quick-add-btn">
-                  + Quick Restock
-                </button>
+                <div className="admin-table-actions">
+                  <button onClick={() => setQuickAddModalType('restock')} className="admin-btn-primary">
+                    + Quick Restock
+                  </button>
+                </div>
               </div>
 
               <div className="admin-inventory-grid">
@@ -1921,8 +1922,8 @@ export default function AdminPage() {
                             setRestockAmount(5);
                             setQuickAddModalType('restock');
                           }}
-                          className="admin-quick-add-btn"
-                          style={{ height: 36, fontSize: 12, flex: 1, justifyContent: 'center' }}
+                          className="admin-btn-primary"
+                          style={{ height: 38, fontSize: 13, width: '100%', justifyContent: 'center' }}
                         >
                           + Restock
                         </button>
@@ -2509,7 +2510,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-quick-add-btn">
+                <button type="submit" className="admin-btn-primary">
                   Publish Dish Live
                 </button>
               </div>
@@ -2586,7 +2587,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setEditingItem(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-quick-add-btn">
+                <button type="submit" className="admin-btn-primary">
                   Save Changes
                 </button>
               </div>
@@ -2654,7 +2655,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-quick-add-btn">
+                <button type="submit" className="admin-btn-primary">
                   Dispatch to Kitchen
                 </button>
               </div>
@@ -2708,7 +2709,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-quick-add-btn">
+                <button type="submit" className="admin-btn-primary">
                   Confirm Restock
                 </button>
               </div>
@@ -2803,7 +2804,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="admin-modal-footer">
-              <button onClick={() => window.print()} className="admin-quick-add-btn" style={{ flex: 1, justifyContent: 'center' }}>
+              <button onClick={() => window.print()} className="admin-btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
                 🖨 Print Thermal Receipt
               </button>
             </div>
