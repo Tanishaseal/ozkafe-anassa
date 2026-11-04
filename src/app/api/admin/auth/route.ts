@@ -54,9 +54,7 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json(
-        {
-          error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
-        },
+        { error: 'Invalid credentials or access unauthorized.' },
         { status: 403 }
       );
     }
@@ -64,9 +62,7 @@ export async function POST(request: Request) {
     const user = await findStaffUserByIdentifier(identifier);
     if (!user || !isUserAuthorizedForRole(user, 'admin')) {
       return NextResponse.json(
-        {
-          error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
-        },
+        { error: 'Invalid credentials or access unauthorized.' },
         { status: 403 }
       );
     }

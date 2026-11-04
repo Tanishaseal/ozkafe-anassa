@@ -55,9 +55,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          {
-            error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
-          },
+          { error: 'Invalid credentials or access unauthorized.' },
           { status: 403 }
         );
       }
@@ -74,12 +72,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          {
-            error:
-              role === 'admin'
-                ? 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.'
-                : 'Access Denied: Only authorized Kitchen IDs (mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com) are allowed to enter Kitchen KDS.',
-          },
+          { error: 'Invalid credentials or access unauthorized.' },
           { status: 403 }
         );
       }
@@ -118,7 +111,7 @@ export async function POST(request: Request) {
       // Re-verify strictly for admin
       if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(user.email.toLowerCase().trim() as any)) {
         return NextResponse.json(
-          { error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted for Floor Admin.' },
+          { error: 'Invalid credentials or access unauthorized.' },
           { status: 403 }
         );
       }
@@ -207,9 +200,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          {
-            error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
-          },
+          { error: 'Invalid credentials or access unauthorized.' },
           { status: 403 }
         );
       }
@@ -226,12 +217,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          {
-            error:
-              role === 'admin'
-                ? 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.'
-                : 'Access Denied: Unrecognized ID. Only mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com are permitted.',
-          },
+          { error: 'Invalid credentials or access unauthorized.' },
           { status: 403 }
         );
       }
@@ -248,7 +234,7 @@ export async function POST(request: Request) {
           userAgent,
         });
         return NextResponse.json(
-          { error: 'Incorrect 4-digit Master PIN. Try again or sign in with OTP.' },
+          { error: 'Incorrect 4-digit Master PIN. Please try again.' },
           { status: 401 }
         );
       }

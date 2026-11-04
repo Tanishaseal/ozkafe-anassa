@@ -382,7 +382,7 @@ export default function AccountPanel({
                 </label>
                 <input
                   type="tel"
-                  placeholder="e.g. 8902159596"
+                  placeholder="Enter mobile number"
                   value={phoneInput}
                   onChange={(e) => setPhoneInput(e.target.value)}
                   className="admin-form-input"
