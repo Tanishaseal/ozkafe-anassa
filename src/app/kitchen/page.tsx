@@ -2,10 +2,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Order, OrderStatus } from '@/lib/types';
+import { Order, OrderStatus, StaffUser } from '@/lib/types';
+import StaffAuthModal from '@/components/StaffAuthModal';
+import AccountPanel from '@/components/AccountPanel';
 
 export default function KitchenDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
+  const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [staffName, setStaffName] = useState('');
   const [staffPhone, setStaffPhone] = useState('');
   const [staffEmail, setStaffEmail] = useState('');
@@ -55,26 +59,16 @@ export default function KitchenDashboard() {
   // Check persistent kitchen session on mount (do NOT lock on refresh!)
   useEffect(() => {
     fetchKitchenSettings();
-    const saved = localStorage.getItem('anassa_kitchen_session');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.name) setStaffName(parsed.name);
-        if (parsed.phone) setStaffPhone(parsed.phone);
-        if (parsed.email) setStaffEmail(parsed.email);
-      } catch {}
-    }
 
     // Verify session with server
     fetch(`/api/kitchen/auth?_t=${Date.now()}`)
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
-          if (data.authenticated) {
+          if (data.authenticated && data.staff) {
             setIsAuthenticated(true);
-            if (data.staff?.name) setStaffName(data.staff.name);
-            if (data.staff?.phone) setStaffPhone(data.staff.phone);
-            if (data.staff?.email) setStaffEmail(data.staff.email);
+            setCurrentUser(data.staff);
+            setStaffName(data.staff.name);
             fetchOrders();
           }
         }
@@ -82,65 +76,12 @@ export default function KitchenDashboard() {
       .catch(() => {});
   }, []);
 
-  const handleLoginSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setPinError('');
-
-    if (!staffName.trim()) {
-      setPinError('Please enter your Full Name');
-      return;
-    }
-    if (!staffPhone.trim() || staffPhone.replace(/\D/g, '').length < 10) {
-      setPinError('Please enter a valid 10-digit Mobile Number');
-      return;
-    }
-    if (!staffEmail.trim() || !staffEmail.includes('@')) {
-      setPinError('Please enter a valid Email ID');
-      return;
-    }
-    if (!pinInput.trim()) {
-      setPinError('Please enter Kitchen Staff PIN');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/kitchen/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pin: pinInput.trim(),
-          name: staffName.trim(),
-          phone: staffPhone.trim(),
-          email: staffEmail.trim(),
-        }),
-      });
-
-      if (res.ok) {
-        setIsAuthenticated(true);
-        localStorage.setItem(
-          'anassa_kitchen_session',
-          JSON.stringify({
-            name: staffName.trim(),
-            phone: staffPhone.trim(),
-            email: staffEmail.trim(),
-            authed: true,
-          })
-        );
-        setPinInput('');
-        fetchOrders();
-      } else {
-        setPinError('Invalid Kitchen Staff PIN (Default: 1234)');
-      }
-    } catch {
-      setPinError('Authentication error. Check network connection.');
-    }
-  };
-
   const handleLogout = async () => {
-    if (!confirm('Lock Kitchen Display and sign out current staff?')) return;
+    if (!confirm('Lock Kitchen Display and sign out?')) return;
     localStorage.removeItem('anassa_kitchen_session');
     setIsAuthenticated(false);
-    setPinInput('');
+    setCurrentUser(null);
+    setIsAccountPanelOpen(false);
     await fetch('/api/kitchen/auth', { method: 'DELETE' });
   };
 
@@ -302,164 +243,19 @@ export default function KitchenDashboard() {
     return Math.floor((Date.now() - timestamp) / 60000);
   };
 
-  // ── STAFF LOGIN PAGE (NAME, NUMBER, EMAIL, PIN) ──
+  // ── STAFF AUTHENTICATION GATE ──
   if (!isAuthenticated) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#F8F6F2',
-        padding: '24px 16px',
-        fontFamily: 'var(--font-body), sans-serif',
-      }}>
-        <div style={{
-          background: '#FFFFFF',
-          borderRadius: 20,
-          border: '1px solid #E5DFD7',
-          boxShadow: '0 10px 30px rgba(30, 20, 15, 0.08)',
-          maxWidth: 420,
-          width: '100%',
-          padding: '32px 24px',
-          textAlign: 'center',
-        }}>
-          <Image
-            src="/images/ozkafe_logo.jpeg"
-            alt="OZKAFE"
-            width={68}
-            height={68}
-            style={{ borderRadius: 16, border: '2px solid #5C381E', margin: '0 auto 12px' }}
-          />
-          <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 6px', fontSize: '1.45rem', color: '#1A1410' }}>
-            Kitchen Staff Access
-          </h2>
-          <p style={{ fontSize: 13, color: '#685E54', margin: '0 0 22px' }}>
-            Enter your duty credentials to access Kitchen Display System (KDS)
-          </p>
-
-          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'left' }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Debolina Kumar"
-                value={staffName}
-                onChange={(e) => setStaffName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: 10,
-                  border: '1px solid #E5DFD7',
-                  background: '#FAF9F6',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
-                Mobile Number
-              </label>
-              <input
-                type="tel"
-                required
-                placeholder="e.g. 9163498840"
-                value={staffPhone}
-                onChange={(e) => setStaffPhone(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: 10,
-                  border: '1px solid #E5DFD7',
-                  background: '#FAF9F6',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
-                Email ID
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="e.g. staff@ozkafe.in"
-                value={staffEmail}
-                onChange={(e) => setStaffEmail(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: 10,
-                  border: '1px solid #E5DFD7',
-                  background: '#FAF9F6',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
-                Kitchen Staff PIN
-              </label>
-              <input
-                type="password"
-                required
-                placeholder="Default: 1234"
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: 10,
-                  border: '1px solid #E5DFD7',
-                  background: '#FAF9F6',
-                  fontSize: 16,
-                  textAlign: 'center',
-                  letterSpacing: 4,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            {pinError && (
-              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 700, textAlign: 'center', marginTop: 4 }}>
-                {pinError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              style={{
-                width: '100%',
-                height: 48,
-                borderRadius: 12,
-                background: '#5C381E',
-                color: '#FFFFFF',
-                border: 'none',
-                fontSize: 14.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                marginTop: 8,
-                boxShadow: '0 4px 14px rgba(92, 56, 30, 0.3)',
-              }}
-            >
-              UNLOCK KITCHEN DASHBOARD
-            </button>
-          </form>
-
-          <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid #E5DFD7', fontSize: 11, color: '#9C8F82' }}>
-            OZKAFE Kitchen Display · Session stays active on refresh
-          </div>
-        </div>
-      </div>
+      <StaffAuthModal
+        isOpen={!isAuthenticated}
+        consoleType="kitchen"
+        onAuthenticated={(user) => {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+          setStaffName(user.name);
+          fetchOrders();
+        }}
+      />
     );
   }
 
@@ -515,14 +311,47 @@ export default function KitchenDashboard() {
             ⛶ Fullscreen
           </button>
 
-          <button
-            onClick={handleLogout}
-            className="btn-kds-header"
-            title="Sign out of Kitchen Dashboard"
-            style={{ color: '#DC2626', borderColor: '#FCA5A5' }}
+          {/* Account Profile Badge Button */}
+          <div
+            onClick={() => setIsAccountPanelOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 10px',
+              borderRadius: 8,
+              background: '#FFFFFF',
+              border: '1px solid #E5DFD7',
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}
+            title="Click to view & customize account"
           >
-            🔒 Sign Out
-          </button>
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: '50%',
+                background: currentUser?.avatarColor || '#15803D',
+                color: '#FFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: 11,
+              }}
+            >
+              {currentUser?.avatarInitials || 'KS'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#1A1410', lineHeight: 1.2 }}>
+                {currentUser?.name || staffName || 'Kitchen Staff'}
+              </span>
+              <span style={{ fontSize: 10, color: '#685E54' }}>
+                {currentUser?.badge || 'Kitchen Lead'}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -888,6 +717,19 @@ export default function KitchenDashboard() {
           </div>
         </div>
       )}
+
+      {/* ── CUSTOMIZABLE STAFF ACCOUNT DRAWER ── */}
+      <AccountPanel
+        isOpen={isAccountPanelOpen}
+        onClose={() => setIsAccountPanelOpen(false)}
+        user={currentUser}
+        currentConsole="kitchen"
+        onUpdateUser={(updated) => {
+          setCurrentUser(updated);
+          setStaffName(updated.name);
+        }}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

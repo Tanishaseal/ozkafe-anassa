@@ -172,6 +172,31 @@ export type AuditAction =
   | 'SETTINGS_UPDATED'
   | 'SETTINGS_RESET';
 
+export type AuditLogActor = 'customer' | 'kitchen' | 'admin' | 'system';
+
+export type StaffRole = 'admin' | 'kitchen';
+
+export interface StaffUserPreferences {
+  theme?: 'light' | 'dark';
+  soundEnabled?: boolean;
+  defaultTab?: string;
+}
+
+export interface StaffUser {
+  id: string;
+  email: string;
+  phone?: string;
+  name: string;
+  roles: StaffRole[];
+  badge: string;
+  masterPin: string; // 4-digit PIN
+  hasCustomPin: boolean;
+  avatarInitials: string;
+  avatarColor?: string;
+  preferences?: StaffUserPreferences;
+  lastLoginAt?: number;
+}
+
 export interface AuditLog {
   id: string;
   timestamp: number; // Unix ms

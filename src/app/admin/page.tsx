@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { MenuItem, Category, Order, CafeSettings, AuditLog, InventoryItem, StaffShift, OrderStatus } from '@/lib/types';
+import { MenuItem, Category, Order, CafeSettings, AuditLog, InventoryItem, StaffShift, OrderStatus, StaffUser } from '@/lib/types';
+import StaffAuthModal from '@/components/StaffAuthModal';
+import AccountPanel from '@/components/AccountPanel';
 
 // ── CURRENCY FORMATTER ──
 const formatCurrency = (val: number): string => {
@@ -19,6 +21,8 @@ const getElapsedMinutes = (timestamp: number): number => {
 export default function AdminPage() {
   // ── AUTHENTICATION & THEME STATES ──
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
+  const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [adminName, setAdminName] = useState('');
   const [adminPhone, setAdminPhone] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -245,94 +249,31 @@ export default function AdminPage() {
 
   // Check persistent admin session on mount (do NOT lock on refresh!)
   useEffect(() => {
-    const saved = localStorage.getItem('anassa_admin_session');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.name) setAdminName(parsed.name);
-        if (parsed.phone) setAdminPhone(parsed.phone);
-        if (parsed.email) setAdminEmail(parsed.email);
-      } catch {}
-    }
-
     fetch(`/api/admin/auth?_t=${Date.now()}`)
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
-          if (data.authenticated) {
+          if (data.authenticated && data.staff) {
             setIsAuthenticated(true);
-            if (data.staff?.name) setAdminName(data.staff.name);
-            if (data.staff?.phone) setAdminPhone(data.staff.phone);
-            if (data.staff?.email) setAdminEmail(data.staff.email);
+            setCurrentUser(data.staff);
+            if (data.staff.preferences?.theme) {
+              setTheme(data.staff.preferences.theme);
+            }
           }
         }
       })
       .catch(() => {});
   }, []);
 
-  // ── ADMIN STAFF AUTHENTICATION (NAME, PHONE, EMAIL, MASTER PIN) ──
-  const handlePinSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setPinError('');
-
-    if (!adminName.trim()) {
-      setPinError('Please enter your Full Name');
-      return;
-    }
-    if (!adminPhone.trim() || adminPhone.replace(/\D/g, '').length < 10) {
-      setPinError('Please enter a valid 10-digit Mobile Number');
-      return;
-    }
-    if (!adminEmail.trim() || !adminEmail.includes('@')) {
-      setPinError('Please enter a valid Email ID');
-      return;
-    }
-    if (!pinInput.trim()) {
-      setPinError('Please enter Master Admin PIN');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/admin/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pin: pinInput.trim(),
-          name: adminName.trim(),
-          phone: adminPhone.trim(),
-          email: adminEmail.trim(),
-        }),
-      });
-
-      if (res.ok) {
-        setIsAuthenticated(true);
-        localStorage.setItem(
-          'anassa_admin_session',
-          JSON.stringify({
-            name: adminName.trim(),
-            phone: adminPhone.trim(),
-            email: adminEmail.trim(),
-            authed: true,
-          })
-        );
-        setPinInput('');
-        fetchAdminData();
-      } else {
-        setPinError('Invalid Admin Master PIN (Default: 1234)');
-      }
-    } catch {
-      setPinError('Authentication failed. Check network connection.');
-    }
-  };
-
   const handleLogout = async () => {
-    if (!confirm('Lock Admin session and sign out current manager?')) return;
+    if (!confirm('Lock Admin session and sign out?')) return;
     try {
       localStorage.removeItem('anassa_admin_session');
       await fetch('/api/admin/auth', { method: 'DELETE' });
     } finally {
       setIsAuthenticated(false);
-      setPinInput('');
+      setCurrentUser(null);
+      setIsAccountPanelOpen(false);
     }
   };
 
@@ -790,104 +731,16 @@ export default function AdminPage() {
   // ── PIN AUTHENTICATION GATE ──
   if (!isAuthenticated) {
     return (
-      <div className={`admin-layout ${theme === 'dark' ? 'admin-theme-dark' : 'admin-theme-light'}`} style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <div className="admin-card" style={{ maxWidth: 420, width: '100%', textAlign: 'center', padding: 36, boxShadow: 'var(--adm-shadow-lg)' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-            <Image
-              src="/images/ozkafe_logo.jpeg"
-              alt="OZKAFE"
-              width={72}
-              height={72}
-              style={{ borderRadius: 18, border: '2px solid var(--adm-border)' }}
-            />
-          </div>
-
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 6px', color: 'var(--adm-text-main)' }}>
-            OZKAFE · Anassa
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--adm-text-muted)', margin: '0 0 24px' }}>
-            Floor Manager & Master Admin Console
-          </p>
-
-          <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'left' }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Debolina Kumar"
-                value={adminName}
-                onChange={(e) => setAdminName(e.target.value)}
-                className="admin-form-input"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
-                Mobile Number
-              </label>
-              <input
-                type="tel"
-                required
-                placeholder="e.g. 9163498840"
-                value={adminPhone}
-                onChange={(e) => setAdminPhone(e.target.value)}
-                className="admin-form-input"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
-                Email ID
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="e.g. admin@ozkafe.in"
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                className="admin-form-input"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
-                Master Admin PIN
-              </label>
-              <input
-                type="password"
-                required
-                inputMode="numeric"
-                maxLength={8}
-                placeholder="Default: 1234"
-                value={pinInput}
-                onChange={(e) => {
-                  setPinInput(e.target.value);
-                  setPinError('');
-                }}
-                className="admin-form-input"
-                style={{ textAlign: 'center', fontSize: 16, letterSpacing: 4 }}
-              />
-            </div>
-
-            {pinError && (
-              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 700, textAlign: 'center' }}>
-                {pinError}
-              </div>
-            )}
-
-            <button type="submit" className="admin-login-btn">
-              Unlock Floor Admin
-            </button>
-          </form>
-
-          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--adm-border)', fontSize: 11, color: 'var(--adm-text-dim)' }}>
-            Security Guard · 100% Pure Veg · EM Bypass, Kolkata
-          </div>
-        </div>
-      </div>
+      <StaffAuthModal
+        isOpen={!isAuthenticated}
+        consoleType="admin"
+        onAuthenticated={(user) => {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+          if (user.preferences?.theme) setTheme(user.preferences.theme);
+          fetchAdminData();
+        }}
+      />
     );
   }
 
@@ -1307,20 +1160,45 @@ export default function AdminPage() {
               <span>Customer App</span>
             </Link>
 
-            {/* Admin Profile & Lock Button */}
-            <div className="admin-profile-chip">
+            {/* Admin Profile & Account Drawer Button */}
+            <div
+              className="admin-profile-chip"
+              onClick={() => setIsAccountPanelOpen(true)}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+              title="Click to view & customize account"
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: currentUser?.avatarColor || '#5C381E',
+                  color: '#FFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                }}
+              >
+                {currentUser?.avatarInitials || 'AD'}
+              </div>
               <div className="admin-profile-info">
-                <span className="admin-profile-name">Manager</span>
-                <span className="admin-profile-role">Anassa Floor</span>
+                <span className="admin-profile-name">{currentUser?.name || 'Manager'}</span>
+                <span className="admin-profile-role">{currentUser?.badge || 'Anassa Floor'}</span>
               </div>
               <button
-                onClick={handleLogout}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAccountPanelOpen(true);
+                }}
                 className="admin-lock-btn"
-                title="Lock admin session"
+                title="Account Settings & Lock"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
                 </svg>
               </button>
             </div>
@@ -2948,6 +2826,19 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ── CUSTOMIZABLE STAFF ACCOUNT DRAWER ── */}
+      <AccountPanel
+        isOpen={isAccountPanelOpen}
+        onClose={() => setIsAccountPanelOpen(false)}
+        user={currentUser}
+        currentConsole="admin"
+        onUpdateUser={(updated) => {
+          setCurrentUser(updated);
+          if (updated.preferences?.theme) setTheme(updated.preferences.theme);
+        }}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

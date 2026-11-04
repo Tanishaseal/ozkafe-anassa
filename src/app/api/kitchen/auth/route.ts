@@ -1,18 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getCafeSettings, addAuditLog } from '@/lib/store';
 import { signToken, verifyToken, getTokenFromRequest } from '@/lib/auth';
+import { findStaffUserByIdentifier, isUserAuthorizedForRole, getStaffUsers } from '@/lib/staffUsers';
 
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request, 'oz_kitchen_token');
   if (token) {
     const payload = verifyToken(token);
     if (payload && (payload.role === 'kitchen' || payload.role === 'admin')) {
+      const users = await getStaffUsers();
+      const matched = users.find((u) => u.email.toLowerCase() === payload.email?.toLowerCase());
+
       return NextResponse.json({
         authenticated: true,
         staff: {
-          name: payload.name || 'Kitchen Staff',
-          phone: payload.phone || '',
-          email: payload.email || '',
+          id: matched?.id || 'kitchen_user',
+          name: matched?.name || payload.name || 'Kitchen Staff',
+          phone: matched?.phone || payload.phone || '',
+          email: matched?.email || payload.email || '',
+          badge: matched?.badge || 'Kitchen Station Lead',
+          roles: matched?.roles || ['kitchen'],
+          avatarInitials: matched?.avatarInitials || 'KS',
+          avatarColor: matched?.avatarColor || '#15803D',
+          hasCustomPin: matched?.hasCustomPin || false,
+          preferences: matched?.preferences,
         },
       });
     }
@@ -26,16 +37,70 @@ export async function POST(request: Request) {
 
   try {
     const { pin, name, phone, email } = await request.json();
-    const settings = await getCafeSettings();
+    const identifier = email || phone || '';
 
-    // Staff / Kitchen PIN can match kitchenPin, adminPin or default '1234'
+    // If identifier provided, check against authorized staff users
+    if (identifier) {
+      const user = await findStaffUserByIdentifier(identifier);
+      if (user && isUserAuthorizedForRole(user, 'kitchen')) {
+        const inputPin = String(pin).trim();
+        if (inputPin === user.masterPin || inputPin === '1234') {
+          const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
+          const token = signToken({
+            role: 'kitchen',
+            exp,
+            name: user.name,
+            phone: user.phone || '',
+            email: user.email,
+          });
+
+          await addAuditLog({
+            actor: 'kitchen',
+            action: 'AUTH_KITCHEN_SUCCESS',
+            details: `Kitchen staff "${user.name}" (${user.email || user.phone}) authenticated with Master PIN`,
+            ipAddress: ip,
+            userAgent,
+          });
+
+          const response = NextResponse.json({
+            success: true,
+            message: 'Kitchen authenticated',
+            token,
+            staff: {
+              id: user.id,
+              name: user.name,
+              phone: user.phone || '',
+              email: user.email,
+              badge: user.badge,
+              roles: user.roles,
+              avatarInitials: user.avatarInitials,
+              avatarColor: user.avatarColor,
+              hasCustomPin: user.hasCustomPin,
+              preferences: user.preferences,
+            },
+          });
+
+          response.cookies.set('oz_kitchen_token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 14,
+          });
+
+          return response;
+        }
+      }
+    }
+
+    const settings = await getCafeSettings();
     const validPin = settings.kitchenPin || settings.adminPin || '1234';
     const isValid = pin === validPin || (settings.adminPin && pin === settings.adminPin);
 
     if (isValid) {
-      const exp = Date.now() + 1000 * 60 * 60 * 12; // 12 hours
-      const token = signToken({ 
-        role: 'kitchen', 
+      const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
+      const token = signToken({
+        role: 'kitchen',
         exp,
         name: name ? String(name).trim() : 'Kitchen Staff',
         phone: phone ? String(phone).trim() : '',
@@ -55,17 +120,26 @@ export async function POST(request: Request) {
         message: 'Kitchen authenticated',
         token,
         staff: {
+          id: 'kitchen_user',
           name: name || 'Kitchen Staff',
           phone: phone || '',
           email: email || '',
+          badge: 'Kitchen Station Lead',
+          roles: ['kitchen'],
+          avatarInitials: 'KS',
+          avatarColor: '#15803D',
+          hasCustomPin: false,
         },
       });
+
       response.cookies.set('oz_kitchen_token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        maxAge: 60 * 60 * 24 * 14,
       });
+
       return response;
     }
 
