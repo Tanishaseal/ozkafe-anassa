@@ -23,11 +23,6 @@ export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
-  const [adminName, setAdminName] = useState('');
-  const [adminPhone, setAdminPhone] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   // ── NAVIGATION & LAYOUT STATES ──

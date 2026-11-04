@@ -3,7 +3,22 @@ import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
 import { addAuditLog } from './store';
 import nodemailer from 'nodemailer';
 
-// ── DEFAULT AUTHORIZED STAFF USERS ──
+// ── STRICT WHITELISTS OF AUTHORIZED IDENTIFIERS ──
+// For Admin: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com — NOBODY ELSE.
+export const ALLOWED_ADMIN_EMAILS = [
+  'sonmarinventure@gmail.com',
+  'tanishaseal20@gmail.com',
+] as const;
+
+// For Kitchen: mamonix109@gmail.com (6289418003) & tanishaseal20@gmail.com (8902159596)
+export const ALLOWED_KITCHEN_IDENTIFIERS = [
+  'mamonix109@gmail.com',
+  '6289418003',
+  'tanishaseal20@gmail.com',
+  '8902159596',
+] as const;
+
+// ── CLEAN BASELINE AUTHORIZED USERS ──
 export const INITIAL_STAFF_USERS: StaffUser[] = [
   {
     id: 'user_tanisha',
@@ -27,7 +42,7 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     phone: '',
     name: 'Sonmarin Venture',
     roles: ['admin'],
-    badge: 'Executive Floor Admin',
+    badge: 'Floor Admin',
     masterPin: '1234',
     hasCustomPin: false,
     avatarInitials: 'SV',
@@ -43,7 +58,7 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     phone: '6289418003',
     name: 'Mamoni',
     roles: ['kitchen'],
-    badge: 'Kitchen Station Lead',
+    badge: 'Kitchen Lead',
     masterPin: '1234',
     hasCustomPin: false,
     avatarInitials: 'M',
@@ -75,7 +90,6 @@ if (!globalStore.__anassa_otp_cache) {
 export function normalizeIdentifier(input: string): string {
   if (!input) return '';
   const trimmed = input.trim();
-  // Check if string contains mostly digits -> normalize to 10-digit phone
   const digitsOnly = trimmed.replace(/\D/g, '');
   if (digitsOnly.length >= 10 && !trimmed.includes('@')) {
     return digitsOnly.slice(-10);
@@ -101,6 +115,7 @@ export function maskDestination(identifier: string): string {
 
 /**
  * Retrieve all registered staff users from Supabase or memory
+ * Strictly filters out any foreign or legacy user records
  */
 export async function getStaffUsers(): Promise<StaffUser[]> {
   if (isSupabaseConfigured && supabaseServer) {
@@ -112,15 +127,16 @@ export async function getStaffUsers(): Promise<StaffUser[]> {
         .single();
 
       if (!error && data?.value && Array.isArray(data.value) && data.value.length > 0) {
-        // Merge with defaults to guarantee all authorized users exist
-        const dbUsers: StaffUser[] = data.value;
+        const allowedEmails = ['sonmarinventure@gmail.com', 'tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
+        const dbUsers: StaffUser[] = data.value.filter((u: StaffUser) =>
+          allowedEmails.includes(u.email?.toLowerCase().trim())
+        );
+
         const merged: StaffUser[] = [...INITIAL_STAFF_USERS];
         for (const u of dbUsers) {
-          const idx = merged.findIndex((m) => m.id === u.id || m.email.toLowerCase() === u.email.toLowerCase());
+          const idx = merged.findIndex((m) => m.email.toLowerCase() === u.email.toLowerCase());
           if (idx >= 0) {
             merged[idx] = { ...merged[idx], ...u };
-          } else {
-            merged.push(u);
           }
         }
         globalStore.__anassa_staff_users = merged;
@@ -135,16 +151,61 @@ export async function getStaffUsers(): Promise<StaffUser[]> {
 }
 
 /**
- * Save staff users list to Supabase & memory
+ * Completely wipe any custom saved user profiles and reset to clean baseline
  */
-export async function saveStaffUsers(users: StaffUser[]): Promise<void> {
-  globalStore.__anassa_staff_users = users;
+export async function clearAllStaffUserData(): Promise<StaffUser[]> {
+  const freshUsers: StaffUser[] = INITIAL_STAFF_USERS.map((u) => ({
+    ...u,
+    masterPin: '1234',
+    hasCustomPin: false,
+    name: u.name,
+    phone: u.phone,
+    avatarColor: u.avatarColor,
+    preferences: {
+      theme: 'light',
+      soundEnabled: true,
+    },
+  }));
+
+  globalStore.__anassa_staff_users = freshUsers;
+  globalStore.__anassa_otp_cache?.clear();
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
       await supabaseServer.from('cafe_settings').upsert({
         key: 'staff_users_config',
-        value: users,
+        value: freshUsers,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Supabase clearAllStaffUserData error:', err);
+    }
+  }
+
+  await addAuditLog({
+    actor: 'admin',
+    action: 'SETTINGS_RESET',
+    details: 'All user entries cleared and reset to fresh baseline. Only sonmarinventure@gmail.com and tanishaseal20@gmail.com allowed for Admin.',
+  });
+
+  return freshUsers;
+}
+
+/**
+ * Save staff users list to Supabase & memory
+ */
+export async function saveStaffUsers(users: StaffUser[]): Promise<void> {
+  // Filter out any unauthorized entries before saving
+  const allowedEmails = ['sonmarinventure@gmail.com', 'tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
+  const sanitized = users.filter((u) => allowedEmails.includes(u.email?.toLowerCase().trim()));
+
+  globalStore.__anassa_staff_users = sanitized;
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer.from('cafe_settings').upsert({
+        key: 'staff_users_config',
+        value: sanitized,
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -172,12 +233,25 @@ export async function findStaffUserByIdentifier(rawId: string): Promise<StaffUse
 }
 
 /**
- * Check if a user has access to a specific console role
+ * Strict check if a user has access to a specific console role:
+ * For Admin: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com!
  */
 export function isUserAuthorizedForRole(user: StaffUser, role: StaffRole): boolean {
-  // Super Admin Tanisha has access to ALL
-  if (user.roles.includes('admin') && user.roles.includes('kitchen')) return true;
-  return user.roles.includes(role);
+  const emailNorm = user.email.toLowerCase().trim();
+
+  if (role === 'admin') {
+    return ALLOWED_ADMIN_EMAILS.includes(emailNorm as any);
+  }
+
+  if (role === 'kitchen') {
+    const phoneNorm = user.phone ? normalizeIdentifier(user.phone) : '';
+    return (
+      ALLOWED_KITCHEN_IDENTIFIERS.includes(emailNorm as any) ||
+      Boolean(phoneNorm && ALLOWED_KITCHEN_IDENTIFIERS.includes(phoneNorm as any))
+    );
+  }
+
+  return false;
 }
 
 /**
@@ -309,7 +383,6 @@ export async function generateAndSendOtp(
     success: true,
     destinationType,
     destinationMasked,
-    // Always provide previewOtp if real SMTP is not hooked up so managers are NEVER locked out!
     previewOtp: otpCode,
     message: emailDispatched
       ? `A 6-digit security code has been sent to ${destinationMasked}.`
@@ -342,7 +415,6 @@ export function verifyStaffOtp(userId: string, inputOtp: string): { valid: boole
     return { valid: false, reason: 'Incorrect security OTP code. Please try again.' };
   }
 
-  // Clear OTP on successful validation
   globalStore.__anassa_otp_cache?.delete(userId);
   return { valid: true };
 }

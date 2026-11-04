@@ -11,10 +11,6 @@ export default function KitchenDashboard() {
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [staffName, setStaffName] = useState('');
-  const [staffPhone, setStaffPhone] = useState('');
-  const [staffEmail, setStaffEmail] = useState('');
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState('');
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [recentServed, setRecentServed] = useState<Order[]>([]);

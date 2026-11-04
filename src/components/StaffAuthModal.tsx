@@ -35,23 +35,34 @@ export default function StaffAuthModal({
   const [error, setError] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
 
-  // Load last used identifier from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedId = localStorage.getItem(`oz_last_id_${consoleType}`) || localStorage.getItem('oz_last_id');
-      if (savedId) {
-        setIdentifier(savedId);
-      }
-    }
-  }, [consoleType]);
-
-  if (!isOpen) return null;
-
   const isKitchen = consoleType === 'kitchen';
   const title = isKitchen ? 'Kitchen Display & KDS' : 'Floor Manager & Master Admin';
   const subtitle = isKitchen
     ? 'Kitchen Chef & Barista Security Gate'
     : 'Floor Manager & Master Admin Console';
+
+  // Load last used identifier from localStorage & cleanse any unauthorized IDs
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedId = localStorage.getItem(`oz_last_id_${consoleType}`) || localStorage.getItem('oz_last_id');
+      if (savedId) {
+        if (!isKitchen) {
+          const norm = savedId.trim().toLowerCase();
+          if (norm === 'sonmarinventure@gmail.com' || norm === 'tanishaseal20@gmail.com') {
+            setIdentifier(norm);
+          } else {
+            localStorage.removeItem(`oz_last_id_${consoleType}`);
+            localStorage.removeItem('oz_last_id');
+            localStorage.removeItem('anassa_admin_session');
+          }
+        } else {
+          setIdentifier(savedId);
+        }
+      }
+    }
+  }, [consoleType, isKitchen]);
+
+  if (!isOpen) return null;
 
   // ──────────────────────────────────────────
   // 1. SUBMIT 4-DIGIT PIN DIRECT UNLOCK
@@ -65,9 +76,17 @@ export default function StaffAuthModal({
       setError(
         isKitchen
           ? 'Please enter your authorized Email or Phone (mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com)'
-          : 'Please enter your authorized Management Email (sonmarinventure@gmail.com or tanishaseal20@gmail.com)'
+          : 'Please enter your authorized Admin Email (sonmarinventure@gmail.com or tanishaseal20@gmail.com)'
       );
       return;
+    }
+
+    if (!isKitchen) {
+      const norm = identifier.trim().toLowerCase();
+      if (norm !== 'sonmarinventure@gmail.com' && norm !== 'tanishaseal20@gmail.com') {
+        setError('Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.');
+        return;
+      }
     }
 
     if (!pinInput.trim()) {
@@ -127,6 +146,14 @@ export default function StaffAuthModal({
           : 'Enter valid Admin Email (sonmarinventure@gmail.com or tanishaseal20@gmail.com)'
       );
       return;
+    }
+
+    if (!isKitchen) {
+      const norm = identifier.trim().toLowerCase();
+      if (norm !== 'sonmarinventure@gmail.com' && norm !== 'tanishaseal20@gmail.com') {
+        setError('Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -409,12 +436,12 @@ export default function StaffAuthModal({
             <form onSubmit={handlePinLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 5 }}>
-                  {isKitchen ? 'Authorized Email or Phone' : 'Authorized Admin Email ID'}
+                  {isKitchen ? 'Authorized Email or Phone' : 'Admin Email (sonmarinventure@gmail.com or tanishaseal20@gmail.com)'}
                 </label>
                 <input
-                  type="text"
+                  type={isKitchen ? 'text' : 'email'}
                   required
-                  placeholder={isKitchen ? 'mamonix109@gmail.com / 6289418003' : 'sonmarinventure@gmail.com / tanishaseal20@gmail.com'}
+                  placeholder={isKitchen ? 'mamonix109@gmail.com / 6289418003' : 'sonmarinventure@gmail.com or tanishaseal20@gmail.com'}
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   className="admin-form-input"
@@ -503,12 +530,12 @@ export default function StaffAuthModal({
             <form onSubmit={handleRequestOtp} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 5 }}>
-                  {isKitchen ? 'Kitchen ID (Email or Phone)' : 'Authorized Management Email'}
+                  {isKitchen ? 'Kitchen ID (Email or Phone)' : 'Admin Email (sonmarinventure@gmail.com or tanishaseal20@gmail.com)'}
                 </label>
                 <input
-                  type="text"
+                  type={isKitchen ? 'text' : 'email'}
                   required
-                  placeholder={isKitchen ? 'mamonix109@gmail.com / 6289418003' : 'sonmarinventure@gmail.com / tanishaseal20@gmail.com'}
+                  placeholder={isKitchen ? 'mamonix109@gmail.com / 6289418003' : 'sonmarinventure@gmail.com or tanishaseal20@gmail.com'}
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   className="admin-form-input"
@@ -516,8 +543,8 @@ export default function StaffAuthModal({
                 />
                 <div style={{ fontSize: 11, color: 'var(--adm-text-muted, #73675C)', marginTop: 4 }}>
                   {isKitchen
-                    ? 'Permitted: mamonix109@gmail.com, 6289418003, tanishaseal20@gmail.com (8902159596)'
-                    : 'Permitted: sonmarinventure@gmail.com, tanishaseal20@gmail.com (8902159596)'}
+                    ? 'Permitted: mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com'
+                    : 'Permitted: ONLY sonmarinventure@gmail.com or tanishaseal20@gmail.com'}
                 </div>
               </div>
 

@@ -1,31 +1,35 @@
 import { NextResponse } from 'next/server';
-import { getCafeSettings, addAuditLog } from '@/lib/store';
+import { addAuditLog } from '@/lib/store';
 import { signToken, verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { findStaffUserByIdentifier, isUserAuthorizedForRole, getStaffUsers } from '@/lib/staffUsers';
+import { findStaffUserByIdentifier, isUserAuthorizedForRole, getStaffUsers, ALLOWED_ADMIN_EMAILS } from '@/lib/staffUsers';
 
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request, 'oz_admin_token');
   if (token) {
     const payload = verifyToken(token);
-    if (payload && payload.role === 'admin') {
-      const users = await getStaffUsers();
-      const matched = users.find((u) => u.email.toLowerCase() === payload.email?.toLowerCase());
+    if (payload && payload.role === 'admin' && payload.email) {
+      const emailNorm = payload.email.toLowerCase().trim();
+      // STRICT CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+      if (ALLOWED_ADMIN_EMAILS.includes(emailNorm as any)) {
+        const users = await getStaffUsers();
+        const matched = users.find((u) => u.email.toLowerCase() === emailNorm);
 
-      return NextResponse.json({
-        authenticated: true,
-        staff: {
-          id: matched?.id || 'admin_user',
-          name: matched?.name || payload.name || 'Admin Manager',
-          phone: matched?.phone || payload.phone || '',
-          email: matched?.email || payload.email || '',
-          badge: matched?.badge || 'Floor Manager',
-          roles: matched?.roles || ['admin'],
-          avatarInitials: matched?.avatarInitials || 'AD',
-          avatarColor: matched?.avatarColor || '#5C381E',
-          hasCustomPin: matched?.hasCustomPin || false,
-          preferences: matched?.preferences,
-        },
-      });
+        return NextResponse.json({
+          authenticated: true,
+          staff: {
+            id: matched?.id || 'admin_user',
+            name: matched?.name || payload.name || 'Floor Admin',
+            phone: matched?.phone || payload.phone || '',
+            email: emailNorm,
+            badge: matched?.badge || 'Floor Admin',
+            roles: matched?.roles || ['admin'],
+            avatarInitials: matched?.avatarInitials || 'AD',
+            avatarColor: matched?.avatarColor || '#5C381E',
+            hasCustomPin: matched?.hasCustomPin || false,
+            preferences: matched?.preferences,
+          },
+        });
+      }
     }
   }
   return NextResponse.json({ authenticated: false }, { status: 401 });
@@ -36,122 +40,96 @@ export async function POST(request: Request) {
   const userAgent = (request.headers.get('user-agent') || 'Unknown').slice(0, 100);
 
   try {
-    const { pin, name, phone, email } = await request.json();
-    const identifier = email || phone || '';
+    const { pin, email, phone } = await request.json();
+    const identifier = (email || phone || '').trim().toLowerCase();
 
-    // If identifier provided, check against authorized staff users
-    if (identifier) {
-      const user = await findStaffUserByIdentifier(identifier);
-      if (user && isUserAuthorizedForRole(user, 'admin')) {
-        const inputPin = String(pin).trim();
-        if (inputPin === user.masterPin || inputPin === '1234') {
-          const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
-          const token = signToken({
-            role: 'admin',
-            exp,
-            name: user.name,
-            phone: user.phone || '',
-            email: user.email,
-          });
-
-          await addAuditLog({
-            actor: 'admin',
-            action: 'AUTH_ADMIN_SUCCESS',
-            details: `Admin staff "${user.name}" (${user.email}) authenticated with Master PIN`,
-            ipAddress: ip,
-            userAgent,
-          });
-
-          const response = NextResponse.json({
-            success: true,
-            message: 'Authenticated successfully',
-            token,
-            staff: {
-              id: user.id,
-              name: user.name,
-              phone: user.phone || '',
-              email: user.email,
-              badge: user.badge,
-              roles: user.roles,
-              avatarInitials: user.avatarInitials,
-              avatarColor: user.avatarColor,
-              hasCustomPin: user.hasCustomPin,
-              preferences: user.preferences,
-            },
-          });
-
-          response.cookies.set('oz_admin_token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 60 * 60 * 24 * 14,
-          });
-
-          return response;
-        }
-      }
-    }
-
-    // Fallback to cafeSettings adminPin
-    const settings = await getCafeSettings();
-    const expectedPin = settings.adminPin || '1234';
-
-    if (pin === expectedPin) {
-      const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
-      const token = signToken({
-        role: 'admin',
-        exp,
-        name: name ? String(name).trim() : 'Admin Manager',
-        phone: phone ? String(phone).trim() : '',
-        email: email ? String(email).trim() : '',
-      });
-
+    // STRICT WHITELIST CHECK: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com
+    if (!ALLOWED_ADMIN_EMAILS.includes(identifier as any)) {
       await addAuditLog({
         actor: 'admin',
-        action: 'AUTH_ADMIN_SUCCESS',
-        details: `Admin staff "${name || 'Admin'}" (${phone || 'N/A'}, ${email || 'N/A'}) authenticated successfully with Master PIN`,
+        action: 'AUTH_ADMIN_FAILED',
+        details: `Access Denied: Unauthorized admin attempt with ID "${identifier}"`,
         ipAddress: ip,
         userAgent,
       });
 
-      const response = NextResponse.json({
-        success: true,
-        message: 'Authenticated successfully',
-        token,
-        staff: {
-          id: 'admin_user',
-          name: name || 'Admin Manager',
-          phone: phone || '',
-          email: email || '',
-          badge: 'Floor Manager',
-          roles: ['admin'],
-          avatarInitials: 'AM',
-          avatarColor: '#5C381E',
-          hasCustomPin: false,
+      return NextResponse.json(
+        {
+          error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
         },
-      });
-
-      response.cookies.set('oz_admin_token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 14,
-      });
-
-      return response;
+        { status: 403 }
+      );
     }
+
+    const user = await findStaffUserByIdentifier(identifier);
+    if (!user || !isUserAuthorizedForRole(user, 'admin')) {
+      return NextResponse.json(
+        {
+          error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
+        },
+        { status: 403 }
+      );
+    }
+
+    const inputPin = String(pin).trim();
+    const isPinValid = inputPin === user.masterPin || inputPin === '1234';
+
+    if (!isPinValid) {
+      await addAuditLog({
+        actor: 'admin',
+        action: 'AUTH_ADMIN_FAILED',
+        details: `Failed Admin PIN attempt by "${user.name}" (${user.email})`,
+        ipAddress: ip,
+        userAgent,
+      });
+
+      return NextResponse.json({ error: 'Incorrect 4-digit Master PIN. Try again or sign in with OTP.' }, { status: 401 });
+    }
+
+    const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
+    const token = signToken({
+      role: 'admin',
+      exp,
+      name: user.name,
+      phone: user.phone || '',
+      email: user.email,
+    });
 
     await addAuditLog({
       actor: 'admin',
-      action: 'AUTH_ADMIN_FAILED',
-      details: `Failed Admin PIN attempt by "${name || 'Unknown'}" (${phone || 'N/A'})`,
+      action: 'AUTH_ADMIN_SUCCESS',
+      details: `Admin staff "${user.name}" (${user.email}) authenticated with Master PIN`,
       ipAddress: ip,
       userAgent,
     });
 
-    return NextResponse.json({ error: 'Invalid Admin Master PIN' }, { status: 401 });
+    const response = NextResponse.json({
+      success: true,
+      message: 'Authenticated successfully',
+      token,
+      staff: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone || '',
+        email: user.email,
+        badge: user.badge,
+        roles: user.roles,
+        avatarInitials: user.avatarInitials,
+        avatarColor: user.avatarColor,
+        hasCustomPin: user.hasCustomPin,
+        preferences: user.preferences,
+      },
+    });
+
+    response.cookies.set('oz_admin_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 14,
+    });
+
+    return response;
   } catch (error) {
     console.error('API /api/admin/auth error:', error);
     return NextResponse.json({ error: 'Authentication failed' }, { status: 500 });

@@ -6,6 +6,8 @@ import {
   verifyStaffOtp,
   updateStaffMasterPin,
   getStaffUsers,
+  clearAllStaffUserData,
+  ALLOWED_ADMIN_EMAILS,
 } from '@/lib/staffUsers';
 import { signToken } from '@/lib/auth';
 import { addAuditLog } from '@/lib/store';
@@ -19,6 +21,18 @@ export async function POST(request: Request) {
     const { action } = body;
 
     // ──────────────────────────────────────────
+    // 0. ACTION: CLEAR ALL SAVED USER ENTRIES
+    // ──────────────────────────────────────────
+    if (action === 'clear_all_users') {
+      const freshUsers = await clearAllStaffUserData();
+      return NextResponse.json({
+        success: true,
+        message: 'All custom user entries have been completely cleared and reset to fresh baseline.',
+        users: freshUsers.map((u) => ({ id: u.id, name: u.name, email: u.email, roles: u.roles })),
+      });
+    }
+
+    // ──────────────────────────────────────────
     // 1. ACTION: REQUEST OTP
     // ──────────────────────────────────────────
     if (action === 'request_otp') {
@@ -28,9 +42,29 @@ export async function POST(request: Request) {
       }
 
       const role = consoleType === 'kitchen' ? 'kitchen' : 'admin';
+      const cleanId = identifier.trim().toLowerCase();
+
+      // STRICT ADMIN CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
+        await addAuditLog({
+          actor: 'admin',
+          action: 'AUTH_ADMIN_FAILED',
+          details: `Unauthorized Floor Admin OTP attempt with email "${cleanId}"`,
+          ipAddress: ip,
+          userAgent,
+        });
+
+        return NextResponse.json(
+          {
+            error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
+          },
+          { status: 403 }
+        );
+      }
+
       const user = await findStaffUserByIdentifier(identifier);
 
-      if (!user) {
+      if (!user || !isUserAuthorizedForRole(user, role)) {
         await addAuditLog({
           actor: role,
           action: role === 'admin' ? 'AUTH_ADMIN_FAILED' : 'AUTH_KITCHEN_FAILED',
@@ -43,17 +77,8 @@ export async function POST(request: Request) {
           {
             error:
               role === 'admin'
-                ? 'Access Denied: Only authorized Management IDs (sonmarinventure@gmail.com, tanishaseal20@gmail.com) are allowed to enter Floor Admin.'
+                ? 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.'
                 : 'Access Denied: Only authorized Kitchen IDs (mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com) are allowed to enter Kitchen KDS.',
-          },
-          { status: 403 }
-        );
-      }
-
-      if (!isUserAuthorizedForRole(user, role)) {
-        return NextResponse.json(
-          {
-            error: `Access Denied: Your ID (${user.email}) does not have permission for the ${role.toUpperCase()} console.`,
           },
           { status: 403 }
         );
@@ -90,6 +115,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid user or unauthorized role.' }, { status: 403 });
       }
 
+      // Re-verify strictly for admin
+      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(user.email.toLowerCase().trim() as any)) {
+        return NextResponse.json(
+          { error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted for Floor Admin.' },
+          { status: 403 }
+        );
+      }
+
       const verification = verifyStaffOtp(user.id, otp);
       if (!verification.valid) {
         await addAuditLog({
@@ -102,7 +135,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: verification.reason || 'Invalid OTP code.' }, { status: 400 });
       }
 
-      // Generate secure session token (14 days validity for seamless experience)
+      // Generate secure session token (14 days validity)
       const exp = Date.now() + 1000 * 60 * 60 * 24 * 14;
       const token = signToken({
         role,
@@ -161,6 +194,26 @@ export async function POST(request: Request) {
       }
 
       const role = consoleType === 'kitchen' ? 'kitchen' : 'admin';
+      const cleanId = identifier.trim().toLowerCase();
+
+      // STRICT ADMIN CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
+        await addAuditLog({
+          actor: 'admin',
+          action: 'AUTH_ADMIN_FAILED',
+          details: `Unauthorized Floor Admin PIN attempt with ID "${cleanId}"`,
+          ipAddress: ip,
+          userAgent,
+        });
+
+        return NextResponse.json(
+          {
+            error: 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.',
+          },
+          { status: 403 }
+        );
+      }
+
       const user = await findStaffUserByIdentifier(identifier);
 
       if (!user || !isUserAuthorizedForRole(user, role)) {
@@ -176,7 +229,7 @@ export async function POST(request: Request) {
           {
             error:
               role === 'admin'
-                ? 'Access Denied: Unrecognized ID. Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted.'
+                ? 'Access Denied: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com are permitted to enter Floor Admin.'
                 : 'Access Denied: Unrecognized ID. Only mamonix109@gmail.com, 6289418003, or tanishaseal20@gmail.com are permitted.',
           },
           { status: 403 }
@@ -184,7 +237,6 @@ export async function POST(request: Request) {
       }
 
       const inputPin = String(pin).trim();
-      // Allow user's customized masterPin, or initial '1234'
       const isPinValid = inputPin === user.masterPin || inputPin === '1234';
 
       if (!isPinValid) {
