@@ -19,6 +19,9 @@ const getElapsedMinutes = (timestamp: number): number => {
 export default function AdminPage() {
   // ── AUTHENTICATION & THEME STATES ──
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminName, setAdminName] = useState('');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -240,36 +243,96 @@ export default function AdminPage() {
     if (activeTab === 'tables') fetchTables();
   }, [activeTab]);
 
-  // ── PIN AUTHENTICATION ──
+  // Check persistent admin session on mount (do NOT lock on refresh!)
+  useEffect(() => {
+    const saved = localStorage.getItem('anassa_admin_session');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.name) setAdminName(parsed.name);
+        if (parsed.phone) setAdminPhone(parsed.phone);
+        if (parsed.email) setAdminEmail(parsed.email);
+      } catch {}
+    }
+
+    fetch(`/api/admin/auth?_t=${Date.now()}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated) {
+            setIsAuthenticated(true);
+            if (data.staff?.name) setAdminName(data.staff.name);
+            if (data.staff?.phone) setAdminPhone(data.staff.phone);
+            if (data.staff?.email) setAdminEmail(data.staff.email);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── ADMIN STAFF AUTHENTICATION (NAME, PHONE, EMAIL, MASTER PIN) ──
   const handlePinSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setPinError('');
+
+    if (!adminName.trim()) {
+      setPinError('Please enter your Full Name');
+      return;
+    }
+    if (!adminPhone.trim() || adminPhone.replace(/\D/g, '').length < 10) {
+      setPinError('Please enter a valid 10-digit Mobile Number');
+      return;
+    }
+    if (!adminEmail.trim() || !adminEmail.includes('@')) {
+      setPinError('Please enter a valid Email ID');
+      return;
+    }
+    if (!pinInput.trim()) {
+      setPinError('Please enter Master Admin PIN');
+      return;
+    }
 
     try {
       const res = await fetch('/api/admin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinInput }),
+        body: JSON.stringify({
+          pin: pinInput.trim(),
+          name: adminName.trim(),
+          phone: adminPhone.trim(),
+          email: adminEmail.trim(),
+        }),
       });
 
       if (res.ok) {
         setIsAuthenticated(true);
+        localStorage.setItem(
+          'anassa_admin_session',
+          JSON.stringify({
+            name: adminName.trim(),
+            phone: adminPhone.trim(),
+            email: adminEmail.trim(),
+            authed: true,
+          })
+        );
         setPinInput('');
         fetchAdminData();
       } else {
-        setPinError('Invalid Admin Master PIN');
+        setPinError('Invalid Admin Master PIN (Default: 1234)');
       }
     } catch {
-      setPinError('Authentication failed. Check network.');
+      setPinError('Authentication failed. Check network connection.');
     }
   };
 
   const handleLogout = async () => {
-    if (!confirm('Lock Admin session and return to security PIN gate?')) return;
+    if (!confirm('Lock Admin session and sign out current manager?')) return;
     try {
+      localStorage.removeItem('anassa_admin_session');
       await fetch('/api/admin/auth', { method: 'DELETE' });
     } finally {
       setIsAuthenticated(false);
+      setPinInput('');
     }
   };
 
@@ -746,24 +809,71 @@ export default function AdminPage() {
             Floor Manager & Master Admin Console
           </p>
 
-          <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={8}
-              autoFocus
-              placeholder="Master PIN (1234)"
-              value={pinInput}
-              onChange={(e) => {
-                setPinInput(e.target.value);
-                setPinError('');
-              }}
-              className="admin-form-input"
-              style={{ textAlign: 'center', fontSize: 18, letterSpacing: 4, height: 48 }}
-            />
+          <form onSubmit={handlePinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'left' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Debolina Kumar"
+                value={adminName}
+                onChange={(e) => setAdminName(e.target.value)}
+                className="admin-form-input"
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
+                Mobile Number
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="e.g. 9163498840"
+                value={adminPhone}
+                onChange={(e) => setAdminPhone(e.target.value)}
+                className="admin-form-input"
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
+                Email ID
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. admin@ozkafe.in"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                className="admin-form-input"
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--adm-text-muted)', display: 'block', marginBottom: 4 }}>
+                Master Admin PIN
+              </label>
+              <input
+                type="password"
+                required
+                inputMode="numeric"
+                maxLength={8}
+                placeholder="Default: 1234"
+                value={pinInput}
+                onChange={(e) => {
+                  setPinInput(e.target.value);
+                  setPinError('');
+                }}
+                className="admin-form-input"
+                style={{ textAlign: 'center', fontSize: 16, letterSpacing: 4 }}
+              />
+            </div>
 
             {pinError && (
-              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 700 }}>
+              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 700, textAlign: 'center' }}>
                 {pinError}
               </div>
             )}

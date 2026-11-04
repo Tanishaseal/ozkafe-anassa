@@ -6,10 +6,15 @@ import { Order, OrderStatus } from '@/lib/types';
 
 export default function KitchenDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [staffName, setStaffName] = useState('');
+  const [staffPhone, setStaffPhone] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [recentServed, setRecentServed] = useState<Order[]>([]);
+  const [isRecentServedOpen, setIsRecentServedOpen] = useState(false);
   const [clock, setClock] = useState('00:00:00');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
@@ -47,48 +52,93 @@ export default function KitchenDashboard() {
     }
   };
 
-  // Require PIN on every window access: clear any legacy persistent auth
+  // Check persistent kitchen session on mount (do NOT lock on refresh!)
   useEffect(() => {
     fetchKitchenSettings();
-    try {
-      localStorage.removeItem('anassa_kitchen_authed');
-      sessionStorage.removeItem('anassa_kitchen_authed');
-    } catch {
-      // silent
+    const saved = localStorage.getItem('anassa_kitchen_session');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.name) setStaffName(parsed.name);
+        if (parsed.phone) setStaffPhone(parsed.phone);
+        if (parsed.email) setStaffEmail(parsed.email);
+      } catch {}
     }
+
+    // Verify session with server
+    fetch(`/api/kitchen/auth?_t=${Date.now()}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated) {
+            setIsAuthenticated(true);
+            if (data.staff?.name) setStaffName(data.staff.name);
+            if (data.staff?.phone) setStaffPhone(data.staff.phone);
+            if (data.staff?.email) setStaffEmail(data.staff.email);
+            fetchOrders();
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const handlePinSubmit = async (e?: React.FormEvent) => {
+  const handleLoginSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setPinError('');
+
+    if (!staffName.trim()) {
+      setPinError('Please enter your Full Name');
+      return;
+    }
+    if (!staffPhone.trim() || staffPhone.replace(/\D/g, '').length < 10) {
+      setPinError('Please enter a valid 10-digit Mobile Number');
+      return;
+    }
+    if (!staffEmail.trim() || !staffEmail.includes('@')) {
+      setPinError('Please enter a valid Email ID');
+      return;
+    }
+    if (!pinInput.trim()) {
+      setPinError('Please enter Kitchen Staff PIN');
+      return;
+    }
 
     try {
       const res = await fetch('/api/kitchen/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinInput }),
+        body: JSON.stringify({
+          pin: pinInput.trim(),
+          name: staffName.trim(),
+          phone: staffPhone.trim(),
+          email: staffEmail.trim(),
+        }),
       });
 
       if (res.ok) {
         setIsAuthenticated(true);
+        localStorage.setItem(
+          'anassa_kitchen_session',
+          JSON.stringify({
+            name: staffName.trim(),
+            phone: staffPhone.trim(),
+            email: staffEmail.trim(),
+            authed: true,
+          })
+        );
         setPinInput('');
         fetchOrders();
       } else {
-        setPinError('Invalid Kitchen Staff PIN.');
-        setPinInput('');
+        setPinError('Invalid Kitchen Staff PIN (Default: 1234)');
       }
     } catch {
-      setPinError('Authentication error');
+      setPinError('Authentication error. Check network connection.');
     }
   };
 
   const handleLogout = async () => {
-    try {
-      localStorage.removeItem('anassa_kitchen_authed');
-      sessionStorage.removeItem('anassa_kitchen_authed');
-    } catch {
-      // silent
-    }
+    if (!confirm('Lock Kitchen Display and sign out current staff?')) return;
+    localStorage.removeItem('anassa_kitchen_session');
     setIsAuthenticated(false);
     setPinInput('');
     await fetch('/api/kitchen/auth', { method: 'DELETE' });
@@ -118,7 +168,6 @@ export default function KitchenDashboard() {
       const res = await fetch(`/api/orders?status=active&_t=${Date.now()}`);
       if (res.status === 401) {
         setIsAuthenticated(false);
-        localStorage.removeItem('anassa_kitchen_authed');
         return;
       }
       if (res.ok) {
@@ -191,8 +240,26 @@ export default function KitchenDashboard() {
     };
   }, [isAuthenticated, fetchOrders]);
 
-  // Advance Order Status
+  // Advance Order Status (Instant Optimistic UI Updates + Receipt on Served!)
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    const previousOrders = [...orders];
+    const targetOrder = orders.find((o) => o.id === orderId);
+
+    // Instant optimistic update: remove immediately when served/cancelled
+    if (nextStatus === 'served' || nextStatus === 'cancelled') {
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      if (nextStatus === 'served' && targetOrder) {
+        const servedOrder: Order = { ...targetOrder, status: 'served', updatedAt: Date.now() };
+        setRecentServed((prev) => [servedOrder, ...prev.filter((o) => o.id !== orderId).slice(0, 19)]);
+        // Open the final bill receipt modal at the end!
+        setPrintOrder(servedOrder);
+      }
+    } else {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus, updatedAt: Date.now() } : o))
+      );
+    }
+
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -201,17 +268,18 @@ export default function KitchenDashboard() {
       });
       if (res.status === 401) {
         setIsAuthenticated(false);
-        alert('Session expired. Please re-enter Kitchen Staff PIN.');
+        localStorage.removeItem('anassa_kitchen_session');
+        alert('Session expired. Please sign in with Kitchen Staff credentials.');
         return;
       }
-      if (res.ok) {
-        fetchOrders();
-      } else {
+      if (!res.ok) {
+        setOrders(previousOrders);
         const err = await res.json().catch(() => ({}));
         alert(err.error || 'Failed to update order status');
       }
     } catch {
-      alert('Failed to update order status');
+      setOrders(previousOrders);
+      alert('Network error while updating order status');
     }
   };
 
@@ -234,7 +302,7 @@ export default function KitchenDashboard() {
     return Math.floor((Date.now() - timestamp) / 60000);
   };
 
-  // ── PIN AUTHENTICATION GATE ──
+  // ── STAFF LOGIN PAGE (NAME, NUMBER, EMAIL, PIN) ──
   if (!isAuthenticated) {
     return (
       <div style={{
@@ -243,95 +311,153 @@ export default function KitchenDashboard() {
         alignItems: 'center',
         justifyContent: 'center',
         background: '#F8F6F2',
-        padding: 20,
+        padding: '24px 16px',
+        fontFamily: 'var(--font-body), sans-serif',
       }}>
-        <div className="pin-dialog-card">
+        <div style={{
+          background: '#FFFFFF',
+          borderRadius: 20,
+          border: '1px solid #E5DFD7',
+          boxShadow: '0 10px 30px rgba(30, 20, 15, 0.08)',
+          maxWidth: 420,
+          width: '100%',
+          padding: '32px 24px',
+          textAlign: 'center',
+        }}>
           <Image
             src="/images/ozkafe_logo.jpeg"
             alt="OZKAFE"
-            width={64}
-            height={64}
-            style={{ borderRadius: '50%', border: '2px solid #A66B33', margin: '0 auto 12px' }}
+            width={68}
+            height={68}
+            style={{ borderRadius: 16, border: '2px solid #5C381E', margin: '0 auto 12px' }}
           />
-          <h2 style={{ fontFamily: 'var(--font-display)', margin: 0, fontSize: '1.4rem' }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 6px', fontSize: '1.45rem', color: '#1A1410' }}>
             Kitchen Staff Access
           </h2>
-          <p style={{ fontSize: 12, color: '#685E54', marginTop: 4 }}>
-            Enter Staff PIN to access live kitchen orders & ticket display
+          <p style={{ fontSize: 13, color: '#685E54', margin: '0 0 22px' }}>
+            Enter your duty credentials to access Kitchen Display System (KDS)
           </p>
 
-          <form onSubmit={handlePinSubmit} style={{ marginTop: 20 }}>
-            <input
-              type="password"
-              maxLength={8}
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="••••"
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '1.8rem',
-                textAlign: 'center',
-                letterSpacing: 10,
-                borderRadius: 12,
-                border: '1.5px solid #DCD2C5',
-                outline: 'none',
-                background: '#FAF8F5',
-              }}
-              autoFocus
-            />
+          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'left' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Debolina Kumar"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #E5DFD7',
+                  background: '#FAF9F6',
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
+                Mobile Number
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="e.g. 9163498840"
+                value={staffPhone}
+                onChange={(e) => setStaffPhone(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #E5DFD7',
+                  background: '#FAF9F6',
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
+                Email ID
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. staff@ozkafe.in"
+                value={staffEmail}
+                onChange={(e) => setStaffEmail(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #E5DFD7',
+                  background: '#FAF9F6',
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#73675C', display: 'block', marginBottom: 4 }}>
+                Kitchen Staff PIN
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="Default: 1234"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #E5DFD7',
+                  background: '#FAF9F6',
+                  fontSize: 16,
+                  textAlign: 'center',
+                  letterSpacing: 4,
+                  outline: 'none',
+                }}
+              />
+            </div>
 
             {pinError && (
-              <div style={{ color: '#DC2626', fontSize: 12, marginTop: 8, fontWeight: 600 }}>
+              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 700, textAlign: 'center', marginTop: 4 }}>
                 {pinError}
               </div>
             )}
 
-            {/* Keypad */}
-            <div className="pin-keypad">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  className="pin-btn"
-                  onClick={() => setPinInput((p) => p + num)}
-                >
-                  {num}
-                </button>
-              ))}
-              <button
-                type="button"
-                className="pin-btn"
-                style={{ fontSize: 13 }}
-                onClick={() => setPinInput('')}
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                className="pin-btn"
-                onClick={() => setPinInput((p) => p + '0')}
-              >
-                0
-              </button>
-              <button
-                type="button"
-                className="pin-btn"
-                style={{ fontSize: 13 }}
-                onClick={() => setPinInput((p) => p.slice(0, -1))}
-              >
-                ⌫
-              </button>
-            </div>
-
             <button
               type="submit"
-              className="btn-solid"
-              style={{ width: '100%', marginTop: 20 }}
+              style={{
+                width: '100%',
+                height: 48,
+                borderRadius: 12,
+                background: '#5C381E',
+                color: '#FFFFFF',
+                border: 'none',
+                fontSize: 14.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                marginTop: 8,
+                boxShadow: '0 4px 14px rgba(92, 56, 30, 0.3)',
+              }}
             >
               UNLOCK KITCHEN DASHBOARD
             </button>
           </form>
+
+          <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid #E5DFD7', fontSize: 11, color: '#9C8F82' }}>
+            OZKAFE Kitchen Display · Session stays active on refresh
+          </div>
         </div>
       </div>
     );
@@ -348,121 +474,128 @@ export default function KitchenDashboard() {
             width={44}
             height={44}
             className="kitchen-logo"
+            style={{ borderRadius: 10 }}
           />
           <div>
-            <div className="kitchen-brand-name">OZKAFE</div>
-            <div className="kitchen-brand-sub">Kitchen Display System (KDS)</div>
+            <h1 className="kitchen-title">OZKAFE</h1>
+            <span className="kitchen-subtitle">KITCHEN DISPLAY SYSTEM (KDS) · {staffName || 'Staff On Duty'}</span>
           </div>
         </div>
 
         <div className="kitchen-header-right">
-          <div className="kitchen-live-dot">LIVE</div>
+          <span className="kds-status-badge">
+            <span className="status-live-dot" /> LIVE
+          </span>
           <div className="kitchen-clock">{clock}</div>
 
           <button
-            className="kitchen-btn"
             onClick={() => setSoundEnabled(!soundEnabled)}
-            title={soundEnabled ? 'Mute Chimes' : 'Unmute Chimes'}
+            className={`btn-kds-header ${soundEnabled ? 'active' : ''}`}
+            title="Toggle Order Arrival Audio Chime"
           >
-            {soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF'}
+            {soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
           </button>
 
-          <button className="kitchen-btn" onClick={toggleFullScreen}>
+          {recentServed.length > 0 && (
+            <button
+              onClick={() => setIsRecentServedOpen(true)}
+              className="btn-kds-header"
+              title="View & Reprint Recent Served Orders"
+              style={{ background: '#F4EFEA', color: '#1A1410', fontWeight: 700 }}
+            >
+              📋 Served History ({recentServed.length})
+            </button>
+          )}
+
+          <button
+            onClick={toggleFullScreen}
+            className="btn-kds-header"
+            title="Toggle KDS Fullscreen"
+          >
             ⛶ Fullscreen
           </button>
 
           <button
-            className="kitchen-btn"
             onClick={handleLogout}
+            className="btn-kds-header"
+            title="Sign out of Kitchen Dashboard"
             style={{ color: '#DC2626', borderColor: '#FCA5A5' }}
           >
-            🔒 Lock KDS
+            🔒 Sign Out
           </button>
         </div>
       </header>
 
-      {/* ── KANBAN BOARD ── */}
+      {/* ── KDS 3-COLUMN BOARD ── */}
       <main className="kds-board">
-        {/* COLUMN 1: NEW ORDERS */}
-        <section className="kds-column col-received">
-          <div className="kds-col-header">
-            <span className="kds-col-title">
-              <span>🔔</span> New Orders
-            </span>
-            <span className="kds-badge" style={{ background: '#FEE2E2', color: '#991B1B' }}>
-              {receivedOrders.length}
-            </span>
+        {/* COLUMN 1: NEW / RECEIVED */}
+        <section className="kds-column">
+          <div className="column-header col-received">
+            <div className="col-header-left">
+              <span className="col-dot"></span>
+              <h2>NEW ORDERS</h2>
+            </div>
+            <span className="col-count-badge">{receivedOrders.length}</span>
           </div>
 
-          <div className="kds-card-list">
+          <div className="kds-cards-container">
             {receivedOrders.length === 0 ? (
-              <div className="kds-empty-col">
-                <span style={{ fontSize: '2rem' }}>📋</span>
-                <span>No new orders</span>
+              <div className="empty-kds-state">
+                <span className="empty-icon">☕</span>
+                <p>No incoming orders at the moment</p>
               </div>
             ) : (
               receivedOrders.map((order) => {
-                const elapsed = getElapsedMinutes(order.createdAt);
+                const elapsedMinutes = getElapsedMinutes(order.createdAt);
+                const isDanger = elapsedMinutes >= kitchenSettings.dangerTimeMinutes;
+                const isWarning = elapsedMinutes >= kitchenSettings.warningTimeMinutes;
+
                 return (
-                  <div key={order.id} className="kds-card">
-                    <div className="kds-card-top">
-                      <span className="kds-table-tag" style={order.tableNumber === 'Takeaway' || order.tableNumber === '0' || order.tableNumber === 0 ? { background: '#A66B33' } : undefined}>
-                        {order.tableNumber === 'Takeaway' || order.tableNumber === '0' || order.tableNumber === 0 ? '🥡 TAKEAWAY & IN-FLAT' : `TABLE ${order.tableNumber}`}
-                      </span>
-                      <span className={`kds-time-elapsed ${elapsed > kitchenSettings.dangerTimeMinutes ? 'kds-time-danger' : elapsed > kitchenSettings.warningTimeMinutes ? 'kds-time-warning' : ''}`}>
-                        {elapsed < 1 ? 'Just now' : `${elapsed}m ago`}
-                      </span>
-                    </div>
-
-                    <div className="kds-customer-row">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong>👤 {order.customerName}</strong>
-                        <span style={{ fontSize: 11, color: '#685E54' }}>📞 {order.customerPhone}</span>
+                  <div
+                    key={order.id}
+                    className={`kds-order-card ${isDanger ? 'timer-danger' : isWarning ? 'timer-warning' : ''}`}
+                  >
+                    <div className="card-top-bar">
+                      <div className="table-badge">
+                        {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
+                          <span>🥡 TAKEAWAY & IN-FLAT</span>
+                        ) : (
+                          <span>🍽️ TABLE {order.tableNumber}</span>
+                        )}
                       </div>
-                      {order.customerFlat && (
-                        <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 700, color: '#A66B33' }}>
-                          🏢 Flat: {order.customerFlat}
-                        </div>
-                      )}
-                      {order.distanceMeters !== undefined && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: 4,
-                            marginLeft: 'auto',
-                            background: order.distanceMeters > 150 ? '#FEE2E2' : '#DCFCE7',
-                            color: order.distanceMeters > 150 ? '#991B1B' : '#166534',
-                          }}
-                          title={`Customer was ${Math.round(order.distanceMeters)}m from cafe when order was placed`}
-                        >
-                          📍 {Math.round(order.distanceMeters)}m
-                        </span>
-                      )}
+                      <div className="order-timer">
+                        <span>⏱️ {elapsedMinutes}m ago</span>
+                      </div>
                     </div>
 
-                    <ul className="kds-items-list">
-                      {order.items.map((it, i) => (
-                        <li key={i} className="kds-item-entry">
-                          <span>
-                            <span className="kds-item-qty">{it.quantity}x</span>
-                            {it.name}
-                            {it.selectedSize && it.selectedSize !== 'Regular' && (
-                              <span style={{ fontSize: 11, color: '#685E54', marginLeft: 4 }}>
-                                ({it.selectedSize})
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="card-customer-row">
+                      <span className="card-cust-name">👤 {order.customerName}</span>
+                      <span className="card-cust-phone">{order.customerPhone}</span>
+                    </div>
 
-                    {order.specialInstructions && (
-                      <div className="kds-note-box">
-                        <strong>📝 Note:</strong> {order.specialInstructions}
+                    {order.customerFlat && (
+                      <div className="card-flat-row">
+                        <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
                       </div>
                     )}
+
+                    <div className="card-order-num">
+                      {order.orderNumber}
+                    </div>
+
+                    <div className="card-items-list">
+                      {order.items.map((it, idx) => (
+                        <div key={idx} className="kds-item-row">
+                          <span className="item-qty">{it.quantity}x</span>
+                          <span className="item-name">
+                            {it.name}
+                            {it.selectedSize && it.selectedSize !== 'Regular' && (
+                              <span className="item-size-tag">({it.selectedSize})</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
 
                     <div className="kds-card-actions">
                       <button
@@ -471,36 +604,18 @@ export default function KitchenDashboard() {
                       >
                         ▶ Start Preparing
                       </button>
-                      <button
-                        className="btn-print-kot"
-                        onClick={() => setPrintOrder(order)}
-                        title="Print Kitchen Ticket"
-                      >
-                        🖨️
-                      </button>
-                      {kitchenSettings.allowOrderCancellation !== false && (
+
+                      {kitchenSettings.allowOrderCancellation && (
                         <button
+                          className="btn-reject-order"
+                          title="Reject / Void suspicious order"
                           onClick={() => {
                             if (confirm(`Reject / Void suspicious order #${order.orderNumber || order.id.slice(0, 8)}?`)) {
                               handleUpdateStatus(order.id, 'cancelled');
                             }
                           }}
-                          title="Reject suspicious or prank order"
-                          style={{
-                            background: '#FEE2E2',
-                            color: '#DC2626',
-                            border: '1px solid #FCA5A5',
-                            borderRadius: 8,
-                            padding: '0 10px',
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 3,
-                          }}
                         >
-                          🚫 Reject
+                          ✕ Reject
                         </button>
                       )}
                     </div>
@@ -512,69 +627,73 @@ export default function KitchenDashboard() {
         </section>
 
         {/* COLUMN 2: IN PREPARATION */}
-        <section className="kds-column col-preparing">
-          <div className="kds-col-header">
-            <span className="kds-col-title">
-              <span>🔥</span> In Preparation
-            </span>
-            <span className="kds-badge" style={{ background: '#FEF3C7', color: '#92400E' }}>
-              {preparingOrders.length}
-            </span>
+        <section className="kds-column">
+          <div className="column-header col-preparing">
+            <div className="col-header-left">
+              <span className="col-dot"></span>
+              <h2>IN PREPARATION</h2>
+            </div>
+            <span className="col-count-badge">{preparingOrders.length}</span>
           </div>
 
-          <div className="kds-card-list">
+          <div className="kds-cards-container">
             {preparingOrders.length === 0 ? (
-              <div className="kds-empty-col">
-                <span style={{ fontSize: '2rem' }}>🍳</span>
-                <span>Nothing cooking right now</span>
+              <div className="empty-kds-state">
+                <span className="empty-icon">🍳</span>
+                <p>No orders currently in preparation</p>
               </div>
             ) : (
               preparingOrders.map((order) => {
-                const elapsed = getElapsedMinutes(order.createdAt);
+                const elapsedMinutes = getElapsedMinutes(order.createdAt);
+                const isDanger = elapsedMinutes >= kitchenSettings.dangerTimeMinutes;
+                const isWarning = elapsedMinutes >= kitchenSettings.warningTimeMinutes;
+
                 return (
-                  <div key={order.id} className="kds-card">
-                    <div className="kds-card-top">
-                      <span className="kds-table-tag" style={{ background: '#7C4A1E' }}>
-                        {order.tableNumber === 'Takeaway' || order.tableNumber === '0' || order.tableNumber === 0 ? '🥡 TAKEAWAY & IN-FLAT' : `TABLE ${order.tableNumber}`}
-                      </span>
-                      <span className={`kds-time-elapsed ${elapsed > kitchenSettings.dangerTimeMinutes ? 'kds-time-danger' : elapsed > kitchenSettings.warningTimeMinutes ? 'kds-time-warning' : ''}`}>
-                        {elapsed < 1 ? 'Just now' : `${elapsed}m ago`}
-                      </span>
-                    </div>
-
-                    <div className="kds-customer-row">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong>👤 {order.customerName}</strong>
-                        <span style={{ fontSize: 11, color: '#685E54' }}>📞 {order.customerPhone}</span>
+                  <div
+                    key={order.id}
+                    className={`kds-order-card card-in-prep ${isDanger ? 'timer-danger' : isWarning ? 'timer-warning' : ''}`}
+                  >
+                    <div className="card-top-bar">
+                      <div className="table-badge prep">
+                        {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
+                          <span>🥡 TAKEAWAY</span>
+                        ) : (
+                          <span>🍽️ TABLE {order.tableNumber}</span>
+                        )}
                       </div>
-                      {order.customerFlat && (
-                        <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 700, color: '#7C4A1E' }}>
-                          🏢 Flat: {order.customerFlat}
-                        </div>
-                      )}
+                      <div className="order-timer">
+                        <span>⏱️ {elapsedMinutes}m in prep</span>
+                      </div>
                     </div>
 
-                    <ul className="kds-items-list">
-                      {order.items.map((it, i) => (
-                        <li key={i} className="kds-item-entry">
-                          <span>
-                            <span className="kds-item-qty">{it.quantity}x</span>
-                            {it.name}
-                            {it.selectedSize && it.selectedSize !== 'Regular' && (
-                              <span style={{ fontSize: 11, color: '#685E54', marginLeft: 4 }}>
-                                ({it.selectedSize})
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="card-customer-row">
+                      <span className="card-cust-name">👤 {order.customerName}</span>
+                      <span className="card-cust-phone">{order.customerPhone}</span>
+                    </div>
 
-                    {order.specialInstructions && (
-                      <div className="kds-note-box">
-                        <strong>📝 Note:</strong> {order.specialInstructions}
+                    {order.customerFlat && (
+                      <div className="card-flat-row">
+                        <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
                       </div>
                     )}
+
+                    <div className="card-order-num">
+                      {order.orderNumber}
+                    </div>
+
+                    <div className="card-items-list">
+                      {order.items.map((it, idx) => (
+                        <div key={idx} className="kds-item-row">
+                          <span className="item-qty">{it.quantity}x</span>
+                          <span className="item-name">
+                            {it.name}
+                            {it.selectedSize && it.selectedSize !== 'Regular' && (
+                              <span className="item-size-tag">({it.selectedSize})</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
 
                     <div className="kds-card-actions">
                       <button
@@ -582,13 +701,6 @@ export default function KitchenDashboard() {
                         onClick={() => handleUpdateStatus(order.id, 'ready')}
                       >
                         ✓ Mark Ready
-                      </button>
-                      <button
-                        className="btn-print-kot"
-                        onClick={() => setPrintOrder(order)}
-                        title="Print Kitchen Ticket"
-                      >
-                        🖨️
                       </button>
                     </div>
                   </div>
@@ -598,66 +710,73 @@ export default function KitchenDashboard() {
           </div>
         </section>
 
-        {/* COLUMN 3: READY FOR PICKUP */}
-        <section className="kds-column col-ready">
-          <div className="kds-col-header">
-            <span className="kds-col-title">
-              <span>✅</span> Ready for Pickup
-            </span>
-            <span className="kds-badge" style={{ background: '#DCFCE7', color: '#166534' }}>
-              {readyOrders.length}
-            </span>
+        {/* COLUMN 3: READY FOR PICKUP / SERVING */}
+        <section className="kds-column">
+          <div className="column-header col-ready">
+            <div className="col-header-left">
+              <span className="col-dot"></span>
+              <h2>READY FOR PICKUP</h2>
+            </div>
+            <span className="col-count-badge">{readyOrders.length}</span>
           </div>
 
-          <div className="kds-card-list">
+          <div className="kds-cards-container">
             {readyOrders.length === 0 ? (
-              <div className="kds-empty-col">
-                <span style={{ fontSize: '2rem' }}>🛎️</span>
-                <span>No orders ready yet</span>
+              <div className="empty-kds-state">
+                <span className="empty-icon">🔔</span>
+                <p>No orders waiting for pickup</p>
               </div>
             ) : (
               readyOrders.map((order) => {
-                const elapsed = getElapsedMinutes(order.createdAt);
+                const elapsedMinutes = getElapsedMinutes(order.createdAt);
+
                 return (
-                  <div key={order.id} className="kds-card" style={{ borderColor: '#86EFAC' }}>
-                    <div className="kds-card-top">
-                      <span className="kds-table-tag" style={{ background: '#166534' }}>
-                        {order.tableNumber === 'Takeaway' || order.tableNumber === '0' || order.tableNumber === 0 ? '🥡 TAKEAWAY & IN-FLAT' : `TABLE ${order.tableNumber}`}
-                      </span>
-                      <span className="kds-time-elapsed">
-                        {elapsed < 1 ? 'Just now' : `${elapsed}m ago`}
-                      </span>
-                    </div>
-
-                    <div className="kds-customer-row">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong>👤 {order.customerName}</strong>
-                        <span style={{ fontSize: 11, color: '#685E54' }}>📞 {order.customerPhone}</span>
+                  <div key={order.id} className="kds-order-card card-ready">
+                    <div className="card-top-bar">
+                      <div className="table-badge ready">
+                        {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
+                          <span>🥡 TAKEAWAY & IN-FLAT</span>
+                        ) : (
+                          <span>🍽️ TABLE {order.tableNumber}</span>
+                        )}
                       </div>
-                      {order.customerFlat && (
-                        <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 700, color: '#166534' }}>
-                          🏢 Flat: {order.customerFlat}
-                        </div>
-                      )}
+                      <div className="order-timer">
+                        <span>{elapsedMinutes}m ago</span>
+                      </div>
                     </div>
 
-                    <ul className="kds-items-list">
-                      {order.items.map((it, i) => (
-                        <li key={i} className="kds-item-entry">
-                          <span>
-                            <span className="kds-item-qty">{it.quantity}x</span>
-                            {it.name}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="card-customer-row">
+                      <span className="card-cust-name">👤 {order.customerName}</span>
+                      <span className="card-cust-phone">{order.customerPhone}</span>
+                    </div>
 
+                    {order.customerFlat && (
+                      <div className="card-flat-row">
+                        <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                      </div>
+                    )}
+
+                    <div className="card-order-num ready-title">
+                      {order.orderNumber}
+                    </div>
+
+                    <div className="card-items-list">
+                      {order.items.map((it, idx) => (
+                        <div key={idx} className="kds-item-row">
+                          <span className="item-qty">{it.quantity}x</span>
+                          <span className="item-name">{it.name}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Instant Serve & Final Bill Receipt Button */}
                     <div className="kds-card-actions">
                       <button
                         className="kds-action-btn btn-complete"
                         onClick={() => handleUpdateStatus(order.id, 'served')}
+                        title="Mark order served and print final receipt"
                       >
-                        ✓ Serve & Archive
+                        ✓ Serve & Print Final Receipt
                       </button>
                     </div>
                   </div>
@@ -668,66 +787,102 @@ export default function KitchenDashboard() {
         </section>
       </main>
 
-      {/* ── KOT THERMAL TICKET PRINT MODAL ── */}
+      {/* ── RECENT SERVED ORDERS DRAWER ── */}
+      {isRecentServedOpen && (
+        <div className="admin-modal-overlay" onClick={() => setIsRecentServedOpen(false)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440, padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Recent Served Orders</h3>
+              <button onClick={() => setIsRecentServedOpen(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
+              {recentServed.map((s) => (
+                <div key={s.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #E5DFD7', background: '#FAF9F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong style={{ fontSize: 14 }}>{s.orderNumber}</strong> ({s.tableNumber === 0 ? 'Takeaway' : `Table ${s.tableNumber}`})
+                    <div style={{ fontSize: 12, color: '#685E54' }}>{s.customerName} · ₹{s.total}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPrintOrder(s);
+                      setIsRecentServedOpen(false);
+                    }}
+                    style={{ padding: '6px 12px', borderRadius: 8, background: '#5C381E', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
+                  >
+                    🖨️ Receipt
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FINAL ORDER RECEIPT MODAL (PRINTED AT THE END AFTER ORDER IS SERVED) ── */}
       {printOrder && (
         <div className="admin-modal-overlay" onClick={() => setPrintOrder(null)}>
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360, padding: 24 }}>
             <div className="kot-print-area">
               <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: 10, marginBottom: 10 }}>
-                <h2 style={{ fontSize: 18, margin: 0 }}>OZKAFE — ANASSA</h2>
-                <div style={{ fontSize: 12 }}>KITCHEN ORDER TICKET (KOT)</div>
-                <div style={{ fontSize: 13, fontWeight: 'bold', marginTop: 4 }}>
-                  {printOrder.orderNumber} · {printOrder.tableNumber === 'Takeaway' ? 'TAKEAWAY' : `TABLE ${printOrder.tableNumber}`}
+                <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 800 }}>OZKAFE — ANASSA</h2>
+                <div style={{ fontSize: 11, color: '#555' }}>Beside JW Marriott, EM Bypass, Kolkata</div>
+                <div style={{ fontSize: 13, fontWeight: 'bold', marginTop: 6, textTransform: 'uppercase' }}>
+                  FINAL ORDER RECEIPT
                 </div>
-                <div style={{ fontSize: 11 }}>{new Date(printOrder.createdAt).toLocaleTimeString()}</div>
+                <div style={{ fontSize: 14, fontWeight: 'bold' }}>
+                  {printOrder.orderNumber} · {printOrder.tableNumber === 'Takeaway' || printOrder.tableNumber === 0 ? 'TAKEAWAY & IN-FLAT' : `TABLE ${printOrder.tableNumber}`}
+                </div>
+                <div style={{ fontSize: 11, color: '#666' }}>{new Date(printOrder.updatedAt || printOrder.createdAt).toLocaleString()}</div>
               </div>
 
               <div style={{ fontSize: 12, marginBottom: 8 }}>
                 <strong>Guest:</strong> {printOrder.customerName} ({printOrder.customerPhone})<br />
                 {printOrder.customerFlat && <><strong>Flat:</strong> {printOrder.customerFlat}<br /></>}
+                <strong>Status:</strong> <span style={{ textTransform: 'uppercase', fontWeight: 700 }}>{printOrder.status}</span>
               </div>
 
-              <table style={{ width: '100%', fontSize: 13, borderBottom: '1px dashed #000', paddingBottom: 8, marginBottom: 8 }}>
+              <table style={{ width: '100%', fontSize: 13, borderBottom: '1px dashed #000', paddingBottom: 8, marginBottom: 8, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ textAlign: 'left' }}>
-                    <th>QTY</th>
-                    <th>ITEM</th>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+                    <th style={{ padding: '4px 0' }}>QTY</th>
+                    <th style={{ padding: '4px 0' }}>ITEM</th>
+                    <th style={{ padding: '4px 0', textAlign: 'right' }}>AMOUNT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {printOrder.items.map((it, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 'bold', width: 40 }}>{it.quantity}x</td>
-                      <td>
+                      <td style={{ fontWeight: 'bold', width: 36, padding: '4px 0' }}>{it.quantity}x</td>
+                      <td style={{ padding: '4px 0' }}>
                         {it.name}
                         {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
                       </td>
+                      <td style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600 }}>₹{it.price * it.quantity}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
-              {printOrder.specialInstructions && (
-                <div style={{ fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>
-                  <strong>Special Note:</strong> {printOrder.specialInstructions}
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 800, padding: '4px 0' }}>
+                <span>TOTAL PAID</span>
+                <span>₹{printOrder.total}</span>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button
                 className="btn-solid"
-                style={{ flex: 1 }}
+                style={{ flex: 1, height: 42, background: '#5C381E', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
                 onClick={() => window.print()}
               >
-                🖨️ Print Ticket
+                🖨️ Print Receipt
               </button>
               <button
                 className="btn-outline"
-                style={{ flex: 1 }}
+                style={{ flex: 1, height: 42, borderRadius: 8, border: '1px solid #ccc', background: '#fff', fontWeight: 700, cursor: 'pointer' }}
                 onClick={() => setPrintOrder(null)}
               >
-                Close
+                Done / Close
               </button>
             </div>
           </div>

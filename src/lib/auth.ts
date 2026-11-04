@@ -7,6 +7,9 @@ export interface TokenPayload {
   role: 'admin' | 'kitchen' | 'table';
   tableNumber?: number | string;
   sessionId?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
   exp: number; // Unix timestamp ms
 }
 
@@ -135,6 +138,19 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
   }
 
   return false;
+}
+
+/**
+ * Extract token from Authorization header or specific cookie
+ */
+export function getTokenFromRequest(request: Request, cookieName: string): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookies = parseCookies(cookieHeader);
+  return cookies[cookieName] || null;
 }
 
 /**

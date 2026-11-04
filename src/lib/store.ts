@@ -112,6 +112,17 @@ export async function getCategories(): Promise<Category[]> {
   }));
 }
 
+const categoryOrderMap: Record<string, number> = {
+  'hot-coffee': 1,
+  'iced-caffeine': 2,
+  'cold-brew': 3,
+  'premium-tea': 4,
+  'shakes-spritzers': 5,
+  'sandwiches-appetizers': 6,
+  'combo-meals': 7,
+  'bakery-desserts': 8,
+};
+
 // ──────────────────────────────────────────
 // MENU ITEMS
 // ──────────────────────────────────────────
@@ -124,13 +135,13 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
       }
       const { data, error } = await query;
       if (!error && data && data.length >= (categoryId ? 1 : initialMenuItems.length)) {
-        return data.map((i) => ({
+        const mapped = data.map((i) => ({
           id: i.id,
           name: i.name,
           subheading: i.subheading,
           desc: i.desc || '',
           price: Number(i.price),
-          img: i.image_url || '/images/americano.png',
+          img: i.name.toLowerCase().includes('hot chocolate') ? '/images/hot_chocolate.png' : (i.image_url || '/images/americano.png'),
           category: i.category_name,
           categoryId: i.category_id,
           isVeg: i.is_veg ?? true,
@@ -139,6 +150,16 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
           sizePriceMultiplier: i.size_price_multiplier || null,
           sortOrder: i.sort_order,
         }));
+
+        // Sort items by category order first so newly added dishes are grouped inside their category
+        mapped.sort((a, b) => {
+          const catA = categoryOrderMap[a.categoryId] ?? 99;
+          const catB = categoryOrderMap[b.categoryId] ?? 99;
+          if (catA !== catB) return catA - catB;
+          return (a.sortOrder || 0) - (b.sortOrder || 0);
+        });
+
+        return mapped;
       } else if (!categoryId && (!data || data.length < initialMenuItems.length)) {
         // Auto-sync full 76 PDF items to Supabase if Supabase has fewer items
         syncMenuToDatabase().catch((e) => console.warn('Auto-sync menu items error:', e));
@@ -148,7 +169,14 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
     }
   }
 
-  const items = globalStore.__anassa_items || initialMenuItems;
+  const items = [...(globalStore.__anassa_items || initialMenuItems)];
+  items.sort((a, b) => {
+    const catA = categoryOrderMap[a.categoryId] ?? 99;
+    const catB = categoryOrderMap[b.categoryId] ?? 99;
+    if (catA !== catB) return catA - catB;
+    return (a.sortOrder || 0) - (b.sortOrder || 0);
+  });
+
   if (categoryId) {
     return items.filter((it) => it.categoryId === categoryId);
   }
@@ -460,7 +488,38 @@ export async function getOrders(filter?: {
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  const all = await getOrders();
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).single();
+      if (!error && data) {
+        return {
+          id: data.id,
+          orderNumber: data.order_number || `#OZ-${data.id.substring(0, 4)}`,
+          tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
+          tableKey: data.table_key,
+          sessionId: data.session_id,
+          customerName: data.customer_name,
+          customerPhone: data.customer_phone,
+          customerFlat: data.customer_flat,
+          items: data.items || [],
+          subtotal: Number(data.subtotal || data.total),
+          taxAmount: Number(data.tax_amount || 0),
+          total: Number(data.total),
+          specialInstructions: data.special_instructions,
+          status: data.status as OrderStatus,
+          customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
+          customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
+          distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
+          createdAt: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
+          updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now(),
+        };
+      }
+    } catch (err) {
+      console.warn('Supabase getOrderById error:', err);
+    }
+  }
+
+  const all = globalStore.__anassa_orders || [];
   return all.find((o) => o.id === orderId) || null;
 }
 
@@ -469,10 +528,55 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      await supabaseServer.from('orders').update({
-        status,
-        updated_at: new Date(now).toISOString(),
-      }).eq('id', orderId);
+      const { data, error } = await supabaseServer
+        .from('orders')
+        .update({
+          status,
+          updated_at: new Date(now).toISOString(),
+        })
+        .eq('id', orderId)
+        .select()
+        .single();
+
+      if (!error && data) {
+        const updatedOrder: Order = {
+          id: data.id,
+          orderNumber: data.order_number || `#OZ-${data.id.substring(0, 4)}`,
+          tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
+          tableKey: data.table_key,
+          sessionId: data.session_id,
+          customerName: data.customer_name,
+          customerPhone: data.customer_phone,
+          customerFlat: data.customer_flat,
+          items: data.items || [],
+          subtotal: Number(data.subtotal || data.total),
+          taxAmount: Number(data.tax_amount || 0),
+          total: Number(data.total),
+          specialInstructions: data.special_instructions,
+          status: data.status as OrderStatus,
+          customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
+          customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
+          distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
+          createdAt: data.created_at ? new Date(data.created_at).getTime() : now,
+          updatedAt: now,
+        };
+
+        const inMem = globalStore.__anassa_orders?.find((o) => o.id === orderId);
+        if (inMem) {
+          inMem.status = status;
+          inMem.updatedAt = now;
+        }
+
+        broadcastOrder(updatedOrder);
+        addAuditLog({
+          actor: 'kitchen',
+          action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
+          details: status === 'cancelled'
+            ? `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) rejected / cancelled by kitchen staff`
+            : `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) status changed to "${status}"`,
+        });
+        return updatedOrder;
+      }
     } catch (err) {
       console.warn('Supabase updateOrderStatus error:', err);
     }
