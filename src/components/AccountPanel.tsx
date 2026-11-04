@@ -21,22 +21,12 @@ export default function AccountPanel({
   onUpdateUser,
   onLogout,
 }: AccountPanelProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'preferences'>('profile');
-
   // Edit Profile States
   const [nameInput, setNameInput] = useState(user?.name || '');
   const [phoneInput, setPhoneInput] = useState(user?.phone || '');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
   const [profileError, setProfileError] = useState('');
-
-  // Security / PIN States
-  const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [isSavingPin, setIsSavingPin] = useState(false);
-  const [pinMessage, setPinMessage] = useState('');
-  const [pinError, setPinError] = useState('');
 
   // Sync inputs when user prop updates
   useEffect(() => {
@@ -92,51 +82,6 @@ export default function AccountPanel({
       setProfileError('Network error updating profile.');
     } finally {
       setIsSavingProfile(false);
-    }
-  };
-
-  const handleSavePin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError('');
-    setPinMessage('');
-
-    const cleanNewPin = newPin.trim();
-    if (!/^\d{4}$/.test(cleanNewPin)) {
-      setPinError('New PIN must be exactly 4 numeric digits.');
-      return;
-    }
-
-    if (cleanNewPin !== confirmPin.trim()) {
-      setPinError('New PIN and Confirm PIN do not match.');
-      return;
-    }
-
-    setIsSavingPin(true);
-    try {
-      const res = await fetch('/api/auth/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPin: currentPin.trim(),
-          newPin: cleanNewPin,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setPinMessage('4-digit Master PIN changed successfully!');
-        setCurrentPin('');
-        setNewPin('');
-        setConfirmPin('');
-        if (data.user) onUpdateUser(data.user);
-        setTimeout(() => setPinMessage(''), 4000);
-      } else {
-        setPinError(data.error || 'Failed to update PIN.');
-      }
-    } catch {
-      setPinError('Network error updating PIN.');
-    } finally {
-      setIsSavingPin(false);
     }
   };
 
@@ -300,255 +245,106 @@ export default function AccountPanel({
           </div>
         )}
 
-        {/* TAB NAVIGATION */}
-        <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--adm-border, #E5DFD7)',
-            padding: '0 16px',
-            gap: 8,
-            background: 'var(--adm-surface, #FFFFFF)',
-          }}
-        >
-          <button
-            onClick={() => setActiveTab('profile')}
-            style={{
-              padding: '12px 14px',
-              border: 'none',
-              background: 'transparent',
-              fontSize: 13,
-              fontWeight: activeTab === 'profile' ? 700 : 500,
-              color: activeTab === 'profile' ? 'var(--adm-coffee, #5C381E)' : 'var(--adm-text-muted, #73675C)',
-              borderBottom: activeTab === 'profile' ? '2px solid var(--adm-coffee, #5C381E)' : '2px solid transparent',
-              cursor: 'pointer',
-            }}
-          >
-            My Profile
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            style={{
-              padding: '12px 14px',
-              border: 'none',
-              background: 'transparent',
-              fontSize: 13,
-              fontWeight: activeTab === 'security' ? 700 : 500,
-              color: activeTab === 'security' ? 'var(--adm-coffee, #5C381E)' : 'var(--adm-text-muted, #73675C)',
-              borderBottom: activeTab === 'security' ? '2px solid var(--adm-coffee, #5C381E)' : '2px solid transparent',
-              cursor: 'pointer',
-            }}
-          >
-            4-Digit Master PIN
-          </button>
-        </div>
-
         {/* BODY CONTENT */}
         <div style={{ flex: 1, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* TAB 1: PROFILE */}
-          {activeTab === 'profile' && (
-            <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  className="admin-form-input"
-                  style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
-                />
+          <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                required
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                className="admin-form-input"
+                style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
+                Verified Account Email
+              </label>
+              <input
+                type="email"
+                disabled
+                value={user.email}
+                style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: '#F2ECE3', color: '#73675C', cursor: 'not-allowed' }}
+              />
+              <span style={{ fontSize: 11, color: '#16A34A', marginTop: 4, display: 'block' }}>
+                ✓ Verified authorized management account
+              </span>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
+                Mobile Phone Number
+              </label>
+              <input
+                type="tel"
+                placeholder="Enter mobile number"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                className="admin-form-input"
+                style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
+                Access Roles
+              </label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {user.roles.map((r) => (
+                  <span
+                    key={r}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 20,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      background: r === 'admin' ? 'rgba(92, 56, 30, 0.12)' : 'rgba(22, 163, 74, 0.12)',
+                      color: r === 'admin' ? '#5C381E' : '#15803D',
+                    }}
+                  >
+                    {r === 'admin' ? 'Floor Admin' : 'Kitchen KDS'}
+                  </span>
+                ))}
               </div>
+            </div>
 
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  Verified Email ID
-                </label>
-                <input
-                  type="email"
-                  disabled
-                  value={user.email}
-                  style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: '#F2ECE3', color: '#73675C', cursor: 'not-allowed' }}
-                />
-                <span style={{ fontSize: 11, color: '#16A34A', marginTop: 4, display: 'block' }}>
-                  ✓ Verified authorized management account
-                </span>
+            {profileError && (
+              <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 600 }}>
+                {profileError}
               </div>
+            )}
 
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  Mobile Phone Number
-                </label>
-                <input
-                  type="tel"
-                  placeholder="Enter mobile number"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  className="admin-form-input"
-                  style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
-                />
+            {profileMessage && (
+              <div style={{ color: '#16A34A', fontSize: 12.5, fontWeight: 600 }}>
+                {profileMessage}
               </div>
+            )}
 
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  Access Roles
-                </label>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {user.roles.map((r) => (
-                    <span
-                      key={r}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 20,
-                        fontSize: 11.5,
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        background: r === 'admin' ? 'rgba(92, 56, 30, 0.12)' : 'rgba(22, 163, 74, 0.12)',
-                        color: r === 'admin' ? '#5C381E' : '#15803D',
-                      }}
-                    >
-                      {r === 'admin' ? 'Floor Admin' : 'Kitchen KDS'}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {profileError && (
-                <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 600 }}>
-                  {profileError}
-                </div>
-              )}
-
-              {profileMessage && (
-                <div style={{ color: '#16A34A', fontSize: 12.5, fontWeight: 600 }}>
-                  {profileMessage}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isSavingProfile}
-                style={{
-                  marginTop: 6,
-                  height: 42,
-                  background: 'var(--adm-coffee, #5C381E)',
-                  color: '#FFF',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontWeight: 700,
-                  fontSize: 13.5,
-                  cursor: isSavingProfile ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {isSavingProfile ? 'Saving Changes...' : 'Save Profile Details'}
-              </button>
-            </form>
-          )}
-
-          {/* TAB 2: SECURITY & PIN */}
-          {activeTab === 'security' && (
-            <form onSubmit={handleSavePin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div
-                style={{
-                  background: 'var(--adm-surface-elevated, #FAF8F5)',
-                  padding: 14,
-                  borderRadius: 8,
-                  border: '1px solid var(--adm-border, #E5DFD7)',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--adm-text-main, #1A1410)', marginBottom: 4 }}>
-                  🔒 4-Digit Master PIN Login
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--adm-text-muted, #73675C)', lineHeight: 1.45 }}>
-                  Once saved, you can log into any device instantly using just your Email / Phone and this 4-digit PIN, without waiting for OTP!
-                </div>
-              </div>
-
-              {user.hasCustomPin && (
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                    Current 4-Digit Master PIN
-                  </label>
-                  <input
-                    type="password"
-                    maxLength={4}
-                    inputMode="numeric"
-                    required
-                    placeholder="Enter current PIN"
-                    value={currentPin}
-                    onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
-                    className="admin-form-input"
-                    style={{ width: '100%', height: 42, padding: '0 12px', textAlign: 'center', letterSpacing: 4, fontSize: 16, borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  New 4-Digit Master PIN
-                </label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  inputMode="numeric"
-                  required
-                  placeholder="e.g. 5821"
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
-                  className="admin-form-input"
-                  style={{ width: '100%', height: 42, padding: '0 12px', textAlign: 'center', letterSpacing: 4, fontSize: 16, borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                  Confirm New 4-Digit PIN
-                </label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  inputMode="numeric"
-                  required
-                  placeholder="Confirm 4 digits"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                  className="admin-form-input"
-                  style={{ width: '100%', height: 42, padding: '0 12px', textAlign: 'center', letterSpacing: 4, fontSize: 16, borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: 'var(--adm-input-bg, #FAF9F6)' }}
-                />
-              </div>
-
-              {pinError && (
-                <div style={{ color: '#DC2626', fontSize: 12.5, fontWeight: 600 }}>
-                  {pinError}
-                </div>
-              )}
-
-              {pinMessage && (
-                <div style={{ color: '#16A34A', fontSize: 12.5, fontWeight: 600 }}>
-                  {pinMessage}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isSavingPin}
-                style={{
-                  marginTop: 6,
-                  height: 42,
-                  background: 'var(--adm-coffee, #5C381E)',
-                  color: '#FFF',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontWeight: 700,
-                  fontSize: 13.5,
-                  cursor: isSavingPin ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {isSavingPin ? 'Saving Master PIN...' : 'Save 4-Digit Master PIN'}
-              </button>
-            </form>
-          )}
+            <button
+              type="submit"
+              disabled={isSavingProfile}
+              style={{
+                marginTop: 6,
+                height: 42,
+                background: 'var(--adm-coffee, #5C381E)',
+                color: '#FFF',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 700,
+                fontSize: 13.5,
+                cursor: isSavingProfile ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isSavingProfile ? 'Saving Changes...' : 'Save Profile Details'}
+            </button>
+          </form>
 
           {/* LOGOUT BUTTON */}
           <div style={{ marginTop: 'auto', paddingTop: 20, borderTop: '1px solid var(--adm-border, #E5DFD7)' }}>
@@ -578,4 +374,3 @@ export default function AccountPanel({
     </div>
   );
 }
-
