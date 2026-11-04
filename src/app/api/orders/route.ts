@@ -179,10 +179,16 @@ export async function POST(request: Request) {
       }
 
       if (regularItem) {
-        if (!regularItem.isAvailable) {
+        if (!regularItem.isAvailable || (typeof regularItem.stock === 'number' && regularItem.stock <= 0)) {
           return NextResponse.json({
             error: `"${regularItem.name}" is currently sold out and cannot be ordered.`,
             code: 'ITEM_SOLD_OUT',
+          }, { status: 400 });
+        }
+        if (typeof regularItem.stock === 'number' && regularItem.stock < rawQty) {
+          return NextResponse.json({
+            error: `Only ${regularItem.stock} portion(s) left of "${regularItem.name}". Please reduce quantity.`,
+            code: 'INSUFFICIENT_STOCK',
           }, { status: 400 });
         }
         const unitPrice = Number(regularItem.price);

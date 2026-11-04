@@ -43,12 +43,16 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { name, category, categoryId, price, desc, subheading, img, isVeg, sizes } = body;
+    const { name, category, categoryId, price, desc, subheading, img, isVeg, sizes, stock } = body;
 
     const numPrice = Number(price);
     if (!name || !String(name).trim() || !categoryId || isNaN(numPrice) || numPrice < 0) {
       return NextResponse.json({ error: 'Valid Name, non-negative Price and Category are required' }, { status: 400 });
     }
+
+    const stockVal = stock !== undefined && !isNaN(Number(stock))
+      ? Math.max(0, Math.floor(Number(stock)))
+      : 10;
 
     const created = await addMenuItem({
       name: String(name).trim(),
@@ -59,7 +63,8 @@ export async function POST(request: Request) {
       subheading: subheading || '',
       img: img || '/images/americano.png',
       isVeg: isVeg ?? true,
-      isAvailable: true,
+      isAvailable: stockVal > 0,
+      stock: stockVal,
       sizes: Array.isArray(sizes) && sizes.length > 0 ? sizes : ['Regular'],
     });
 
@@ -92,7 +97,19 @@ export async function PATCH(request: Request) {
       updates.price = p;
     }
 
-    if (typeof isAvailable === 'boolean' && Object.keys(updates).length === 0) {
+    if (updates.stock !== undefined) {
+      const s = Number(updates.stock);
+      if (isNaN(s) || s < 0) {
+        return NextResponse.json({ error: 'Stock must be a valid non-negative number' }, { status: 400 });
+      }
+      updates.stock = Math.max(0, Math.floor(s));
+    }
+
+    if (typeof isAvailable === 'boolean') {
+      updates.isAvailable = isAvailable;
+    }
+
+    if (typeof isAvailable === 'boolean' && Object.keys(updates).length === 1) {
       const ok = await toggleItemAvailability(id, isAvailable);
       return NextResponse.json({ success: ok, isAvailable });
     }

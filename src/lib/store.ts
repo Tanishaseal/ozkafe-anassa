@@ -146,6 +146,7 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
           categoryId: i.category_id,
           isVeg: i.is_veg ?? true,
           isAvailable: i.is_available ?? true,
+          stock: typeof i.stock === 'number' ? i.stock : 10,
           sizes: Array.isArray(i.sizes) ? i.sizes : ['Regular'],
           sizePriceMultiplier: i.size_price_multiplier || null,
           sortOrder: i.sort_order,
@@ -169,7 +170,10 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
     }
   }
 
-  const items = [...(globalStore.__anassa_items || initialMenuItems)];
+  const items = (globalStore.__anassa_items || initialMenuItems).map((it) => ({
+    ...it,
+    stock: typeof it.stock === 'number' ? it.stock : 10,
+  }));
   items.sort((a, b) => {
     const catA = categoryOrderMap[a.categoryId] ?? 99;
     const catB = categoryOrderMap[b.categoryId] ?? 99;
@@ -184,32 +188,99 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
 }
 
 export async function toggleItemAvailability(itemId: string, isAvailable: boolean): Promise<boolean> {
+  const item = globalStore.__anassa_items?.find((i) => i.id === itemId);
+  let newStock = item?.stock;
+  if (isAvailable && (newStock === undefined || newStock <= 0)) {
+    newStock = 10;
+  }
+
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      await supabaseServer.from('menu_items').update({ is_available: isAvailable }).eq('id', itemId);
+      const dbPayload: Record<string, unknown> = { is_available: isAvailable };
+      if (newStock !== undefined) dbPayload.stock = newStock;
+      await supabaseServer.from('menu_items').update(dbPayload).eq('id', itemId);
     } catch (err) {
       console.warn('Supabase toggleItemAvailability error:', err);
     }
   }
 
-  const item = globalStore.__anassa_items?.find((i) => i.id === itemId);
   if (item) {
     item.isAvailable = isAvailable;
+    if (newStock !== undefined) item.stock = newStock;
     addAuditLog({
       actor: 'admin',
       action: 'STOCK_TOGGLED',
-      details: `Item "${item.name}" marked ${isAvailable ? 'IN STOCK' : 'OUT OF STOCK (86ed)'}`,
+      details: `Item "${item.name}" marked ${isAvailable ? `IN STOCK (${item.stock} left)` : 'OUT OF STOCK (86ed)'}`,
     });
     return true;
   }
   return false;
 }
 
+export async function updateMenuItemStock(id: string, newStock: number): Promise<MenuItem | null> {
+  const finalStock = Math.max(0, Math.floor(newStock));
+  const isAvailable = finalStock > 0;
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer
+        .from('menu_items')
+        .update({ stock: finalStock, is_available: isAvailable })
+        .eq('id', id);
+    } catch (err) {
+      console.warn('Supabase updateMenuItemStock error:', err);
+    }
+  }
+
+  const item = globalStore.__anassa_items?.find((i) => i.id === id);
+  if (item) {
+    item.stock = finalStock;
+    item.isAvailable = isAvailable;
+    addAuditLog({
+      actor: 'admin',
+      action: 'STOCK_TOGGLED',
+      details: `Stock for "${item.name}" updated to ${finalStock} items (${isAvailable ? 'In Stock' : 'Out of Stock'})`,
+    });
+    return item;
+  }
+  return null;
+}
+
+export async function decrementMenuItemStock(id: string, quantity: number): Promise<void> {
+  const item = globalStore.__anassa_items?.find((i) => i.id === id);
+  const currentStock = typeof item?.stock === 'number' ? item.stock : 10;
+  const newStock = Math.max(0, currentStock - quantity);
+  const isAvailable = newStock > 0;
+
+  if (item) {
+    item.stock = newStock;
+    if (newStock === 0) {
+      item.isAvailable = false;
+    }
+  }
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer
+        .from('menu_items')
+        .update({
+          stock: newStock,
+          ...(newStock === 0 ? { is_available: false } : {}),
+        })
+        .eq('id', id);
+    } catch (e) {
+      console.warn('Supabase decrementMenuItemStock error:', e);
+    }
+  }
+}
+
 export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuItem> {
   const id = `item-${Date.now()}`;
+  const initialStock = typeof newItem.stock === 'number' ? newItem.stock : 10;
   const created: MenuItem = {
     ...newItem,
     id,
+    stock: initialStock,
     sortOrder: (globalStore.__anassa_items?.length || 0) + 1,
   };
 
@@ -226,6 +297,7 @@ export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuIt
         image_url: created.img,
         is_veg: created.isVeg,
         is_available: created.isAvailable,
+        stock: created.stock,
         sizes: created.sizes,
         sort_order: created.sortOrder,
       });
@@ -238,12 +310,19 @@ export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuIt
   addAuditLog({
     actor: 'admin',
     action: 'MENU_ITEM_ADDED',
-    details: `Added new dish "${created.name}" (₹${created.price}) in ${created.category}`,
+    details: `Added new dish "${created.name}" (₹${created.price}, Stock: ${created.stock}) in ${created.category}`,
   });
   return created;
 }
 
 export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Promise<MenuItem | null> {
+  if (updates.stock !== undefined) {
+    updates.stock = Math.max(0, Math.floor(updates.stock));
+    if (updates.stock === 0 && updates.isAvailable === undefined) {
+      updates.isAvailable = false;
+    }
+  }
+
   if (isSupabaseConfigured && supabaseServer) {
     try {
       const dbUpdates: Record<string, unknown> = {};
@@ -256,6 +335,7 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
       if (updates.img !== undefined) dbUpdates.image_url = updates.img;
       if (updates.isVeg !== undefined) dbUpdates.is_veg = updates.isVeg;
       if (updates.isAvailable !== undefined) dbUpdates.is_available = updates.isAvailable;
+      if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
       if (updates.sizes !== undefined) dbUpdates.sizes = updates.sizes;
       await supabaseServer.from('menu_items').update(dbUpdates).eq('id', id);
     } catch (err) {
@@ -272,7 +352,7 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
     addAuditLog({
       actor: 'admin',
       action: 'MENU_ITEM_UPDATED',
-      details: `Updated dish "${globalStore.__anassa_items[itemIndex].name}"`,
+      details: `Updated dish "${globalStore.__anassa_items[itemIndex].name}" (Stock: ${globalStore.__anassa_items[itemIndex].stock ?? 10})`,
     });
     return globalStore.__anassa_items[itemIndex];
   }
@@ -404,6 +484,13 @@ export async function createOrder(data: {
       });
     } catch (err) {
       console.warn('Supabase createOrder error, saved in memory store:', err);
+    }
+  }
+
+  // Automatically decrement stock for ordered food/drink items (default is 10, decreases with each order)
+  for (const it of newOrder.items) {
+    if (!it.isAddon && it.id) {
+      await decrementMenuItemStock(it.id, it.quantity || 1);
     }
   }
 
@@ -956,6 +1043,7 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
           image_url: it.img,
           is_veg: it.isVeg,
           is_available: it.isAvailable,
+          stock: it.stock ?? 10,
           sizes: it.sizes,
           size_price_multiplier: it.sizePriceMultiplier || null,
           sort_order: it.sortOrder,

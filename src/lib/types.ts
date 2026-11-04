@@ -11,6 +11,7 @@ export interface MenuItem {
   categoryId: string;
   isVeg: boolean;
   isAvailable: boolean;
+  stock?: number; // Portions left in stock (default: 10)
   sizes: string[];
   sizePriceMultiplier?: Record<string, number> | null;
   sortOrder?: number;

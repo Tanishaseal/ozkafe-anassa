@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { MenuItem, Category, Order, CafeSettings, AuditLog, InventoryItem, StaffShift, OrderStatus, StaffUser } from '@/lib/types';
+import { MenuItem, Category, Order, CafeSettings, AuditLog, StaffShift, OrderStatus, StaffUser } from '@/lib/types';
 import StaffAuthModal from '@/components/StaffAuthModal';
 import AccountPanel from '@/components/AccountPanel';
 
@@ -26,9 +26,9 @@ export default function AdminPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   // ── NAVIGATION & LAYOUT STATES ──
-  // Required sections: Dashboard (Home), Live Orders, Menu Management, Inventory, Staff Schedule, Analytics + Settings, Tables, Logs
+  // Sections: Dashboard (Home), Live Orders, Menu Management (with Food Inventories), Staff Schedule, Analytics + Settings, Tables, Logs
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'live-orders' | 'menu' | 'inventory' | 'staff' | 'analytics' | 'settings' | 'tables' | 'logs'
+    'dashboard' | 'live-orders' | 'menu' | 'staff' | 'analytics' | 'settings' | 'tables' | 'logs'
   >('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -40,7 +40,7 @@ export default function AdminPage() {
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<Order | null>(null);
 
   // Quick Add Modal States
-  const [quickAddModalType, setQuickAddModalType] = useState<'item' | 'restock' | 'manual-order' | null>(null);
+  const [quickAddModalType, setQuickAddModalType] = useState<'item' | 'manual-order' | null>(null);
 
   // Database Wipe Modal States (Live Launch)
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
@@ -67,7 +67,6 @@ export default function AdminPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [staff, setStaff] = useState<StaffShift[]>([]);
   const [tablesList, setTablesList] = useState<{ tableNumber: number; label: string; secretKey: string; isActive: boolean }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -115,7 +114,6 @@ export default function AdminPage() {
   const [menuCatFilter, setMenuCatFilter] = useState('all');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
-  const [inventoryCatFilter, setInventoryCatFilter] = useState('all');
   const [auditActorFilter, setAuditActorFilter] = useState('all');
 
   // Edit Menu Item Form
@@ -131,16 +129,13 @@ export default function AdminPage() {
   const [formImg, setFormImg] = useState('/images/americano.png');
   const [formIsVeg, setFormIsVeg] = useState(true);
   const [formSizes, setFormSizes] = useState('Regular');
+  const [formStock, setFormStock] = useState(10);
 
   // Manual Order Form State
   const [manualTable, setManualTable] = useState('Takeaway');
   const [manualGuest, setManualGuest] = useState('');
   const [manualPhone, setManualPhone] = useState('');
   const [manualSelectedItemId, setManualSelectedItemId] = useState('');
-
-  // Restock Form State
-  const [restockItemId, setRestockItemId] = useState('');
-  const [restockAmount, setRestockAmount] = useState(5);
 
   // ── THEME INITIALIZATION ──
   useEffect(() => {
@@ -185,7 +180,6 @@ export default function AdminPage() {
         const adminData = await adminRes.json();
         if (adminData.stats) setStats(adminData.stats);
         if (adminData.settings) setSettings(adminData.settings);
-        if (adminData.inventory) setInventory(adminData.inventory);
         if (adminData.staff) setStaff(adminData.staff);
         if (adminData.database) setDbStatus(adminData.database);
       }
@@ -273,19 +267,46 @@ export default function AdminPage() {
   };
 
   // ── STOCK TOGGLES & MENU CRUD ──
-  const handleToggleStock = async (itemId: string, currentStock: boolean) => {
+  const handleToggleStock = async (itemId: string, currentAvailable: boolean) => {
+    const nextAvailable = !currentAvailable;
+    const currentItem = menuItems.find((i) => i.id === itemId);
+    const nextStock = nextAvailable && (currentItem?.stock ?? 0) <= 0 ? 10 : (currentItem?.stock ?? 10);
+
     setMenuItems((prev) =>
-      prev.map((it) => (it.id === itemId ? { ...it, isAvailable: !currentStock } : it))
+      prev.map((it) => (it.id === itemId ? { ...it, isAvailable: nextAvailable, stock: nextStock } : it))
     );
 
     try {
       const res = await fetch('/api/menu', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: itemId, isAvailable: !currentStock }),
+        body: JSON.stringify({ id: itemId, isAvailable: nextAvailable, stock: nextStock }),
       });
       if (res.status === 401) {
         setIsAuthenticated(false);
+      }
+    } catch {
+      fetchAdminData();
+    }
+  };
+
+  const handleAdjustStock = async (itemId: string, newStock: number) => {
+    const finalStock = Math.max(0, Math.floor(newStock));
+    const isAvailable = finalStock > 0;
+
+    // Optimistically update item in state
+    setMenuItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, stock: finalStock, isAvailable } : it))
+    );
+
+    try {
+      const res = await fetch('/api/menu', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: itemId, stock: finalStock, isAvailable }),
+      });
+      if (!res.ok) {
+        fetchAdminData();
       }
     } catch {
       fetchAdminData();
@@ -318,6 +339,7 @@ export default function AdminPage() {
           desc: formDesc,
           img: formImg,
           isVeg: formIsVeg,
+          stock: formStock,
           sizes: sizesArray.length > 0 ? sizesArray : ['Regular'],
         }),
       });
@@ -328,6 +350,7 @@ export default function AdminPage() {
         setFormPrice('');
         setFormDesc('');
         setFormSubheading('');
+        setFormStock(10);
         fetchAdminData();
         setSaveSuccessMsg('✓ New menu item created and published live!');
         setTimeout(() => setSaveSuccessMsg(''), 4000);
@@ -381,29 +404,6 @@ export default function AdminPage() {
       }
     } catch {
       fetchAdminData();
-    }
-  };
-
-  // ── INVENTORY RESTOCK & ACTIONS ──
-  const handleRestockSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!restockItemId || restockAmount <= 0) return;
-
-    try {
-      const res = await fetch('/api/admin?action=restock_inventory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: restockItemId, amount: Number(restockAmount) }),
-      });
-
-      if (res.ok) {
-        setQuickAddModalType(null);
-        fetchAdminData();
-        setSaveSuccessMsg('✓ Inventory restocked successfully!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      }
-    } catch {
-      alert('Failed to restock inventory item');
     }
   };
 
@@ -619,18 +619,24 @@ export default function AdminPage() {
   const activeAlerts = useMemo(() => {
     const list: { id: string; type: 'warning' | 'danger' | 'info'; title: string; actionLabel?: string; onAction?: () => void }[] = [];
 
-    // Low stock alerts
-    inventory.forEach((item) => {
-      if (item.status === 'low_stock' || item.status === 'out_of_stock') {
+    // Low stock food/drink alerts (from Menu Management)
+    menuItems.forEach((item) => {
+      const stock = item.stock ?? 10;
+      if (!item.isAvailable || stock === 0) {
         list.push({
-          id: `inv-${item.id}`,
-          type: item.status === 'out_of_stock' ? 'danger' : 'warning',
-          title: `Low Stock: ${item.name} (${item.currentStock} ${item.unit} left · Min: ${item.minThreshold} ${item.unit})`,
-          actionLabel: 'Restock',
-          onAction: () => {
-            setRestockItemId(item.id);
-            setQuickAddModalType('restock');
-          },
+          id: `menu-out-${item.id}`,
+          type: 'danger',
+          title: `Sold Out: ${item.name} (0 items left in kitchen)`,
+          actionLabel: 'Manage Stock',
+          onAction: () => setActiveTab('menu'),
+        });
+      } else if (stock <= 3) {
+        list.push({
+          id: `menu-low-${item.id}`,
+          type: 'warning',
+          title: `Low Stock: ${item.name} (${stock} items left in kitchen)`,
+          actionLabel: 'Manage Stock',
+          onAction: () => setActiveTab('menu'),
         });
       }
     });
@@ -660,7 +666,7 @@ export default function AdminPage() {
     }
 
     return list;
-  }, [inventory, orders, staff]);
+  }, [menuItems, orders, staff]);
 
   // ── FILTERED DATA LISTS ──
   const filteredMenuItems = useMemo(() => {
@@ -695,17 +701,6 @@ export default function AdminPage() {
       return matchStatus && matchSearch && matchGlobal;
     });
   }, [orders, orderStatusFilter, orderSearch, globalSearch]);
-
-  const filteredInventory = useMemo(() => {
-    return inventory.filter((item) => {
-      const matchCat = inventoryCatFilter === 'all' || item.category === inventoryCatFilter;
-      const matchGlobal =
-        !globalSearch ||
-        item.name.toLowerCase().includes(globalSearch.toLowerCase()) ||
-        item.category.toLowerCase().includes(globalSearch.toLowerCase());
-      return matchCat && matchGlobal;
-    });
-  }, [inventory, inventoryCatFilter, globalSearch]);
 
   const filteredStaff = useMemo(() => {
     return staff.filter((s) => {
@@ -829,30 +824,14 @@ export default function AdminPage() {
               </svg>
             </div>
             <span className="admin-nav-label">Menu Management</span>
-          </button>
-
-          {/* 4. Inventory */}
-          <button
-            onClick={() => { setActiveTab('inventory'); setIsMobileSidebarOpen(false); }}
-            className={`admin-nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-            title="Inventory & Stock Tracking"
-          >
-            <div className="admin-nav-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                <line x1="12" y1="22.08" x2="12" y2="12"></line>
-              </svg>
-            </div>
-            <span className="admin-nav-label">Inventory</span>
-            {inventory.filter((i) => i.status === 'low_stock').length > 0 && (
+            {menuItems.filter((i) => (i.stock ?? 10) <= 3 || !i.isAvailable).length > 0 && (
               <span className="admin-nav-badge matcha">
-                {inventory.filter((i) => i.status === 'low_stock').length} low
+                {menuItems.filter((i) => (i.stock ?? 10) <= 3 || !i.isAvailable).length} low
               </span>
             )}
           </button>
 
-          {/* 5. Staff Schedule */}
+          {/* 4. Staff Schedule */}
           <button
             onClick={() => { setActiveTab('staff'); setIsMobileSidebarOpen(false); }}
             className={`admin-nav-item ${activeTab === 'staff' ? 'active' : ''}`}
@@ -971,7 +950,6 @@ export default function AdminPage() {
                 {activeTab === 'dashboard' && <><span className="title-full">Dashboard Overview</span><span className="title-short">Dashboard</span></>}
                 {activeTab === 'live-orders' && <><span className="title-full">Live Orders Feed & KDS</span><span className="title-short">Live Orders</span></>}
                 {activeTab === 'menu' && <><span className="title-full">Menu & Stock Control</span><span className="title-short">Menu</span></>}
-                {activeTab === 'inventory' && <><span className="title-full">Inventory & Ingredients</span><span className="title-short">Inventory</span></>}
                 {activeTab === 'staff' && <><span className="title-full">Floor & Kitchen Staff</span><span className="title-short">Staff</span></>}
                 {activeTab === 'analytics' && <><span className="title-full">Financial Records & Analytics</span><span className="title-short">Analytics</span></>}
                 {activeTab === 'settings' && <><span className="title-full">Store Configuration & Geofence</span><span className="title-short">Settings</span></>}
@@ -1126,16 +1104,6 @@ export default function AdminPage() {
                       style={{ padding: '8px 12px', fontSize: 12.5 }}
                     >
                       + Manual Counter Order
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsQuickAddOpen(false);
-                        setQuickAddModalType('restock');
-                      }}
-                      className="admin-nav-item"
-                      style={{ padding: '8px 12px', fontSize: 12.5 }}
-                    >
-                      + Restock Ingredient
                     </button>
                   </div>
                 </>
@@ -1780,7 +1748,8 @@ export default function AdminPage() {
                           <th>Dish / Drink</th>
                           <th>Category</th>
                           <th>Price</th>
-                          <th>Availability (Live Stock)</th>
+                          <th>Stock Left (Food Inventory)</th>
+                          <th>Availability</th>
                           <th>Sizes</th>
                           <th>Actions</th>
                         </tr>
@@ -1810,16 +1779,79 @@ export default function AdminPage() {
                             </td>
                             <td><strong>₹{item.price}</strong></td>
                             <td>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--adm-bg-surface, #FDFBF7)', padding: '4px 8px', borderRadius: 8, border: '1px solid var(--adm-border, #E6DEC9)' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustStock(item.id, Math.max(0, (item.stock ?? 10) - 1))}
+                                  title="Decrease stock by 1"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 6,
+                                    border: '1px solid var(--adm-border, #E6DEC9)',
+                                    background: '#fff',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold',
+                                    fontSize: 16,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--adm-text-main, #2C1810)',
+                                  }}
+                                >
+                                  −
+                                </button>
+                                <div style={{ minWidth: 64, textAlign: 'center' }}>
+                                  <span
+                                    style={{
+                                      display: 'block',
+                                      fontWeight: 800,
+                                      fontSize: 13.5,
+                                      color: (item.stock ?? 10) === 0 ? 'var(--adm-terracotta, #DC2626)' : (item.stock ?? 10) <= 3 ? '#D97706' : 'var(--adm-matcha, #16A34A)',
+                                    }}
+                                  >
+                                    {(item.stock ?? 10)} left
+                                  </span>
+                                  {(item.stock ?? 10) === 0 && (
+                                    <span style={{ fontSize: 9.5, color: 'var(--adm-terracotta, #DC2626)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                                      Sold Out
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustStock(item.id, (item.stock ?? 10) + 1)}
+                                  title="Increase stock by 1"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 6,
+                                    border: '1px solid var(--adm-border, #E6DEC9)',
+                                    background: '#fff',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold',
+                                    fontSize: 16,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--adm-text-main, #2C1810)',
+                                  }}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+                            <td>
                               <label className="admin-switch">
                                 <input
                                   type="checkbox"
-                                  checked={item.isAvailable}
-                                  onChange={() => handleToggleStock(item.id, item.isAvailable)}
+                                  checked={item.isAvailable && (item.stock ?? 10) > 0}
+                                  onChange={() => handleToggleStock(item.id, item.isAvailable && (item.stock ?? 10) > 0)}
                                 />
                                 <span className="admin-slider"></span>
                               </label>
-                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: item.isAvailable ? 'var(--adm-matcha)' : 'var(--adm-terracotta)' }}>
-                                {item.isAvailable ? 'IN STOCK' : '86ed (OUT)'}
+                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: (item.isAvailable && (item.stock ?? 10) > 0) ? 'var(--adm-matcha)' : 'var(--adm-terracotta)' }}>
+                                {(item.isAvailable && (item.stock ?? 10) > 0) ? 'IN STOCK' : 'OUT (86ed)'}
                               </span>
                             </td>
                             <td style={{ fontSize: 12 }}>{item.sizes.join(', ')}</td>
@@ -1860,93 +1892,7 @@ export default function AdminPage() {
           )}
 
           {/* ══════════════════════════════════════════
-              TAB 4: INVENTORY & STOCK MANAGEMENT
-              ══════════════════════════════════════════ */}
-          {activeTab === 'inventory' && (
-            <div>
-              <div className="admin-table-toolbar">
-                <div className="admin-table-filters">
-                  <select
-                    value={inventoryCatFilter}
-                    onChange={(e) => setInventoryCatFilter(e.target.value)}
-                    className="admin-form-select"
-                  >
-                    <option value="all">All Categories ({inventory.length})</option>
-                    <option value="Dairy & Milks">Dairy & Milks</option>
-                    <option value="Bakery">Bakery</option>
-                    <option value="Syrups & Flavors">Syrups & Flavors</option>
-                    <option value="Coffee Beans">Coffee Beans</option>
-                    <option value="Packaging">Packaging</option>
-                  </select>
-                </div>
-
-                <div className="admin-table-actions">
-                  <button onClick={() => setQuickAddModalType('restock')} className="admin-btn-primary">
-                    + Quick Restock
-                  </button>
-                </div>
-              </div>
-
-              <div className="admin-inventory-grid">
-                {filteredInventory.map((item) => {
-                  const percent = Math.min(100, Math.round((item.currentStock / (item.minThreshold * 2.5)) * 100));
-                  return (
-                    <div key={item.id} className="admin-inv-card">
-                      <div className="admin-inv-top">
-                        <div>
-                          <div className="admin-inv-category">{item.category}</div>
-                          <div className="admin-inv-name">{item.name}</div>
-                        </div>
-                        <span className={`admin-status-badge ${
-                          item.status === 'in_stock' ? 'green' :
-                          item.status === 'low_stock' ? 'amber' : 'red'
-                        }`}>
-                          {item.status.replace('_', ' ').toUpperCase()}
-                        </span>
-                      </div>
-
-                      <div className="admin-inv-numbers">
-                        <div>
-                          <span className="admin-inv-stock">{item.currentStock}</span>
-                          <span className="admin-inv-unit">{item.unit}</span>
-                        </div>
-                        <span className="admin-inv-threshold">
-                          Min: {item.minThreshold} {item.unit}
-                        </span>
-                      </div>
-
-                      <div className="admin-inv-bar">
-                        <div
-                          className="admin-inv-progress"
-                          style={{
-                            width: `${percent}%`,
-                            background: item.status === 'in_stock' ? 'var(--adm-matcha)' : item.status === 'low_stock' ? 'var(--adm-amber)' : 'var(--adm-terracotta)',
-                          }}
-                        />
-                      </div>
-
-                      <div className="admin-inv-actions">
-                        <button
-                          onClick={() => {
-                            setRestockItemId(item.id);
-                            setRestockAmount(5);
-                            setQuickAddModalType('restock');
-                          }}
-                          className="admin-btn-primary"
-                          style={{ height: 38, fontSize: 13, width: '100%', justifyContent: 'center' }}
-                        >
-                          + Restock
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════
-              TAB 5: STAFF SCHEDULE & ROSTER
+              TAB 4: STAFF SCHEDULE & ROSTER
               ══════════════════════════════════════════ */}
           {activeTab === 'staff' && (
             <div>
@@ -2515,6 +2461,21 @@ export default function AdminPage() {
                     className="admin-form-input"
                   />
                 </div>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Initial Stock Quantity (Items Left in Kitchen)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formStock}
+                    onChange={(e) => setFormStock(Math.max(0, parseInt(e.target.value) || 0))}
+                    placeholder="10"
+                    className="admin-form-input"
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--adm-text-muted)', marginTop: 4, display: 'block' }}>
+                    Default is 10 portions. Automatically decreases whenever an order is placed.
+                  </span>
+                </div>
               </div>
               <div className="admin-modal-footer">
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
@@ -2582,12 +2543,40 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="admin-form-group">
+                  <label className="admin-form-label">Food Items Left in Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={editingItem.stock ?? 10}
+                    onChange={(e) => {
+                      const val = Math.max(0, parseInt(e.target.value) || 0);
+                      setEditingItem({
+                        ...editingItem,
+                        stock: val,
+                        isAvailable: val > 0 ? editingItem.isAvailable : false,
+                      });
+                    }}
+                    className="admin-form-input"
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--adm-text-muted)', marginTop: 4, display: 'block' }}>
+                    Default is 10 portions. Automatically decreases whenever an order is placed.
+                  </span>
+                </div>
+                <div className="admin-form-group">
                   <label className="admin-form-label">Live Availability</label>
                   <label className="admin-switch">
                     <input
                       type="checkbox"
-                      checked={editingItem.isAvailable}
-                      onChange={(e) => setEditingItem({ ...editingItem, isAvailable: e.target.checked })}
+                      checked={editingItem.isAvailable && (editingItem.stock ?? 10) > 0}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEditingItem({
+                          ...editingItem,
+                          isAvailable: checked,
+                          stock: checked && (editingItem.stock ?? 0) <= 0 ? 10 : (editingItem.stock ?? 10),
+                        });
+                      }}
                     />
                     <span className="admin-slider"></span>
                   </label>
@@ -2667,60 +2656,6 @@ export default function AdminPage() {
                 </button>
                 <button type="submit" className="admin-btn-primary">
                   Dispatch to Kitchen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════
-          MODAL: QUICK RESTOCK INGREDIENT
-          ══════════════════════════════════════════ */}
-      {quickAddModalType === 'restock' && (
-        <div className="admin-modal-overlay" onClick={() => setQuickAddModalType(null)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="admin-modal-header">
-              <h3 className="admin-modal-title">+ Quick Restock Ingredient</h3>
-              <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn">✕</button>
-            </div>
-            <form onSubmit={handleRestockSubmit}>
-              <div className="admin-modal-body">
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Select Item</label>
-                  <select
-                    value={restockItemId}
-                    onChange={(e) => setRestockItemId(e.target.value)}
-                    required
-                    className="admin-form-select"
-                  >
-                    <option value="">-- Select ingredient --</option>
-                    {inventory.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} (Current: {i.currentStock} {i.unit})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Quantity to Add</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.1"
-                    required
-                    value={restockAmount}
-                    onChange={(e) => setRestockAmount(parseFloat(e.target.value) || 0)}
-                    className="admin-form-input"
-                  />
-                </div>
-              </div>
-              <div className="admin-modal-footer">
-                <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
-                  Cancel
-                </button>
-                <button type="submit" className="admin-btn-primary">
-                  Confirm Restock
                 </button>
               </div>
             </form>

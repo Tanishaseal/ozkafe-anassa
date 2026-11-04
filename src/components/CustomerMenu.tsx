@@ -269,7 +269,7 @@ export default function CustomerMenu({
             // Check if any cart item was 86'd (marked out of stock)
             Object.values(cart).forEach((cartIt) => {
               const liveDish = data.items.find((i: MenuItem) => i.id === cartIt.id);
-              if (liveDish && !liveDish.isAvailable) {
+              if (liveDish && (!liveDish.isAvailable || (typeof liveDish.stock === 'number' && liveDish.stock <= 0))) {
                 updateCartItemQuantity(cartIt.cartKey, -cartIt.quantity);
                 alert(`Notice: "${cartIt.name}" was just marked OUT OF STOCK by the kitchen and has been removed from your cart.`);
               }
@@ -390,11 +390,15 @@ export default function CustomerMenu({
   const selectedSize = currentSizes[selectedSizeIdx] || 'Regular';
 
   const handleAddToCart = () => {
-    if (!activeItem || !activeItem.isAvailable) return;
+    if (!activeItem || !activeItem.isAvailable || (typeof activeItem.stock === 'number' && activeItem.stock <= 0)) return;
 
     const cartKey = `${activeItem.id}_${selectedSize}`;
     const existing = cart[cartKey];
     const newQty = existing ? existing.quantity + quantity : quantity;
+    if (typeof activeItem.stock === 'number' && newQty > activeItem.stock) {
+      alert(`Only ${activeItem.stock} item(s) available in kitchen stock for "${activeItem.name}".`);
+      return;
+    }
 
     setCart((prev) => ({
       ...prev,
@@ -822,10 +826,10 @@ const formatCurrency = (val: number): string => {
                 height={250}
                 priority
                 style={{
-                  filter: activeItem.isAvailable ? 'none' : 'grayscale(80%) brightness(0.7)',
+                  filter: (activeItem.isAvailable && (typeof activeItem.stock !== 'number' || activeItem.stock > 0)) ? 'none' : 'grayscale(80%) brightness(0.7)',
                 }}
               />
-              {!activeItem.isAvailable && (
+              {(!activeItem.isAvailable || (typeof activeItem.stock === 'number' && activeItem.stock <= 0)) && (
                 <div className="out-of-stock-overlay">
                   <span>Sold Out</span>
                   <span style={{ fontSize: '10px', marginTop: 4, opacity: 0.9 }}>Preparing more soon</span>
@@ -863,7 +867,7 @@ const formatCurrency = (val: number): string => {
                 width={58}
                 height={58}
               />
-              {!item.isAvailable && (
+              {(!item.isAvailable || (typeof item.stock === 'number' && item.stock <= 0)) && (
                 <div className="thumbnail-soldout">
                   <span>OUT</span>
                 </div>
@@ -886,6 +890,11 @@ const formatCurrency = (val: number): string => {
               </span>
               <span>100% Veg</span>
             </span>
+            {typeof activeItem.stock === 'number' && activeItem.stock > 0 && activeItem.stock <= 3 && (
+              <span className="pill-tag" style={{ background: '#FEF3C7', color: '#92400E', borderColor: '#FDE68A', fontWeight: 700, fontSize: '10px' }}>
+                Only {activeItem.stock} left!
+              </span>
+            )}
           </div>
 
           <div className="title-price-row">
@@ -967,14 +976,14 @@ const formatCurrency = (val: number): string => {
         <button
           className="btn-solid"
           onClick={handleAddToCart}
-          disabled={!activeItem?.isAvailable}
+          disabled={!activeItem?.isAvailable || (typeof activeItem?.stock === 'number' && activeItem.stock <= 0)}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <path d="M16 10a4 4 0 0 1-8 0"></path>
           </svg>
-          {activeItem?.isAvailable ? 'ADD TO ORDER' : 'SOLD OUT'}
+          {activeItem?.isAvailable && (typeof activeItem?.stock !== 'number' || activeItem.stock > 0) ? 'ADD TO ORDER' : 'SOLD OUT'}
         </button>
       </footer>
 

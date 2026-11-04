@@ -166,7 +166,7 @@ export const initialAddons: MenuAddon[] = [
   { id: 'ad-5', name: 'Plant Oat Milk Swap', price: 40, icon: '🌾', tag: 'MILK', isAvailable: true },
 ];
 
-export const initialMenuItems: MenuItem[] = [
+const rawMenuItems: MenuItem[] = [
   // ═════════════════════════════════════════════════════════
   // 1. HOT COFFEE (PAGE 2 OF ANASSA MENU PDF)
   // ═════════════════════════════════════════════════════════
@@ -1294,6 +1294,11 @@ export const initialMenuItems: MenuItem[] = [
     sortOrder: 76,
   },
 ];
+
+export const initialMenuItems: MenuItem[] = rawMenuItems.map((it) => ({
+  ...it,
+  stock: typeof it.stock === 'number' ? it.stock : 10,
+}));
 
 // ═════════════════════════════════════════════════════════════════════
 // BASIC INGREDIENTS & FLOOR SUPPLIES (STOCKS)
