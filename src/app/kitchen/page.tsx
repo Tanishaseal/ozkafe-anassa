@@ -18,6 +18,7 @@ export default function KitchenDashboard() {
   const [clock, setClock] = useState('00:00:00');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
+  const [activeMobileTab, setActiveMobileTab] = useState<'received' | 'preparing' | 'ready'>('received');
   const previousOrderIdsRef = useRef<Set<string>>(new Set());
 
   // Dynamic KDS Configuration
@@ -351,10 +352,38 @@ export default function KitchenDashboard() {
         </div>
       </header>
 
+      {/* ── MOBILE COLUMN TABS (Under 768px) ── */}
+      <nav className="kds-mobile-nav" aria-label="Kitchen Display Columns">
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab('received')}
+          className={`kds-mobile-tab-btn tab-received ${activeMobileTab === 'received' ? 'active' : ''}`}
+        >
+          <span>🔴 New Orders</span>
+          <span className="col-count-badge">{receivedOrders.length}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab('preparing')}
+          className={`kds-mobile-tab-btn tab-prep ${activeMobileTab === 'preparing' ? 'active' : ''}`}
+        >
+          <span>🟡 In Prep</span>
+          <span className="col-count-badge">{preparingOrders.length}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab('ready')}
+          className={`kds-mobile-tab-btn tab-ready ${activeMobileTab === 'ready' ? 'active' : ''}`}
+        >
+          <span>🟢 Ready</span>
+          <span className="col-count-badge">{readyOrders.length}</span>
+        </button>
+      </nav>
+
       {/* ── KDS 3-COLUMN BOARD ── */}
       <main className="kds-board">
         {/* COLUMN 1: NEW / RECEIVED */}
-        <section className="kds-column">
+        <section className={`kds-column col-type-received ${activeMobileTab === 'received' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="column-header col-received">
             <div className="col-header-left">
               <span className="col-dot"></span>
@@ -368,6 +397,7 @@ export default function KitchenDashboard() {
               <div className="empty-kds-state">
                 <span className="empty-icon">☕</span>
                 <p>No incoming orders at the moment</p>
+                <span className="empty-sub">New customer and takeaway orders will chime and appear here in real-time.</span>
               </div>
             ) : (
               receivedOrders.map((order) => {
@@ -458,7 +488,7 @@ export default function KitchenDashboard() {
         </section>
 
         {/* COLUMN 2: IN PREPARATION */}
-        <section className="kds-column">
+        <section className={`kds-column col-type-preparing ${activeMobileTab === 'preparing' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="column-header col-preparing">
             <div className="col-header-left">
               <span className="col-dot"></span>
@@ -472,6 +502,7 @@ export default function KitchenDashboard() {
               <div className="empty-kds-state">
                 <span className="empty-icon">🍳</span>
                 <p>No orders currently in preparation</p>
+                <span className="empty-sub">Tap &quot;▶ Start Preparing&quot; on any new order to move it to prep.</span>
               </div>
             ) : (
               preparingOrders.map((order) => {
@@ -548,7 +579,7 @@ export default function KitchenDashboard() {
         </section>
 
         {/* COLUMN 3: READY FOR PICKUP / SERVING */}
-        <section className="kds-column">
+        <section className={`kds-column col-type-ready ${activeMobileTab === 'ready' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="column-header col-ready">
             <div className="col-header-left">
               <span className="col-dot"></span>
@@ -562,6 +593,7 @@ export default function KitchenDashboard() {
               <div className="empty-kds-state">
                 <span className="empty-icon">🔔</span>
                 <p>No orders waiting for pickup</p>
+                <span className="empty-sub">Prepared orders awaiting floor staff pickup or guest handover appear here.</span>
               </div>
             ) : (
               readyOrders.map((order) => {
