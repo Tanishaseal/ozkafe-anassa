@@ -500,6 +500,72 @@ export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number
   return Math.round(R * c);
 }
 
+/**
+ * Normalizes all order numbers to the sequential format starting from 'oz-anassa-1'.
+ * Migrates any legacy '#OZ-XXXX' or missing order numbers chronologically (oldest to newest).
+ */
+export function normalizeAndSyncOrders(orders: Order[]): Order[] {
+  if (!orders || orders.length === 0) return [];
+
+  // Sort oldest first (chronological order)
+  const sorted = [...orders].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  
+  let currentSeq = 1;
+  const updatesToDb: { id: string; orderNumber: string }[] = [];
+
+  for (const ord of sorted) {
+    const raw = (ord.orderNumber || '').trim();
+    const match = raw.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
+
+    if (match) {
+      const num = parseInt(match[1], 10);
+      const normalized = `oz-anassa-${num}`;
+      if (ord.orderNumber !== normalized) {
+        ord.orderNumber = normalized;
+        updatesToDb.push({ id: ord.id, orderNumber: normalized });
+      }
+      if (num >= currentSeq) {
+        currentSeq = num + 1;
+      }
+    } else {
+      // Legacy '#OZ-XXXX', undefined, or non-sequential format -> assign oz-anassa-N
+      const normalized = `oz-anassa-${currentSeq}`;
+      ord.orderNumber = normalized;
+      updatesToDb.push({ id: ord.id, orderNumber: normalized });
+      currentSeq++;
+    }
+  }
+
+  // Update in-memory store if cached
+  if (globalStore.__anassa_orders && globalStore.__anassa_orders.length > 0) {
+    const map = new Map(sorted.map((o) => [o.id, o.orderNumber]));
+    for (const memOrder of globalStore.__anassa_orders) {
+      if (map.has(memOrder.id)) {
+        memOrder.orderNumber = map.get(memOrder.id)!;
+      }
+    }
+  }
+
+  // Asynchronously persist normalized numbers to Supabase in background
+  if (updatesToDb.length > 0 && isSupabaseConfigured && supabaseServer) {
+    (async () => {
+      try {
+        for (const item of updatesToDb) {
+          await supabaseServer
+            .from('orders')
+            .update({ order_number: item.orderNumber })
+            .eq('id', item.id);
+        }
+      } catch (err) {
+        console.warn('Background sync of normalized order numbers failed:', err);
+      }
+    })();
+  }
+
+  // Maintain newest-first sort order
+  return sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
 export async function createOrder(data: {
   tableNumber: number | string;
   tableKey?: string;
@@ -519,12 +585,12 @@ export async function createOrder(data: {
 }): Promise<Order> {
   const now = data.createdAt ? Number(data.createdAt) : Date.now();
   
-  // Calculate next sequential OzAnassa order number (e.g. OzAnassa-1, OzAnassa-2, ...)
+  // Calculate next sequential oz-anassa order number (starts strictly from oz-anassa-1)
   let maxSeq = 0;
   const existingOrders = globalStore.__anassa_orders || [];
   for (const o of existingOrders) {
     if (o.orderNumber) {
-      const match = o.orderNumber.match(/OzAnassa-(\d+)/i);
+      const match = o.orderNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxSeq) maxSeq = num;
@@ -538,11 +604,11 @@ export async function createOrder(data: {
         .from('orders')
         .select('order_number')
         .order('created_at', { ascending: false })
-        .limit(300);
+        .limit(500);
       if (dbOrders) {
         for (const o of dbOrders) {
           if (o.order_number) {
-            const match = o.order_number.match(/OzAnassa-(\d+)/i);
+            const match = o.order_number.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
             if (match) {
               const num = parseInt(match[1], 10);
               if (num > maxSeq) maxSeq = num;
@@ -556,8 +622,8 @@ export async function createOrder(data: {
   }
 
   const nextSeq = maxSeq + 1;
-  const orderNumber = `OzAnassa-${nextSeq}`;
-  const orderId = `ozanassa-${now}-${nextSeq}`;
+  const orderNumber = `oz-anassa-${nextSeq}`;
+  const orderId = `oz-anassa-${now}-${nextSeq}`;
 
   const newOrder: Order = {
     id: orderId,
@@ -659,9 +725,9 @@ export async function getOrders(filter?: {
       }
       const { data, error } = await query;
       if (!error && data) {
-        return data.map((o) => ({
+        const rawOrders: Order[] = data.map((o) => ({
           id: o.id,
-          orderNumber: o.order_number || `#OZ-${o.id.substring(0, 4)}`,
+          orderNumber: o.order_number || '',
           tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
           tableKey: o.table_key,
           sessionId: o.session_id,
@@ -683,13 +749,14 @@ export async function getOrders(filter?: {
           createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
           updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
         }));
+        return normalizeAndSyncOrders(rawOrders);
       }
     } catch (err) {
       console.warn('Supabase getOrders error, falling back to memory store:', err);
     }
   }
 
-  let list = globalStore.__anassa_orders || [];
+  let list = normalizeAndSyncOrders(globalStore.__anassa_orders || []);
   if (filter?.status === 'active') {
     list = list.filter((o) => o.status === 'received' || o.status === 'preparing' || o.status === 'ready');
   } else if (filter?.status) {
@@ -712,9 +779,13 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     try {
       const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).single();
       if (!error && data) {
+        const rawNumber = (data.order_number || '').trim();
+        const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
+        const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
+
         return {
           id: data.id,
-          orderNumber: data.order_number || `#OZ-${data.id.substring(0, 4)}`,
+          orderNumber,
           tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
           tableKey: data.table_key,
           sessionId: data.session_id,
@@ -762,9 +833,13 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
         .single();
 
       if (!error && data) {
+        const rawNumber = (data.order_number || '').trim();
+        const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
+        const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
+
         const updatedOrder: Order = {
           id: data.id,
-          orderNumber: data.order_number || `#OZ-${data.id.substring(0, 4)}`,
+          orderNumber,
           tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
           tableKey: data.table_key,
           sessionId: data.session_id,
