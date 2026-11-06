@@ -11,7 +11,9 @@ import {
   updateInventoryItem, 
   getStaffSchedule, 
   updateStaffStatus,
-  createOrder
+  createOrder,
+  deleteOrder,
+  updateOrderDetails
 } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/supabaseServer';
@@ -169,6 +171,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, order });
     }
 
+    // Action 6: Delete specific order
+    if (action === 'delete_order' || body.action === 'delete_order') {
+      const orderId = body.orderId || searchParams.get('id');
+      if (!orderId) {
+        return NextResponse.json({ error: 'Order ID is required to delete' }, { status: 400 });
+      }
+      const success = await deleteOrder(orderId);
+      return NextResponse.json({ success, message: 'Order successfully deleted' });
+    }
+
+    // Action 7: Edit order receipt
+    if (action === 'edit_order' || body.action === 'edit_order' || action === 'update_order') {
+      const { orderId, updates } = body;
+      if (!orderId || !updates) {
+        return NextResponse.json({ error: 'Order ID and updates are required' }, { status: 400 });
+      }
+      const updated = await updateOrderDetails(orderId, updates);
+      return NextResponse.json({ success: true, order: updated });
+    }
+
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (error) {
     console.error('API POST /api/admin error:', error);
@@ -221,6 +243,14 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action');
+    const orderId = searchParams.get('orderId') || searchParams.get('id');
+
+    if (action === 'delete_order' || (action !== 'purge_database' && orderId)) {
+      if (orderId) {
+        const success = await deleteOrder(orderId);
+        return NextResponse.json({ success, message: 'Order deleted successfully' });
+      }
+    }
 
     if (action === 'purge_database') {
       const result = await purgeAllOrdersAndLogs();

@@ -518,14 +518,46 @@ export async function createOrder(data: {
   createdAt?: number;
 }): Promise<Order> {
   const now = data.createdAt ? Number(data.createdAt) : Date.now();
-  let shortNum = Math.floor(1000 + Math.random() * 9000);
-  let orderNumber = `#OZ-${shortNum}`;
+  
+  // Calculate next sequential OzAnassa order number (e.g. OzAnassa-1, OzAnassa-2, ...)
+  let maxSeq = 0;
   const existingOrders = globalStore.__anassa_orders || [];
-  if (existingOrders.some((o) => o.orderNumber === orderNumber)) {
-    shortNum = Math.floor(10000 + Math.random() * 90000);
-    orderNumber = `#OZ-${shortNum}`;
+  for (const o of existingOrders) {
+    if (o.orderNumber) {
+      const match = o.orderNumber.match(/OzAnassa-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxSeq) maxSeq = num;
+      }
+    }
   }
-  const orderId = `oz-${now}-${shortNum}`;
+
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      const { data: dbOrders } = await supabaseServer
+        .from('orders')
+        .select('order_number')
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (dbOrders) {
+        for (const o of dbOrders) {
+          if (o.order_number) {
+            const match = o.order_number.match(/OzAnassa-(\d+)/i);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (num > maxSeq) maxSeq = num;
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const nextSeq = maxSeq + 1;
+  const orderNumber = `OzAnassa-${nextSeq}`;
+  const orderId = `ozanassa-${now}-${nextSeq}`;
 
   const newOrder: Order = {
     id: orderId,
@@ -780,6 +812,74 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
         : `Order #${order.orderNumber} (Table ${order.tableNumber}) status changed to "${status}"`,
     });
     return order;
+  }
+  return null;
+}
+
+export async function deleteOrder(orderId: string): Promise<boolean> {
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      await supabaseServer.from('orders').delete().eq('id', orderId);
+    } catch (err) {
+      console.warn('Supabase deleteOrder error:', err);
+    }
+  }
+
+  const existing = globalStore.__anassa_orders || [];
+  const idx = existing.findIndex((o) => o.id === orderId);
+  if (idx !== -1) {
+    const deleted = existing.splice(idx, 1)[0];
+    addAuditLog({
+      actor: 'admin',
+      action: 'ORDER_DELETED',
+      details: `Order #${deleted.orderNumber} deleted by admin`,
+    });
+    return true;
+  }
+  return true;
+}
+
+export async function updateOrderDetails(orderId: string, updates: Partial<Order>): Promise<Order | null> {
+  const now = Date.now();
+  if (isSupabaseConfigured && supabaseServer) {
+    try {
+      const dbUpdates: Record<string, unknown> = {
+        updated_at: new Date(now).toISOString(),
+      };
+      if (updates.orderNumber !== undefined) dbUpdates.order_number = updates.orderNumber;
+      if (updates.tableNumber !== undefined) dbUpdates.table_number = String(updates.tableNumber);
+      if (updates.customerName !== undefined) dbUpdates.customer_name = updates.customerName;
+      if (updates.customerPhone !== undefined) dbUpdates.customer_phone = updates.customerPhone;
+      if (updates.customerFlat !== undefined) dbUpdates.customer_flat = updates.customerFlat;
+      if (updates.items !== undefined) dbUpdates.items = updates.items;
+      if (updates.subtotal !== undefined) dbUpdates.subtotal = updates.subtotal;
+      if (updates.taxAmount !== undefined) dbUpdates.tax_amount = updates.taxAmount;
+      if (updates.total !== undefined) dbUpdates.total = updates.total;
+      if (updates.status !== undefined) dbUpdates.status = updates.status;
+      if (updates.specialInstructions !== undefined) dbUpdates.special_instructions = updates.specialInstructions;
+      if (updates.createdAt !== undefined) dbUpdates.created_at = new Date(updates.createdAt).toISOString();
+
+      await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId);
+    } catch (err) {
+      console.warn('Supabase updateOrderDetails error:', err);
+    }
+  }
+
+  const existing = globalStore.__anassa_orders || [];
+  const idx = existing.findIndex((o) => o.id === orderId);
+  if (idx !== -1) {
+    existing[idx] = {
+      ...existing[idx],
+      ...updates,
+      updatedAt: now,
+    };
+    broadcastOrder(existing[idx]);
+    addAuditLog({
+      actor: 'admin',
+      action: 'RECEIPT_EDITED',
+      details: `Receipt/Order #${existing[idx].orderNumber} updated by admin (Total: ₹${existing[idx].total})`,
+    });
+    return existing[idx];
   }
   return null;
 }

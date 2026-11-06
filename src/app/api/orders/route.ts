@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createOrder, getOrders, getOrderById, updateOrderStatus, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
+import { createOrder, getOrders, getOrderById, updateOrderStatus, deleteOrder, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
 import { OrderStatus } from '@/lib/types';
 import { verifyAuthHeaderOrCookie, getTableSessionFromRequest } from '@/lib/auth';
 
@@ -384,6 +384,27 @@ export async function PATCH(request: Request) {
   } catch (error) {
     console.error('API PATCH /api/orders error:', error);
     return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  // Guard: Only admin can delete orders
+  if (!verifyAuthHeaderOrCookie(request, ['admin'])) {
+    return NextResponse.json({ error: 'Unauthorized. Admin credentials required to delete orders.' }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
+    }
+
+    const success = await deleteOrder(id);
+    return NextResponse.json({ success, message: 'Order deleted successfully' });
+  } catch (error) {
+    console.error('API DELETE /api/orders error:', error);
+    return NextResponse.json({ error: 'Failed to delete order' }, { status: 500 });
   }
 }
 

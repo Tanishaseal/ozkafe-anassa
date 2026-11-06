@@ -114,10 +114,23 @@ export default function AdminPage() {
   const [menuCatFilter, setMenuCatFilter] = useState('all');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [orderMonthFilter, setOrderMonthFilter] = useState('all');
   const [auditActorFilter, setAuditActorFilter] = useState('all');
 
   // Edit Menu Item Form
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  // Edit Receipt / Order Form State
+  const [editingReceiptOrder, setEditingReceiptOrder] = useState<Order | null>(null);
+  const [editOrderNumber, setEditOrderNumber] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editCustomerFlat, setEditCustomerFlat] = useState('');
+  const [editTableNumber, setEditTableNumber] = useState('Takeaway');
+  const [editDateTime, setEditDateTime] = useState('');
+  const [editItems, setEditItems] = useState<{ id: string; name: string; price: number; quantity: number; selectedSize?: string }[]>([]);
+  const [editNotes, setEditNotes] = useState('');
+  const [editAddItemId, setEditAddItemId] = useState('');
 
   // New Menu Item Form
   const [formName, setFormName] = useState('');
@@ -501,6 +514,148 @@ export default function AdminPage() {
     }
   };
 
+  // ── EDIT RECEIPT / ORDER HANDLERS ──
+  const handleOpenEditReceipt = (ord: Order) => {
+    setEditingReceiptOrder(ord);
+    setEditOrderNumber(ord.orderNumber);
+    setEditCustomerName(ord.customerName || '');
+    setEditCustomerPhone(ord.customerPhone || '');
+    setEditCustomerFlat(ord.customerFlat || '');
+    setEditTableNumber(String(ord.tableNumber));
+    
+    const d = new Date(ord.createdAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setEditDateTime(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    
+    setEditItems(ord.items.map(it => ({
+      id: it.id,
+      name: it.name,
+      price: Number(it.price) || 0,
+      quantity: Number(it.quantity) || 1,
+      selectedSize: it.selectedSize || 'Regular',
+    })));
+    setEditNotes(ord.specialInstructions || '');
+    setEditAddItemId('');
+  };
+
+  const handleUpdateItemQty = (index: number, delta: number) => {
+    setEditItems((prev) => {
+      const updated = [...prev];
+      const newQty = Math.max(1, (updated[index].quantity || 1) + delta);
+      updated[index] = { ...updated[index], quantity: newQty };
+      return updated;
+    });
+  };
+
+  const handleUpdateItemPrice = (index: number, newPrice: number) => {
+    setEditItems((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], price: Math.max(0, newPrice) };
+      return updated;
+    });
+  };
+
+  const handleRemoveDishFromEditReceipt = (index: number) => {
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddDishToEditReceipt = () => {
+    if (!editAddItemId) return;
+    const item = menuItems.find((m) => m.id === editAddItemId);
+    if (!item) return;
+    setEditItems((prev) => [
+      ...prev,
+      {
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: 1,
+        selectedSize: item.sizes?.[0] || 'Regular',
+      },
+    ]);
+    setEditAddItemId('');
+  };
+
+  const handleSaveEditReceipt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReceiptOrder) return;
+    if (editItems.length === 0) {
+      alert('Order must contain at least one item');
+      return;
+    }
+
+    try {
+      const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+      const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
+      const taxAmount = Math.round((subtotal * gstRate) / 100);
+      const total = subtotal + taxAmount;
+      const createdAt = editDateTime ? new Date(editDateTime).getTime() : editingReceiptOrder.createdAt;
+
+      const updates: Partial<Order> = {
+        orderNumber: editOrderNumber.trim() || editingReceiptOrder.orderNumber,
+        tableNumber: editTableNumber,
+        customerName: editCustomerName.trim() || 'Guest',
+        customerPhone: editCustomerPhone.trim() || '',
+        customerFlat: editCustomerFlat.trim() || undefined,
+        items: editItems,
+        subtotal,
+        taxAmount,
+        total,
+        specialInstructions: editNotes.trim() || undefined,
+        createdAt,
+      };
+
+      const res = await fetch('/api/admin?action=edit_order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: editingReceiptOrder.id,
+          updates,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setEditingReceiptOrder(null);
+        if (selectedReceiptOrder?.id === editingReceiptOrder.id) {
+          setSelectedReceiptOrder(json.order || { ...editingReceiptOrder, ...updates });
+        }
+        fetchAdminData();
+        setSaveSuccessMsg(`✓ Receipt for ${editOrderNumber} updated successfully!`);
+        setTimeout(() => setSaveSuccessMsg(''), 4000);
+      } else {
+        alert('Failed to update receipt.');
+      }
+    } catch {
+      alert('Error updating receipt.');
+    }
+  };
+
+  const handleDeleteOrder = async (ord: Order) => {
+    if (!confirm(`Are you sure you want to permanently delete order "${ord.orderNumber}" (₹${ord.total})? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin?action=delete_order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: ord.id }),
+      });
+      if (res.ok) {
+        if (selectedReceiptOrder?.id === ord.id) {
+          setSelectedReceiptOrder(null);
+        }
+        fetchAdminData();
+        setSaveSuccessMsg(`✓ Order ${ord.orderNumber} deleted successfully.`);
+        setTimeout(() => setSaveSuccessMsg(''), 4000);
+      } else {
+        alert('Failed to delete order.');
+      }
+    } catch {
+      alert('Error connecting to server to delete order.');
+    }
+  };
+
   // ── SETTINGS PERSISTENCE ──
   const handleSaveSettings = async (e?: React.FormEvent, customSettings?: CafeSettings) => {
     if (e) e.preventDefault();
@@ -719,8 +874,29 @@ export default function AdminPage() {
     });
   }, [menuItems, menuCatFilter, menuSearch, globalSearch]);
 
+  // Helper to format a month key: "2026-11" -> "November 2026"
+  const formatMonthKey = (monthKey: string) => {
+    const [year, month] = monthKey.split('-').map(Number);
+    const d = new Date(year, month - 1, 1);
+    return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  };
+
+  // Available unique months list from orders
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach((o) => {
+      const d = new Date(o.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      set.add(key);
+    });
+    return Array.from(set).sort().reverse();
+  }, [orders]);
+
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const d = new Date(order.createdAt);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const matchMonth = orderMonthFilter === 'all' || monthKey === orderMonthFilter;
       const matchStatus = orderStatusFilter === 'all' || order.status === orderStatusFilter;
       const matchSearch =
         !orderSearch ||
@@ -733,9 +909,37 @@ export default function AdminPage() {
         order.orderNumber.toLowerCase().includes(globalSearch.toLowerCase()) ||
         order.customerName.toLowerCase().includes(globalSearch.toLowerCase()) ||
         order.customerPhone.includes(globalSearch);
-      return matchStatus && matchSearch && matchGlobal;
+      return matchMonth && matchStatus && matchSearch && matchGlobal;
     });
-  }, [orders, orderStatusFilter, orderSearch, globalSearch]);
+  }, [orders, orderMonthFilter, orderStatusFilter, orderSearch, globalSearch]);
+
+  // Group filtered orders by month for sectional view
+  const ordersGroupedByMonth = useMemo(() => {
+    const groups: { monthKey: string; monthLabel: string; orders: Order[]; totalRevenue: number }[] = [];
+    const map = new Map<string, Order[]>();
+
+    filteredOrders.forEach((o) => {
+      const d = new Date(o.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
+    });
+
+    // Sort months descending (latest first)
+    const sortedKeys = Array.from(map.keys()).sort().reverse();
+    sortedKeys.forEach((k) => {
+      const ords = map.get(k)!;
+      const rev = ords.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+      groups.push({
+        monthKey: k,
+        monthLabel: formatMonthKey(k),
+        orders: ords,
+        totalRevenue: rev,
+      });
+    });
+
+    return groups;
+  }, [filteredOrders]);
 
   const filteredStaff = useMemo(() => {
     return staff.filter((s) => {
@@ -1581,14 +1785,37 @@ export default function AdminPage() {
             <div>
               <div className="admin-card">
                 <div className="admin-table-toolbar">
-                  <div className="admin-table-filters">
+                  <div className="admin-table-filters" style={{ flexWrap: 'wrap', gap: 8 }}>
                     <input
                       type="text"
                       placeholder="Search order #, customer phone, flat..."
                       value={orderSearch}
                       onChange={(e) => setOrderSearch(e.target.value)}
                       className="admin-form-input"
+                      style={{ minWidth: 220 }}
                     />
+
+                    {/* Monthly Filter */}
+                    <select
+                      value={orderMonthFilter}
+                      onChange={(e) => setOrderMonthFilter(e.target.value)}
+                      className="admin-form-select"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <option value="all">📅 All Months ({orders.length} orders)</option>
+                      {availableMonths.map((mKey) => {
+                        const count = orders.filter((o) => {
+                          const d = new Date(o.createdAt);
+                          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === mKey;
+                        }).length;
+                        return (
+                          <option key={mKey} value={mKey}>
+                            {formatMonthKey(mKey)} ({count})
+                          </option>
+                        );
+                      })}
+                    </select>
+
                     <select
                       value={orderStatusFilter}
                       onChange={(e) => setOrderStatusFilter(e.target.value)}
@@ -1627,6 +1854,54 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* Quick Month Filter Pills if multiple months exist */}
+                {availableMonths.length > 1 && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '0 18px 12px', borderBottom: '1px solid var(--adm-border)' }}>
+                    <button
+                      onClick={() => setOrderMonthFilter('all')}
+                      className={`admin-alert-action-btn`}
+                      style={{
+                        height: 30,
+                        padding: '0 12px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        borderRadius: 20,
+                        background: orderMonthFilter === 'all' ? 'var(--adm-terracotta, #8E402A)' : 'transparent',
+                        color: orderMonthFilter === 'all' ? '#fff' : 'var(--adm-text-main)',
+                        borderColor: orderMonthFilter === 'all' ? 'var(--adm-terracotta)' : 'var(--adm-border)',
+                      }}
+                    >
+                      All Months ({orders.length})
+                    </button>
+                    {availableMonths.map((mKey) => {
+                      const count = orders.filter((o) => {
+                        const d = new Date(o.createdAt);
+                        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === mKey;
+                      }).length;
+                      const isActive = orderMonthFilter === mKey;
+                      return (
+                        <button
+                          key={mKey}
+                          onClick={() => setOrderMonthFilter(mKey)}
+                          className={`admin-alert-action-btn`}
+                          style={{
+                            height: 30,
+                            padding: '0 12px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            borderRadius: 20,
+                            background: isActive ? 'var(--adm-terracotta, #8E402A)' : 'transparent',
+                            color: isActive ? '#fff' : 'var(--adm-text-main)',
+                            borderColor: isActive ? 'var(--adm-terracotta)' : 'var(--adm-border)',
+                          }}
+                        >
+                          {formatMonthKey(mKey)} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {filteredOrders.length === 0 ? (
                   <div className="admin-empty-card">
                     <div className="admin-empty-icon">📋</div>
@@ -1644,99 +1919,144 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div className="admin-table-container">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Order #</th>
-                          <th>Date & Time</th>
-                          <th>Table</th>
-                          <th>Customer</th>
-                          <th>Items Summary</th>
-                          <th>Total</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredOrders.map((ord) => (
-                          <tr key={ord.id}>
-                            <td><strong>{ord.orderNumber}</strong></td>
-                            <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: 600, color: 'var(--adm-text-main, #292524)' }}>
-                                📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--adm-text-muted, #78716c)' }}>
-                                ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </td>
-                            <td>
-                              <span className="admin-order-table-badge">
-                                {ord.tableNumber === 0 ? 'Takeaway' : `Table ${ord.tableNumber}`}
-                              </span>
-                            </td>
-                            <td>
-                              <div><strong>{ord.customerName}</strong></div>
-                              <div style={{ fontSize: 11, color: 'var(--adm-text-muted)' }}>
-                                {ord.customerPhone} {ord.customerFlat && `· Flat ${ord.customerFlat}`}
-                              </div>
-                            </td>
-                            <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {ord.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
-                            </td>
-                            <td><strong>₹{ord.total}</strong></td>
-                            <td>
-                              <span className={`admin-status-badge ${
-                                ord.status === 'served' ? 'green' :
-                                ord.status === 'preparing' ? 'amber' :
-                                ord.status === 'ready' ? 'green' :
-                                ord.status === 'cancelled' ? 'red' : 'amber'
-                              }`}>
-                                {ord.status.toUpperCase()}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                {ord.status === 'received' && (
-                                  <button
-                                    onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
-                                    className="admin-btn-action accept"
-                                    style={{ height: 32, padding: '0 10px', fontSize: 11 }}
-                                  >
-                                    Accept
-                                  </button>
-                                )}
-                                {ord.status === 'preparing' && (
-                                  <button
-                                    onClick={() => handleUpdateOrderStatus(ord.id, 'ready')}
-                                    className="admin-btn-action ready"
-                                    style={{ height: 32, padding: '0 10px', fontSize: 11 }}
-                                  >
-                                    Ready
-                                  </button>
-                                )}
-                                {ord.status === 'ready' && (
-                                  <button
-                                    onClick={() => handleUpdateOrderStatus(ord.id, 'served')}
-                                    className="admin-btn-action complete"
-                                    style={{ height: 32, padding: '0 10px', fontSize: 11 }}
-                                  >
-                                    Served
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => setSelectedReceiptOrder(ord)}
-                                  className="admin-alert-action-btn"
-                                  title="Print thermal receipt"
-                                  style={{ padding: '4px 8px' }}
-                                >
-                                  Receipt
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    {ordersGroupedByMonth.map((group) => (
+                      <div key={group.monthKey} style={{ marginBottom: 24 }}>
+                        {/* Monthly Section Header */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 16px',
+                            background: 'var(--adm-bg-surface-2, #F8F5EE)',
+                            borderTop: '1px solid var(--adm-border)',
+                            borderBottom: '1px solid var(--adm-border)',
+                            fontWeight: 700,
+                            fontSize: 13,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 15 }}>🗓️</span>
+                            <span style={{ color: 'var(--adm-text-main, #292524)', fontWeight: 800 }}>{group.monthLabel}</span>
+                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--adm-text-muted)' }}>
+                              ({group.orders.length} order{group.orders.length === 1 ? '' : 's'})
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--adm-terracotta, #8E402A)' }}>
+                            Monthly Sales: ₹{group.totalRevenue.toFixed(2)}
+                          </div>
+                        </div>
+
+                        <table className="admin-table">
+                          <thead>
+                            <tr>
+                              <th>Order #</th>
+                              <th>Date</th>
+                              <th>Time</th>
+                              <th>Table</th>
+                              <th>Customer</th>
+                              <th>Items Summary</th>
+                              <th>Total</th>
+                              <th>Status</th>
+                              <th style={{ textAlign: 'right' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.orders.map((ord) => (
+                              <tr key={ord.id}>
+                                <td><strong style={{ letterSpacing: '0.02em', color: 'var(--adm-terracotta)' }}>{ord.orderNumber}</strong></td>
+                                <td style={{ fontSize: 12.5, fontWeight: 600, color: '#1C1917', whiteSpace: 'nowrap' }}>
+                                  {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </td>
+                                <td style={{ fontSize: 12, color: '#57534E', whiteSpace: 'nowrap' }}>
+                                  {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td>
+                                  <span className="admin-order-table-badge">
+                                    {ord.tableNumber === 0 || ord.tableNumber === 'Takeaway' || ord.tableNumber === '0' ? 'Takeaway' : `Table ${ord.tableNumber}`}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div><strong>{ord.customerName}</strong></div>
+                                  <div style={{ fontSize: 11, color: 'var(--adm-text-muted)' }}>
+                                    {ord.customerPhone} {ord.customerFlat && `· Flat ${ord.customerFlat}`}
+                                  </div>
+                                </td>
+                                <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {ord.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
+                                </td>
+                                <td><strong>₹{ord.total}</strong></td>
+                                <td>
+                                  <span className={`admin-status-badge ${
+                                    ord.status === 'served' ? 'green' :
+                                    ord.status === 'preparing' ? 'amber' :
+                                    ord.status === 'ready' ? 'green' :
+                                    ord.status === 'cancelled' ? 'red' : 'amber'
+                                  }`}>
+                                    {ord.status.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                    {ord.status === 'received' && (
+                                      <button
+                                        onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
+                                        className="admin-btn-action accept"
+                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                      >
+                                        Accept
+                                      </button>
+                                    )}
+                                    {ord.status === 'preparing' && (
+                                      <button
+                                        onClick={() => handleUpdateOrderStatus(ord.id, 'ready')}
+                                        className="admin-btn-action ready"
+                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                      >
+                                        Ready
+                                      </button>
+                                    )}
+                                    {ord.status === 'ready' && (
+                                      <button
+                                        onClick={() => handleUpdateOrderStatus(ord.id, 'served')}
+                                        className="admin-btn-action complete"
+                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                      >
+                                        Served
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setSelectedReceiptOrder(ord)}
+                                      className="admin-alert-action-btn"
+                                      title="View / Print Receipt"
+                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
+                                    >
+                                      Receipt
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenEditReceipt(ord)}
+                                      className="admin-alert-action-btn"
+                                      title="Edit Order and Receipt"
+                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600, color: 'var(--adm-terracotta)' }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteOrder(ord)}
+                                      className="admin-wipe-btn"
+                                      title="Delete Order Permanently"
+                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -3087,7 +3407,15 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="admin-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid var(--adm-border)', background: '#fff' }}>
+              <div className="admin-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid var(--adm-border)', background: '#fff', display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => handleOpenEditReceipt(selectedReceiptOrder)}
+                  className="admin-alert-action-btn"
+                  style={{ height: 44, padding: '0 16px', fontSize: 13.5, fontWeight: 700, gap: 6, display: 'flex', alignItems: 'center' }}
+                >
+                  <span>✏️</span>
+                  <span>Edit Receipt</span>
+                </button>
                 <button
                   onClick={() => window.print()}
                   className="admin-btn-primary"
@@ -3101,6 +3429,236 @@ export default function AdminPage() {
           </div>
         );
       })()}
+
+      {/* ══════════════════════════════════════════
+          MODAL: EDIT ORDER & RECEIPT
+          ══════════════════════════════════════════ */}
+      {editingReceiptOrder && (
+        <div className="admin-modal-overlay" onClick={() => setEditingReceiptOrder(null)}>
+          <div className="admin-modal-box" style={{ maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <div>
+                <h3 className="admin-modal-title">✏️ Edit Order & Receipt</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--adm-text-muted)' }}>
+                  Correct billing items, quantities, rates, customer details, or date & time.
+                </p>
+              </div>
+              <button onClick={() => setEditingReceiptOrder(null)} className="admin-modal-close-btn">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditReceipt}>
+              <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* 1. Order ID & Table */}
+                <div className="admin-form-grid-2">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Order Number / ID</label>
+                    <input
+                      type="text"
+                      value={editOrderNumber}
+                      onChange={(e) => setEditOrderNumber(e.target.value)}
+                      required
+                      className="admin-form-input"
+                      style={{ fontWeight: 700 }}
+                    />
+                  </div>
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Table / Order Type</label>
+                    <select
+                      value={editTableNumber}
+                      onChange={(e) => setEditTableNumber(e.target.value)}
+                      className="admin-form-select"
+                    >
+                      <option value="Takeaway">Takeaway & In-Flat</option>
+                      <option value="1">Table 1</option>
+                      <option value="2">Table 2</option>
+                      <option value="3">Table 3</option>
+                      <option value="4">Table 4</option>
+                      <option value="5">Table 5</option>
+                      <option value="6">Table 6</option>
+                      <option value="7">Table 7</option>
+                      <option value="8">Table 8</option>
+                      <option value="9">Table 9</option>
+                      <option value="10">Table 10</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 2. Customer Name & Phone */}
+                <div className="admin-form-grid-2">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Customer Name</label>
+                    <input
+                      type="text"
+                      value={editCustomerName}
+                      onChange={(e) => setEditCustomerName(e.target.value)}
+                      className="admin-form-input"
+                    />
+                  </div>
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={editCustomerPhone}
+                      onChange={(e) => setEditCustomerPhone(e.target.value)}
+                      className="admin-form-input"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Date & Time */}
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Order Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={editDateTime}
+                    onChange={(e) => setEditDateTime(e.target.value)}
+                    required
+                    className="admin-form-input"
+                    style={{ fontWeight: 600 }}
+                  />
+                </div>
+
+                {/* 4. Editable Ordered Items List */}
+                <div className="admin-form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="admin-form-label" style={{ margin: 0, fontWeight: 700 }}>
+                      Receipt Items ({editItems.length})
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: 12, borderRadius: 8, border: '1px solid var(--adm-border)' }}>
+                    {editItems.map((item, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 80px 32px', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => {
+                            const updated = [...editItems];
+                            updated[idx].name = e.target.value;
+                            setEditItems(updated);
+                          }}
+                          className="admin-form-input"
+                          style={{ fontSize: 12 }}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItemQty(idx, -1)}
+                            className="admin-alert-action-btn"
+                            style={{ width: 26, height: 26, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            -
+                          </button>
+                          <span style={{ fontWeight: 700, minWidth: 20, textAlign: 'center', fontSize: 13 }}>
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItemQty(idx, 1)}
+                            className="admin-alert-action-btn"
+                            style={{ width: 26, height: 26, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, marginRight: 2 }}>₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.price}
+                            onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                            className="admin-form-input"
+                            style={{ fontSize: 12, padding: '4px 6px', textAlign: 'right' }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDishFromEditReceipt(idx)}
+                          title="Remove item"
+                          style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 16, padding: 0 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Add Item Row */}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px dashed var(--adm-border)' }}>
+                      <select
+                        value={editAddItemId}
+                        onChange={(e) => setEditAddItemId(e.target.value)}
+                        className="admin-form-select"
+                        style={{ fontSize: 12 }}
+                      >
+                        <option value="">-- Add another dish to receipt --</option>
+                        {menuItems.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} (₹{m.price})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleAddDishToEditReceipt}
+                        className="admin-alert-action-btn"
+                        style={{ whiteSpace: 'nowrap', fontWeight: 700 }}
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Live Pricing Breakdown Preview */}
+                {(() => {
+                  const sub = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+                  const gst = Math.round((sub * (settings.gstPercent || 5)) / 100);
+                  const tot = sub + gst;
+                  return (
+                    <div style={{ background: '#fff', border: '1px solid var(--adm-border)', borderRadius: 8, padding: 12, fontSize: 12.5 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span>Item Subtotal:</span>
+                        <strong>₹{sub.toFixed(2)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, color: 'var(--adm-text-muted)' }}>
+                        <span>GST ({settings.gstPercent || 5}%):</span>
+                        <span>₹{gst.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--adm-border)', fontWeight: 800, fontSize: 14 }}>
+                        <span>Recalculated Total:</span>
+                        <span style={{ color: 'var(--adm-terracotta)' }}>₹{tot.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 6. Special Notes */}
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Notes / Instructions</label>
+                  <input
+                    type="text"
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="admin-form-input"
+                    placeholder="e.g. Corrected portion quantity"
+                  />
+                </div>
+              </div>
+
+              <div className="admin-modal-footer">
+                <button type="button" onClick={() => setEditingReceiptOrder(null)} className="admin-alert-action-btn">
+                  Cancel
+                </button>
+                <button type="submit" className="admin-btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>✓</span> Save & Update Receipt
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── CUSTOMIZABLE STAFF ACCOUNT DRAWER ── */}
       <AccountPanel
