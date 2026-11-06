@@ -1402,6 +1402,9 @@ export default function CustomerMenu({
                           <span style={{ fontSize: 12, color: 'var(--text-grey)', marginLeft: 8 }}>
                             ({ord.tableNumber === 'Takeaway' ? 'Takeaway' : `Table ${ord.tableNumber}`})
                           </span>
+                          <div style={{ fontSize: 11, color: 'var(--text-grey)', marginTop: 2 }}>
+                            📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
                         </div>
                         <span style={{
                           fontSize: 11,

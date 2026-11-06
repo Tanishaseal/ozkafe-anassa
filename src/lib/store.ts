@@ -515,8 +515,9 @@ export async function createOrder(data: {
   customerLat?: number;
   customerLng?: number;
   distanceMeters?: number;
+  createdAt?: number;
 }): Promise<Order> {
-  const now = Date.now();
+  const now = data.createdAt ? Number(data.createdAt) : Date.now();
   let shortNum = Math.floor(1000 + Math.random() * 9000);
   let orderNumber = `#OZ-${shortNum}`;
   const existingOrders = globalStore.__anassa_orders || [];
@@ -576,6 +577,8 @@ export async function createOrder(data: {
         customer_lat: newOrder.customerLat,
         customer_lng: newOrder.customerLng,
         distance_meters: newOrder.distanceMeters,
+        created_at: new Date(now).toISOString(),
+        updated_at: new Date(now).toISOString(),
       });
     } catch (err) {
       console.warn('Supabase createOrder error, saved in memory store:', err);

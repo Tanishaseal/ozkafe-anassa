@@ -408,6 +408,12 @@ export default function KitchenDashboard() {
                       {order.orderNumber}
                     </div>
 
+                    <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <span>•</span>
+                      <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+
                     <div className="card-items-list">
                       {order.items.map((it, idx) => (
                         <div key={idx} className="kds-item-row">
@@ -506,6 +512,12 @@ export default function KitchenDashboard() {
                       {order.orderNumber}
                     </div>
 
+                    <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <span>•</span>
+                      <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+
                     <div className="card-items-list">
                       {order.items.map((it, idx) => (
                         <div key={idx} className="kds-item-row">
@@ -585,6 +597,12 @@ export default function KitchenDashboard() {
                       {order.orderNumber}
                     </div>
 
+                    <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <span>•</span>
+                      <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+
                     <div className="card-items-list">
                       {order.items.map((it, idx) => (
                         <div key={idx} className="kds-item-row">
@@ -626,6 +644,9 @@ export default function KitchenDashboard() {
                   <div>
                     <strong style={{ fontSize: 14 }}>{s.orderNumber}</strong> ({s.tableNumber === 0 ? 'Takeaway' : `Table ${s.tableNumber}`})
                     <div style={{ fontSize: 12, color: '#685E54' }}>{s.customerName} · ₹{s.total}</div>
+                    <div style={{ fontSize: 11, color: '#8C827A', marginTop: 2 }}>
+                      📅 {new Date(s.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ⏰ {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
                   </div>
                   <button
                     onClick={() => {

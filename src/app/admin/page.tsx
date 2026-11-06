@@ -131,11 +131,29 @@ export default function AdminPage() {
   const [formSizes, setFormSizes] = useState('Regular');
   const [formStock, setFormStock] = useState(10);
 
-  // Manual Order Form State
+  // Custom / Manual Order Form State
   const [manualTable, setManualTable] = useState('Takeaway');
   const [manualGuest, setManualGuest] = useState('');
   const [manualPhone, setManualPhone] = useState('');
+  const [manualFlat, setManualFlat] = useState('');
   const [manualSelectedItemId, setManualSelectedItemId] = useState('');
+  const [manualQuantity, setManualQuantity] = useState(1);
+  const [manualSelectedSize, setManualSelectedSize] = useState('Regular');
+  const [manualDateTime, setManualDateTime] = useState('');
+  const [manualInstructions, setManualInstructions] = useState('');
+
+  const getNowLocalDateTimeString = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const openCustomOrderModal = () => {
+    setIsQuickAddOpen(false);
+    setManualDateTime(getNowLocalDateTimeString());
+    setManualQuantity(1);
+    setQuickAddModalType('manual-order');
+  };
 
   // ── THEME INITIALIZATION ──
   useEffect(() => {
@@ -424,32 +442,44 @@ export default function AdminPage() {
     }
   };
 
-  // ── MANUAL COUNTER ORDER CREATION ──
+  // ── CUSTOM / MANUAL COUNTER ORDER CREATION ──
   const handleManualOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const item = menuItems.find((m) => m.id === manualSelectedItemId);
     if (!item) {
-      alert('Please select a dish for the manual order');
+      alert('Please select a dish for the custom order');
       return;
     }
 
     try {
-      const subtotal = item.price;
-      const taxAmount = Math.round((subtotal * (settings.gstPercent || 5)) / 100);
+      const qty = Math.max(1, Number(manualQuantity) || 1);
+      const subtotal = item.price * qty;
+      const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
+      const taxAmount = Math.round((subtotal * gstRate) / 100);
       const total = subtotal + taxAmount;
+      const customCreatedAt = manualDateTime ? new Date(manualDateTime).getTime() : Date.now();
 
       const res = await fetch('/api/admin?action=manual_order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tableNumber: manualTable,
-          customerName: manualGuest || 'Counter Guest',
-          customerPhone: manualPhone || '9830000000',
-          items: [{ id: item.id, name: item.name, price: item.price, quantity: 1, selectedSize: 'Regular' }],
+          customerName: manualGuest.trim() || 'Counter Guest',
+          customerPhone: manualPhone.trim() || '9830000000',
+          customerFlat: manualFlat.trim() || undefined,
+          items: [{ 
+            id: item.id, 
+            name: item.name, 
+            price: item.price, 
+            quantity: qty, 
+            selectedSize: manualSelectedSize || item.sizes?.[0] || 'Regular',
+            category: item.category 
+          }],
           subtotal,
           taxAmount,
           total,
-          specialInstructions: 'Manual Order placed from Admin Floor iPad',
+          specialInstructions: manualInstructions.trim() || 'Custom Order placed from Admin Console',
+          createdAt: customCreatedAt,
         }),
       });
 
@@ -457,12 +487,17 @@ export default function AdminPage() {
         setQuickAddModalType(null);
         setManualGuest('');
         setManualPhone('');
+        setManualFlat('');
+        setManualQuantity(1);
+        setManualInstructions('');
         fetchAdminData();
-        setSaveSuccessMsg('✓ Manual order placed and dispatched to Kitchen!');
+        setSaveSuccessMsg('✓ Custom order created and dispatched successfully!');
         setTimeout(() => setSaveSuccessMsg(''), 4000);
+      } else {
+        alert('Failed to dispatch order. Please check connection.');
       }
     } catch {
-      alert('Failed to create manual order');
+      alert('Failed to create custom order');
     }
   };
 
@@ -1096,14 +1131,11 @@ export default function AdminPage() {
                       + New Menu Dish
                     </button>
                     <button
-                      onClick={() => {
-                        setIsQuickAddOpen(false);
-                        setQuickAddModalType('manual-order');
-                      }}
+                      onClick={openCustomOrderModal}
                       className="admin-nav-item"
                       style={{ padding: '8px 12px', fontSize: 12.5 }}
                     >
-                      + Manual Counter Order
+                      + Custom / Counter Order
                     </button>
                   </div>
                 </>
@@ -1356,6 +1388,12 @@ export default function AdminPage() {
                               </span>
                             </div>
 
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
+                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span>•</span>
+                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+
                             <div className="admin-order-customer">
                               <strong>{ord.customerName}</strong> ({ord.customerPhone})
                               {ord.customerFlat && ` · Flat ${ord.customerFlat}`}
@@ -1423,6 +1461,12 @@ export default function AdminPage() {
                               </span>
                             </div>
 
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
+                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span>•</span>
+                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+
                             <div className="admin-order-customer">
                               <strong>{ord.customerName}</strong> ({ord.customerPhone})
                             </div>
@@ -1482,6 +1526,12 @@ export default function AdminPage() {
                               <span className="admin-order-num">{ord.orderNumber}</span>
                               <span className="admin-order-table-badge">Table {ord.tableNumber}</span>
                               <span className="admin-status-badge green">Ready</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
+                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span>•</span>
+                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
 
                             <div className="admin-order-customer">
@@ -1555,11 +1605,11 @@ export default function AdminPage() {
 
                   <div className="admin-table-actions">
                     <button
-                      onClick={() => setQuickAddModalType('manual-order')}
+                      onClick={openCustomOrderModal}
                       className="admin-btn-primary admin-btn-prominent"
-                      title="Create a manual counter order for walk-in guest"
+                      title="Create a custom or manual counter order with custom date and time"
                     >
-                      + Counter Order (Walk-in)
+                      + Custom Order
                     </button>
                     <div className="admin-table-actions-row">
                       <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
@@ -1585,11 +1635,11 @@ export default function AdminPage() {
                       Customer dining and takeaway orders will appear here automatically in real time as guests place them.
                     </p>
                     <button
-                      onClick={() => setQuickAddModalType('manual-order')}
+                      onClick={openCustomOrderModal}
                       className="admin-btn-primary"
                       style={{ padding: '0 24px', height: 42, fontSize: 13.5 }}
                     >
-                      + Place Walk-in Counter Order
+                      + Create Custom / Counter Order
                     </button>
                   </div>
                 ) : (
@@ -1598,7 +1648,7 @@ export default function AdminPage() {
                       <thead>
                         <tr>
                           <th>Order #</th>
-                          <th>Time</th>
+                          <th>Date & Time</th>
                           <th>Table</th>
                           <th>Customer</th>
                           <th>Items Summary</th>
@@ -1611,7 +1661,14 @@ export default function AdminPage() {
                         {filteredOrders.map((ord) => (
                           <tr key={ord.id}>
                             <td><strong>{ord.orderNumber}</strong></td>
-                            <td style={{ fontSize: 12 }}>{new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--adm-text-main, #292524)' }}>
+                                📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--adm-text-muted, #78716c)' }}>
+                                ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </td>
                             <td>
                               <span className="admin-order-table-badge">
                                 {ord.tableNumber === 0 ? 'Takeaway' : `Table ${ord.tableNumber}`}
@@ -2596,17 +2653,59 @@ export default function AdminPage() {
       )}
 
       {/* ══════════════════════════════════════════
-          MODAL: MANUAL COUNTER ORDER
+          MODAL: CUSTOM / MANUAL COUNTER ORDER
           ══════════════════════════════════════════ */}
       {quickAddModalType === 'manual-order' && (
         <div className="admin-modal-overlay" onClick={() => setQuickAddModalType(null)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal-box" style={{ maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-header">
-              <h3 className="admin-modal-title">+ Manual Counter Order</h3>
+              <div>
+                <h3 className="admin-modal-title">+ Custom / Manual Counter Order</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--adm-text-muted)' }}>
+                  Create custom walk-in, phone, or scheduled orders with custom date & time.
+                </p>
+              </div>
               <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn">✕</button>
             </div>
             <form onSubmit={handleManualOrderSubmit}>
-              <div className="admin-modal-body">
+              <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* 1. Custom Date & Time Picker */}
+                <div style={{ background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--adm-border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="admin-form-label" style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📅</span> Order Date & Time
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setManualDateTime(getNowLocalDateTimeString())}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--adm-terracotta, #8E402A)',
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        textDecoration: 'underline'
+                      }}
+                    >
+                      Set to Current (Now)
+                    </button>
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={manualDateTime}
+                    onChange={(e) => setManualDateTime(e.target.value)}
+                    required
+                    className="admin-form-input"
+                    style={{ fontWeight: 600, fontSize: 13.5 }}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--adm-text-muted)', marginTop: 4 }}>
+                    Orders can be timestamped for right now, backdated, or scheduled for a specific date and time.
+                  </div>
+                </div>
+
+                {/* 2. Table & Customer Name */}
                 <div className="admin-form-grid-2">
                   <div className="admin-form-group">
                     <label className="admin-form-label">Table / Order Type</label>
@@ -2620,6 +2719,12 @@ export default function AdminPage() {
                       <option value="2">Table 2</option>
                       <option value="3">Table 3</option>
                       <option value="4">Table 4</option>
+                      <option value="5">Table 5</option>
+                      <option value="6">Table 6</option>
+                      <option value="7">Table 7</option>
+                      <option value="8">Table 8</option>
+                      <option value="9">Table 9</option>
+                      <option value="10">Table 10</option>
                     </select>
                   </div>
                   <div className="admin-form-group">
@@ -2633,29 +2738,164 @@ export default function AdminPage() {
                     />
                   </div>
                 </div>
+
+                {/* 3. Phone & Flat */}
+                <div className="admin-form-grid-2">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Phone Number (Optional)</label>
+                    <input
+                      type="tel"
+                      value={manualPhone}
+                      onChange={(e) => setManualPhone(e.target.value)}
+                      placeholder="e.g. 9830012345"
+                      className="admin-form-input"
+                    />
+                  </div>
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Flat / Residence (Optional)</label>
+                    <input
+                      type="text"
+                      value={manualFlat}
+                      onChange={(e) => setManualFlat(e.target.value)}
+                      placeholder="e.g. F69, Tower 2"
+                      className="admin-form-input"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Dish Selection */}
                 <div className="admin-form-group">
                   <label className="admin-form-label">Select Dish / Beverage</label>
                   <select
                     value={manualSelectedItemId}
-                    onChange={(e) => setManualSelectedItemId(e.target.value)}
+                    onChange={(e) => {
+                      setManualSelectedItemId(e.target.value);
+                      const it = menuItems.find((m) => m.id === e.target.value);
+                      if (it && it.sizes && it.sizes.length > 0) {
+                        setManualSelectedSize(it.sizes[0]);
+                      } else {
+                        setManualSelectedSize('Regular');
+                      }
+                    }}
                     required
                     className="admin-form-select"
                   >
-                    <option value="">-- Choose a dish --</option>
+                    <option value="">-- Choose a dish / beverage --</option>
                     {menuItems.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.name} — ₹{m.price} ({m.category})
+                        {m.name} — ₹{m.price} ({m.stock !== undefined ? `${m.stock} left` : '10 left'}) · {m.category}
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* 5. Quantity & Size */}
+                <div className="admin-form-grid-2">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Quantity</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => setManualQuantity((q) => Math.max(1, q - 1))}
+                        className="admin-alert-action-btn"
+                        style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={manualQuantity}
+                        onChange={(e) => setManualQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="admin-form-input"
+                        style={{ textAlign: 'center', fontWeight: 700 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setManualQuantity((q) => q + 1)}
+                        className="admin-alert-action-btn"
+                        style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Portion / Size</label>
+                    {(() => {
+                      const sel = menuItems.find((m) => m.id === manualSelectedItemId);
+                      if (sel && sel.sizes && sel.sizes.length > 1) {
+                        return (
+                          <select
+                            value={manualSelectedSize}
+                            onChange={(e) => setManualSelectedSize(e.target.value)}
+                            className="admin-form-select"
+                          >
+                            {sel.sizes.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        );
+                      }
+                      return (
+                        <input
+                          type="text"
+                          value={manualSelectedSize}
+                          onChange={(e) => setManualSelectedSize(e.target.value)}
+                          placeholder="Regular"
+                          className="admin-form-input"
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* 6. Special Instructions */}
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Special Instructions / Notes (Optional)</label>
+                  <input
+                    type="text"
+                    value={manualInstructions}
+                    onChange={(e) => setManualInstructions(e.target.value)}
+                    placeholder="e.g. Less spicy, extra sauce, oat milk, VIP guest"
+                    className="admin-form-input"
+                  />
+                </div>
+
+                {/* 7. Live Pricing Preview */}
+                {(() => {
+                  const sel = menuItems.find((m) => m.id === manualSelectedItemId);
+                  if (!sel) return null;
+                  const qty = manualQuantity || 1;
+                  const sub = sel.price * qty;
+                  const gst = Math.round((sub * (settings.gstPercent || 5)) / 100);
+                  const tot = sub + gst;
+                  return (
+                    <div style={{ background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: 12, borderRadius: 8, fontSize: 12.5, border: '1px solid var(--adm-border)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span>Subtotal ({qty}x ₹{sel.price}):</span>
+                        <strong>₹{sub.toFixed(2)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, color: 'var(--adm-text-muted)' }}>
+                        <span>GST ({settings.gstPercent || 5}%):</span>
+                        <span>₹{gst.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--adm-border)', fontWeight: 800, fontSize: 14 }}>
+                        <span>Total Payable:</span>
+                        <span style={{ color: 'var(--adm-terracotta)' }}>₹{tot.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="admin-modal-footer">
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-btn-primary">
-                  Dispatch to Kitchen
+                <button type="submit" className="admin-btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>✓</span> Dispatch to Kitchen
                 </button>
               </div>
             </form>
