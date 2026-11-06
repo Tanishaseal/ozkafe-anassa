@@ -674,6 +674,9 @@ export async function getOrders(filter?: {
           total: Number(o.total),
           specialInstructions: o.special_instructions,
           status: o.status as OrderStatus,
+          isPaid: Boolean(o.is_paid ?? (o as any).isPaid),
+          paidAt: o.paid_at ? new Date(o.paid_at).getTime() : (o as any).paidAt,
+          settledBy: o.settled_by || (o as any).settledBy,
           customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
           customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
           distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
@@ -724,6 +727,9 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
           total: Number(data.total),
           specialInstructions: data.special_instructions,
           status: data.status as OrderStatus,
+          isPaid: Boolean(data.is_paid ?? (data as any).isPaid),
+          paidAt: data.paid_at ? new Date(data.paid_at).getTime() : (data as any).paidAt,
+          settledBy: data.settled_by || (data as any).settledBy,
           customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
           customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
           distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
@@ -839,7 +845,12 @@ export async function deleteOrder(orderId: string): Promise<boolean> {
   return true;
 }
 
-export async function updateOrderDetails(orderId: string, updates: Partial<Order>): Promise<Order | null> {
+export async function updateOrderDetails(
+  orderId: string,
+  updates: Partial<Order>,
+  actor: 'admin' | 'kitchen' = 'admin',
+  staffName?: string
+): Promise<Order | null> {
   const now = Date.now();
   if (isSupabaseConfigured && supabaseServer) {
     try {
@@ -856,6 +867,9 @@ export async function updateOrderDetails(orderId: string, updates: Partial<Order
       if (updates.taxAmount !== undefined) dbUpdates.tax_amount = updates.taxAmount;
       if (updates.total !== undefined) dbUpdates.total = updates.total;
       if (updates.status !== undefined) dbUpdates.status = updates.status;
+      if (updates.isPaid !== undefined) dbUpdates.is_paid = updates.isPaid;
+      if (updates.paidAt !== undefined) dbUpdates.paid_at = updates.paidAt ? new Date(updates.paidAt).toISOString() : null;
+      if (updates.settledBy !== undefined) dbUpdates.settled_by = updates.settledBy;
       if (updates.specialInstructions !== undefined) dbUpdates.special_instructions = updates.specialInstructions;
       if (updates.createdAt !== undefined) dbUpdates.created_at = new Date(updates.createdAt).toISOString();
 
@@ -874,11 +888,23 @@ export async function updateOrderDetails(orderId: string, updates: Partial<Order
       updatedAt: now,
     };
     broadcastOrder(existing[idx]);
-    addAuditLog({
-      actor: 'admin',
-      action: 'RECEIPT_EDITED',
-      details: `Receipt/Order #${existing[idx].orderNumber} updated by admin (Total: ₹${existing[idx].total})`,
-    });
+
+    const isSettlement = updates.isPaid === true && updates.paidAt;
+    const actorLabel = actor === 'kitchen' ? `Kitchen Staff (${staffName || 'Mamoni'})` : `Admin (${staffName || 'Floor Manager'})`;
+
+    if (isSettlement) {
+      addAuditLog({
+        actor,
+        action: 'BILL_SETTLED',
+        details: `Bill for Order #${existing[idx].orderNumber} (₹${existing[idx].total}) marked SETTLED/PAID by ${actorLabel}`,
+      });
+    } else {
+      addAuditLog({
+        actor,
+        action: 'RECEIPT_EDITED',
+        details: `Receipt/Order #${existing[idx].orderNumber} edited by ${actorLabel} (Total: ₹${existing[idx].total})`,
+      });
+    }
     return existing[idx];
   }
   return null;

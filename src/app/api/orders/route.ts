@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createOrder, getOrders, getOrderById, updateOrderStatus, deleteOrder, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
+import { createOrder, getOrders, getOrderById, updateOrderStatus, updateOrderDetails, deleteOrder, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
 import { OrderStatus } from '@/lib/types';
 import { verifyAuthHeaderOrCookie, getTableSessionFromRequest } from '@/lib/auth';
 
@@ -11,17 +11,30 @@ export async function GET(request: Request) {
     const sessionId = searchParams.get('session');
     const status = searchParams.get('status');
     const all = searchParams.get('all');
+    const history = searchParams.get('history');
 
     // 1. Admin order ledger query: MUST have admin auth
     if (all === 'true') {
       if (!verifyAuthHeaderOrCookie(request, ['admin'])) {
         return NextResponse.json({ error: 'Unauthorized. Admin credentials required.' }, { status: 401 });
       }
-      const orders = await getOrders({ limit: 100 });
+      const orders = await getOrders({ limit: 500 });
       return NextResponse.json(orders);
     }
 
-    // 2. Kitchen Display query (Active orders): MUST have kitchen or admin auth
+    // 2. Kitchen Order History query (Strictly 15 days prior; rest kept hidden)
+    if (history === 'true') {
+      if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
+        return NextResponse.json({ error: 'Unauthorized. Kitchen or Admin staff access required.' }, { status: 401 });
+      }
+      const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
+      const allOrders = await getOrders({ limit: 1000 });
+      // Filter out orders older than 15 days
+      const historyOrders = allOrders.filter((o) => o.createdAt >= fifteenDaysAgo);
+      return NextResponse.json(historyOrders);
+    }
+
+    // 3. Kitchen Display query (Active orders): MUST have kitchen or admin auth
     if (status === 'active') {
       if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
         return NextResponse.json({ error: 'Unauthorized. Kitchen staff access required.' }, { status: 401 });
@@ -357,33 +370,97 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  // Guard: Advancing order status requires Kitchen Staff or Admin credentials
+  // Guard: Advancing order status, settling bill, or editing receipts requires Kitchen Staff or Admin credentials
   if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
-    return NextResponse.json({ error: 'Unauthorized. Staff access required to update order status.' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized. Staff access required.' }, { status: 401 });
   }
 
   try {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || '127.0.0.1';
+    const userAgent = (request.headers.get('user-agent') || 'Unknown').slice(0, 100);
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, action, updates, staffName } = body;
 
-    if (!id || !status) {
-      return NextResponse.json({ error: 'Order ID and status are required' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
     }
 
-    const validStatuses: OrderStatus[] = ['received', 'preparing', 'ready', 'served', 'cancelled'];
-    if (!validStatuses.includes(status as OrderStatus)) {
-      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    // ── 1. BILL SETTLEMENT (CUSTOMER PAID) ──
+    if (action === 'settle_bill') {
+      const order = await getOrderById(id);
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      const updated = await updateOrderDetails(
+        id,
+        {
+          isPaid: true,
+          paidAt: Date.now(),
+          settledBy: staffName || 'Kitchen Staff',
+        },
+        'kitchen',
+        staffName || 'Kitchen Staff'
+      );
+
+      return NextResponse.json({
+        success: true,
+        order: updated,
+        message: `Order #${order.orderNumber} successfully marked as PAID & SETTLED`,
+      });
     }
 
-    const updated = await updateOrderStatus(id, status as OrderStatus);
-    if (!updated) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    // ── 2. RECEIPT EDITING BY KITCHEN / STAFF ──
+    if (action === 'edit_receipt') {
+      const order = await getOrderById(id);
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+      if (!updates || typeof updates !== 'object') {
+        return NextResponse.json({ error: 'Valid updates object is required' }, { status: 400 });
+      }
+
+      const updated = await updateOrderDetails(
+        id,
+        updates,
+        'kitchen',
+        staffName || 'Kitchen Staff'
+      );
+
+      return NextResponse.json({
+        success: true,
+        order: updated,
+        message: `Receipt #${order.orderNumber} updated successfully by Kitchen`,
+      });
     }
 
-    return NextResponse.json({ success: true, order: updated });
+    // ── 3. ADVANCE ORDER STATUS ──
+    if (status) {
+      const validStatuses: OrderStatus[] = ['received', 'preparing', 'ready', 'served', 'cancelled'];
+      if (!validStatuses.includes(status as OrderStatus)) {
+        return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+      }
+
+      const updated = await updateOrderStatus(id, status as OrderStatus);
+      if (!updated) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      await addAuditLog({
+        actor: 'kitchen',
+        action: 'ORDER_STATUS_CHANGED',
+        details: `Order #${updated.orderNumber} moved to "${status.toUpperCase()}" by Kitchen Staff (${staffName || 'Staff'})`,
+        ipAddress: ip,
+        userAgent,
+      });
+
+      return NextResponse.json({ success: true, order: updated });
+    }
+
+    return NextResponse.json({ error: 'No valid action or status specified' }, { status: 400 });
   } catch (error) {
     console.error('API PATCH /api/orders error:', error);
-    return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update order' }, { status: 500 });
   }
 }
 

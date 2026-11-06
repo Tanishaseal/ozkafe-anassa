@@ -446,6 +446,35 @@ export default function AdminPage() {
     }
   };
 
+  // ── SETTLE BILL (PAYMENT CONFIRMATION) ──
+  const handleSettleOrderBill = async (orderId: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: orderId,
+          action: 'settle_bill',
+          staffName: currentUser?.name || 'Admin',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updated = data.order || { id: orderId, isPaid: true, paidAt: Date.now(), settledBy: currentUser?.name || 'Admin' };
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
+        if (selectedReceiptOrder?.id === orderId) {
+          setSelectedReceiptOrder((prev) => (prev ? { ...prev, ...updated } : null));
+        }
+        setSaveSuccessMsg('✓ Bill marked as settled and payment verified!');
+        setTimeout(() => setSaveSuccessMsg(''), 4000);
+      } else {
+        alert('Failed to settle bill');
+      }
+    } catch {
+      alert('Network error while settling bill');
+    }
+  };
+
   // ── STAFF SHIFT STATUS TOGGLE ──
   const handleStaffStatusToggle = async (staffId: string, newStatus: 'on_duty' | 'break' | 'off_duty') => {
     setStaff((prev) =>
@@ -1995,14 +2024,25 @@ export default function AdminPage() {
                                 </td>
                                 <td><strong>₹{ord.total}</strong></td>
                                 <td>
-                                  <span className={`admin-status-badge ${
-                                    ord.status === 'served' ? 'green' :
-                                    ord.status === 'preparing' ? 'amber' :
-                                    ord.status === 'ready' ? 'green' :
-                                    ord.status === 'cancelled' ? 'red' : 'amber'
-                                  }`}>
-                                    {ord.status.toUpperCase()}
-                                  </span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                    <span className={`admin-status-badge ${
+                                      ord.status === 'served' ? 'green' :
+                                      ord.status === 'preparing' ? 'amber' :
+                                      ord.status === 'ready' ? 'green' :
+                                      ord.status === 'cancelled' ? 'red' : 'amber'
+                                    }`}>
+                                      {ord.status.toUpperCase()}
+                                    </span>
+                                    {ord.isPaid ? (
+                                      <span style={{ fontSize: 10, fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                                        ✓ PAID
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                                        ⏳ UNSETTLED
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -3404,6 +3444,13 @@ export default function AdminPage() {
                       <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.04em' }}>TOTAL</span>
                       <span style={{ fontWeight: 900, fontSize: 18, color: '#1C1917' }}>₹{orderTotal.toFixed(2)}</span>
                     </div>
+
+                    {/* SETTLEMENT STATUS IN RECEIPT */}
+                    <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 4, background: selectedReceiptOrder.isPaid ? '#DCFCE7' : '#FEF3C7', color: selectedReceiptOrder.isPaid ? '#15803D' : '#92400E', fontWeight: 800, fontSize: 11, textAlign: 'center', border: `1px solid ${selectedReceiptOrder.isPaid ? '#86EFAC' : '#FDE68A'}` }}>
+                      {selectedReceiptOrder.isPaid
+                        ? `✓ PAID & SETTLED ${selectedReceiptOrder.settledBy ? `· Verified by ${selectedReceiptOrder.settledBy}` : ''}`
+                        : '⏳ PAYMENT PENDING · UNSETTLED'}
+                    </div>
                   </div>
 
                   {/* THANK YOU MSG */}
@@ -3415,7 +3462,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="admin-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid var(--adm-border)', background: '#fff', display: 'flex', gap: 10 }}>
+              <div className="admin-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid var(--adm-border)', background: '#fff', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button
                   onClick={() => handleOpenEditReceipt(selectedReceiptOrder)}
                   className="admin-alert-action-btn"
@@ -3424,10 +3471,20 @@ export default function AdminPage() {
                   <span>✏️</span>
                   <span>Edit Receipt</span>
                 </button>
+                {!selectedReceiptOrder.isPaid && (
+                  <button
+                    onClick={() => handleSettleOrderBill(selectedReceiptOrder.id)}
+                    className="admin-alert-action-btn"
+                    style={{ height: 44, padding: '0 14px', fontSize: 13, fontWeight: 800, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                  >
+                    <span>✓</span>
+                    <span>Settle Bill</span>
+                  </button>
+                )}
                 <button
                   onClick={() => window.print()}
                   className="admin-btn-primary"
-                  style={{ flex: 1, height: 44, fontSize: 14, fontWeight: 700, justifyContent: 'center', gap: 8 }}
+                  style={{ flex: 1, minWidth: 150, height: 44, fontSize: 14, fontWeight: 700, justifyContent: 'center', gap: 8 }}
                 >
                   <span>🖨</span>
                   <span>Print Thermal Receipt</span>

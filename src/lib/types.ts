@@ -74,6 +74,9 @@ export interface Order {
   total: number;
   specialInstructions?: string;
   status: OrderStatus;
+  isPaid?: boolean; // When true: bill has been settled / customer paid
+  paidAt?: number; // Unix timestamp ms when bill settled
+  settledBy?: string; // Name and title of staff member who settled the bill
   customerLat?: number;
   customerLng?: number;
   distanceMeters?: number;
@@ -165,6 +168,7 @@ export type AuditAction =
   | 'ORDER_STATUS_CHANGED'
   | 'ORDER_REJECTED'
   | 'ORDER_DELETED'
+  | 'BILL_SETTLED'
   | 'RECEIPT_EDITED'
   | 'GEOFENCE_FAILED'
   | 'STOCK_TOGGLED'
