@@ -644,75 +644,138 @@ export default function KitchenDashboard() {
       )}
 
       {/* ── FINAL ORDER RECEIPT MODAL (PRINTED AT THE END AFTER ORDER IS SERVED) ── */}
-      {printOrder && (
-        <div className="admin-modal-overlay" onClick={() => setPrintOrder(null)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360, padding: 24 }}>
-            <div className="kot-print-area">
-              <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: 10, marginBottom: 10 }}>
-                <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 800 }}>OZKAFE — ANASSA</h2>
-                <div style={{ fontSize: 11, color: '#555' }}>Beside JW Marriott, EM Bypass, Kolkata</div>
-                <div style={{ fontSize: 13, fontWeight: 'bold', marginTop: 6, textTransform: 'uppercase' }}>
-                  FINAL ORDER RECEIPT
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 'bold' }}>
-                  {printOrder.orderNumber} · {printOrder.tableNumber === 'Takeaway' || printOrder.tableNumber === 0 ? 'TAKEAWAY & IN-FLAT' : `TABLE ${printOrder.tableNumber}`}
-                </div>
-                <div style={{ fontSize: 11, color: '#666' }}>{new Date(printOrder.updatedAt || printOrder.createdAt).toLocaleString()}</div>
-              </div>
+      {printOrder && (() => {
+        const orderSubtotal = printOrder.subtotal && printOrder.subtotal > 0
+          ? printOrder.subtotal
+          : printOrder.items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
 
-              <div style={{ fontSize: 12, marginBottom: 8 }}>
-                <strong>Guest:</strong> {printOrder.customerName} ({printOrder.customerPhone})<br />
-                {printOrder.customerFlat && <><strong>Flat:</strong> {printOrder.customerFlat}<br /></>}
-                <strong>Status:</strong> <span style={{ textTransform: 'uppercase', fontWeight: 700 }}>{printOrder.status}</span>
-              </div>
+        const gstPercent = 5;
+        const gstRate = gstPercent / 100;
+        const orderTax = printOrder.taxAmount !== undefined && printOrder.taxAmount > 0
+          ? printOrder.taxAmount
+          : Number((orderSubtotal * gstRate).toFixed(2));
 
-              <table style={{ width: '100%', fontSize: 13, borderBottom: '1px dashed #000', paddingBottom: 8, marginBottom: 8, borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-                    <th style={{ padding: '4px 0' }}>QTY</th>
-                    <th style={{ padding: '4px 0' }}>ITEM</th>
-                    <th style={{ padding: '4px 0', textAlign: 'right' }}>AMOUNT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {printOrder.items.map((it, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 'bold', width: 36, padding: '4px 0' }}>{it.quantity}x</td>
-                      <td style={{ padding: '4px 0' }}>
-                        {it.name}
-                        {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600 }}>₹{it.price * it.quantity}</td>
+        const halfRate = (gstPercent / 2).toFixed(1);
+        const cgst = Number((orderTax / 2).toFixed(2));
+        const sgst = Number((orderTax - cgst).toFixed(2));
+
+        const orderTotal = printOrder.total && printOrder.total > 0
+          ? printOrder.total
+          : Number((orderSubtotal + orderTax).toFixed(2));
+
+        const totalQty = printOrder.items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+
+        return (
+          <div className="admin-modal-overlay" onClick={() => setPrintOrder(null)}>
+            <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, padding: '20px 20px 16px' }}>
+              <div className="kot-print-area" style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: '#1C1917' }}>
+                {/* SECTION 1: HEADER */}
+                <div style={{ textAlign: 'center', borderBottom: '1.5px dashed #78716C', paddingBottom: 10, marginBottom: 8 }}>
+                  <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 900 }}>OZKAFE · ANASSA</h2>
+                  <div style={{ fontSize: 10.5, color: '#57534E' }}>Beside JW Marriott, EM Bypass, Kolkata · 100% Pure Veg</div>
+                  <div style={{ fontSize: 10, color: '#78716C', marginTop: 2 }}>Ph: +91 98300 00000 · GSTIN: 19AAFCO1234M1Z5</div>
+                  <div style={{ margin: '8px 0 4px', fontSize: 11, fontWeight: 800, background: '#F5F5F4', padding: '3px 8px', borderRadius: 4, display: 'inline-block', border: '1px solid #E7E5E4' }}>
+                    TAX INVOICE / RECEIPT
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', marginTop: 4 }}>
+                    {printOrder.orderNumber} · {printOrder.tableNumber === 'Takeaway' || printOrder.tableNumber === 0 ? 'TAKEAWAY & IN-FLAT' : `TABLE ${printOrder.tableNumber}`}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#666' }}>{new Date(printOrder.updatedAt || printOrder.createdAt).toLocaleString()}</div>
+                </div>
+
+                {/* SECTION 2: GUEST & STATUS */}
+                <div style={{ fontSize: 11.5, marginBottom: 8, paddingBottom: 8, borderBottom: '1.5px dashed #78716C' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span>Guest:</span>
+                    <strong>{printOrder.customerName} ({printOrder.customerPhone})</strong>
+                  </div>
+                  {printOrder.customerFlat && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span>Flat:</span>
+                      <strong>{printOrder.customerFlat}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Status:</span>
+                    <strong style={{ textTransform: 'uppercase', color: '#15803D' }}>{printOrder.status}</strong>
+                  </div>
+                </div>
+
+                {/* SECTION 3: ITEMS */}
+                <table style={{ width: '100%', fontSize: 11.5, borderBottom: '1.5px dashed #78716C', paddingBottom: 8, marginBottom: 8, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', fontSize: 10.5 }}>
+                      <th style={{ padding: '4px 0' }}>QTY</th>
+                      <th style={{ padding: '4px 0' }}>ITEM</th>
+                      <th style={{ padding: '4px 0', textAlign: 'right' }}>AMOUNT</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {printOrder.items.map((it, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 'bold', width: 36, padding: '4px 0' }}>{it.quantity}x</td>
+                        <td style={{ padding: '4px 0' }}>
+                          {it.name}
+                          {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600 }}>₹{(Number(it.price) * (Number(it.quantity) || 1)).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 800, padding: '4px 0' }}>
-                <span>TOTAL PAID</span>
-                <span>₹{printOrder.total}</span>
+                {/* SECTION 4: GST BREAKDOWN */}
+                <div style={{ fontSize: 11.5, paddingBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{ color: '#57534E' }}>Subtotal:</span>
+                    <span style={{ fontWeight: 600 }}>₹{orderSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div style={{ background: '#F5F5F4', padding: '6px 8px', borderRadius: 4, margin: '4px 0', border: '1px solid #E7E5E4' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#555', marginBottom: 2 }}>
+                      <span>CGST ({halfRate}%):</span>
+                      <span>₹{cgst.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#555', marginBottom: 2 }}>
+                      <span>SGST ({halfRate}%):</span>
+                      <span>₹{sgst.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, borderTop: '1px dashed #D6D3D1', paddingTop: 2 }}>
+                      <span>Total GST ({gstPercent}%):</span>
+                      <span>₹{orderTax.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 900, borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '6px 0', marginTop: 6 }}>
+                    <span>TOTAL PAID ({totalQty} items)</span>
+                    <span>₹{orderTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* SECTION 5: FOOTER */}
+                <div style={{ textAlign: 'center', fontSize: 10, color: '#666', paddingTop: 6 }}>
+                  Thank you for dining at OZKAFE ANASSA!
+                </div>
               </div>
-            </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button
-                className="btn-solid"
-                style={{ flex: 1, height: 42, background: '#5C381E', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
-                onClick={() => window.print()}
-              >
-                🖨️ Print Receipt
-              </button>
-              <button
-                className="btn-outline"
-                style={{ flex: 1, height: 42, borderRadius: 8, border: '1px solid #ccc', background: '#fff', fontWeight: 700, cursor: 'pointer' }}
-                onClick={() => setPrintOrder(null)}
-              >
-                Done / Close
-              </button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                <button
+                  className="btn-solid"
+                  style={{ flex: 1, height: 42, background: '#5C381E', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => window.print()}
+                >
+                  🖨️ Print Receipt
+                </button>
+                <button
+                  className="btn-outline"
+                  style={{ flex: 1, height: 42, borderRadius: 8, border: '1px solid #ccc', background: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => setPrintOrder(null)}
+                >
+                  Done / Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── CUSTOMIZABLE STAFF ACCOUNT DRAWER ── */}
       <AccountPanel

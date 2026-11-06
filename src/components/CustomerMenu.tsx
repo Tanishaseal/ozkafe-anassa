@@ -41,7 +41,7 @@ export default function CustomerMenu({
   const [categories] = useState<Category[]>(initialCategories);
   const [items, setItems] = useState<MenuItem[]>(initialItems);
   const [addons] = useState<MenuAddon[]>(initialAddons);
-  
+
   const [activeCategoryIdx, setActiveCategoryIdx] = useState(0);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
   const [selectedSizeIdx, setSelectedSizeIdx] = useState(0);
@@ -456,10 +456,10 @@ export default function CustomerMenu({
     });
   };
 
-const formatCurrency = (val: number): string => {
-  if (val === undefined || val === null || isNaN(val)) return '0';
-  return Number.isInteger(val) ? val.toString() : val.toFixed(2);
-};
+  const formatCurrency = (val: number): string => {
+    if (val === undefined || val === null || isNaN(val)) return '0';
+    return Number.isInteger(val) ? val.toString() : val.toFixed(2);
+  };
 
   const totalCartCount = Object.values(cart).reduce((sum, it) => sum + it.quantity, 0);
   const cartSubtotal = Object.values(cart).reduce((sum, it) => sum + it.price * it.quantity, 0);
