@@ -690,66 +690,52 @@ export default function KitchenDashboard() {
           <div className="admin-modal-overlay" onClick={() => setPrintOrder(null)}>
             <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, padding: '20px 20px 16px' }}>
               <div className="kot-print-area" style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: '#1C1917' }}>
-                {/* SECTION 1: HEADER */}
+                {/* STORE & ORDER ID */}
                 <div style={{ textAlign: 'center', borderBottom: '1.5px dashed #78716C', paddingBottom: 10, marginBottom: 8 }}>
                   <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 900 }}>OZKAFE · ANASSA</h2>
-                  <div style={{ fontSize: 10.5, color: '#57534E' }}>Beside JW Marriott, EM Bypass, Kolkata · 100% Pure Veg</div>
-                  <div style={{ fontSize: 10, color: '#78716C', marginTop: 2 }}>Ph: +91 98300 00000 · GSTIN: 19AAFCO1234M1Z5</div>
-                  <div style={{ margin: '8px 0 4px', fontSize: 11, fontWeight: 800, background: '#F5F5F4', padding: '3px 8px', borderRadius: 4, display: 'inline-block', border: '1px solid #E7E5E4' }}>
-                    TAX INVOICE / RECEIPT
+                  <div style={{ fontSize: 13, fontWeight: 800, marginTop: 6, color: '#1C1917' }}>
+                    Order ID: {printOrder.orderNumber}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 'bold', marginTop: 4 }}>
-                    {printOrder.orderNumber} · {printOrder.tableNumber === 'Takeaway' || printOrder.tableNumber === 0 ? 'TAKEAWAY & IN-FLAT' : `TABLE ${printOrder.tableNumber}`}
-                  </div>
-                  <div style={{ fontSize: 10.5, color: '#666' }}>{new Date(printOrder.updatedAt || printOrder.createdAt).toLocaleString()}</div>
-                </div>
-
-                {/* SECTION 2: GUEST & STATUS */}
-                <div style={{ fontSize: 11.5, marginBottom: 8, paddingBottom: 8, borderBottom: '1.5px dashed #78716C' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span>Guest:</span>
-                    <strong>{printOrder.customerName} ({printOrder.customerPhone})</strong>
-                  </div>
-                  {printOrder.customerFlat && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span>Flat:</span>
-                      <strong>{printOrder.customerFlat}</strong>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Status:</span>
-                    <strong style={{ textTransform: 'uppercase', color: '#15803D' }}>{printOrder.status}</strong>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    {new Date(printOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {new Date(printOrder.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>
                 </div>
 
-                {/* SECTION 3: ITEMS */}
+                {/* ITEMS ORDERED */}
                 <table style={{ width: '100%', fontSize: 11.5, borderBottom: '1.5px dashed #78716C', paddingBottom: 8, marginBottom: 8, borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', fontSize: 10.5 }}>
-                      <th style={{ padding: '4px 0' }}>QTY</th>
                       <th style={{ padding: '4px 0' }}>ITEM</th>
+                      <th style={{ padding: '4px 0', textAlign: 'center' }}>QTY</th>
+                      <th style={{ padding: '4px 0', textAlign: 'right' }}>RATE</th>
                       <th style={{ padding: '4px 0', textAlign: 'right' }}>AMOUNT</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {printOrder.items.map((it, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 'bold', width: 36, padding: '4px 0' }}>{it.quantity}x</td>
-                        <td style={{ padding: '4px 0' }}>
-                          {it.name}
-                          {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
-                        </td>
-                        <td style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600 }}>₹{(Number(it.price) * (Number(it.quantity) || 1)).toFixed(2)}</td>
-                      </tr>
-                    ))}
+                    {printOrder.items.map((it, i) => {
+                      const itemRate = Number(it.price) || 0;
+                      const itemQty = Number(it.quantity) || 1;
+                      const itemAmt = itemRate * itemQty;
+                      return (
+                        <tr key={i}>
+                          <td style={{ padding: '4px 0', fontWeight: 600 }}>
+                            {it.name}
+                            {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', width: 36, padding: '4px 0' }}>{itemQty}x</td>
+                          <td style={{ textAlign: 'right', padding: '4px 0', color: '#555' }}>₹{itemRate.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', padding: '4px 0', fontWeight: 700 }}>₹{itemAmt.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
 
-                {/* SECTION 4: GST BREAKDOWN */}
+                {/* PRICES, GST & TOTAL */}
                 <div style={{ fontSize: 11.5, paddingBottom: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ color: '#57534E' }}>Subtotal:</span>
-                    <span style={{ fontWeight: 600 }}>₹{orderSubtotal.toFixed(2)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: '#57534E' }}>Item Subtotal:</span>
+                    <span style={{ fontWeight: 700 }}>₹{orderSubtotal.toFixed(2)}</span>
                   </div>
                   <div style={{ background: '#F5F5F4', padding: '6px 8px', borderRadius: 4, margin: '4px 0', border: '1px solid #E7E5E4' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#555', marginBottom: 2 }}>
@@ -765,15 +751,15 @@ export default function KitchenDashboard() {
                       <span>₹{orderTax.toFixed(2)}</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 900, borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '6px 0', marginTop: 6 }}>
-                    <span>TOTAL PAID ({totalQty} items)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 900, borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '8px 0', marginTop: 8 }}>
+                    <span>TOTAL</span>
                     <span>₹{orderTotal.toFixed(2)}</span>
                   </div>
                 </div>
 
-                {/* SECTION 5: FOOTER */}
-                <div style={{ textAlign: 'center', fontSize: 10, color: '#666', paddingTop: 6 }}>
-                  Thank you for dining at OZKAFE ANASSA!
+                {/* THANK YOU MSG */}
+                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#1C1917', paddingTop: 10, borderTop: '1.5px dashed #78716C' }}>
+                  Thank You For Visiting OZKAFE ANASSA!
                 </div>
               </div>
 

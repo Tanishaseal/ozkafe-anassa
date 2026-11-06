@@ -2986,84 +2986,36 @@ export default function AdminPage() {
               <div className="admin-modal-body" style={{ maxHeight: '78vh', overflowY: 'auto', padding: '16px 18px', background: '#FAFAF9' }}>
                 {/* ── PRINTABLE THERMAL RECEIPT TICKET ── */}
                 <div
+                  id="thermal-receipt"
                   className="thermal-receipt-ticket"
                   style={{
                     background: '#FFFFFF',
                     border: '1px solid #E5E5E5',
                     borderRadius: 10,
-                    padding: '20px 16px',
+                    padding: '24px 18px',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
                     fontFamily: 'var(--font-mono), "Courier New", Courier, monospace',
                     fontSize: 12,
                     color: '#1C1917',
-                    lineHeight: 1.45,
+                    lineHeight: 1.5,
                   }}
                 >
-                  {/* SECTION 1: STORE & INVOICE HEADER */}
+                  {/* STORE & ORDER ID */}
                   <div style={{ textAlign: 'center', paddingBottom: 12, borderBottom: '1.5px dashed #78716C' }}>
                     <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: '0.05em', color: '#1C1917' }}>
                       OZKAFE · ANASSA
                     </div>
-                    <div style={{ fontSize: 10.5, fontWeight: 600, color: '#57534E', marginTop: 2 }}>
-                      Specialty Coffee & Artisan Bakehouse · 100% Pure Veg
+                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 6, color: '#1C1917' }}>
+                      Order ID: {selectedReceiptOrder.orderNumber}
                     </div>
-                    <div style={{ fontSize: 10, color: '#78716C', marginTop: 3 }}>
-                      Beside JW Marriott, EM Bypass, Kolkata · 700105
-                    </div>
-                    <div style={{ fontSize: 9.5, color: '#78716C', marginTop: 1 }}>
-                      Ph: +91 98300 00000 · FSSAI: 12823019000123
-                    </div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#44403C', marginTop: 3 }}>
-                      GSTIN: 19AAFCO1234M1Z5
-                    </div>
-
-                    <div style={{ margin: '8px 0 6px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', background: '#F5F5F4', padding: '3px 10px', borderRadius: 4, display: 'inline-block', border: '1px solid #E7E5E4' }}>
-                      TAX INVOICE / CASH BILL
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, marginTop: 6, color: '#1C1917' }}>
-                      <span>Invoice: {selectedReceiptOrder.orderNumber}</span>
-                      <span>{new Date(selectedReceiptOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#78716C' }}>
-                      <span>Time: {new Date(selectedReceiptOrder.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      <span>Payment: PAID & VERIFIED</span>
+                    <div style={{ fontSize: 11, color: '#78716C', marginTop: 2 }}>
+                      {new Date(selectedReceiptOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {new Date(selectedReceiptOrder.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </div>
                   </div>
 
-                  {/* SECTION 2: GUEST & DINING DETAILS */}
-                  <div style={{ padding: '10px 0', borderBottom: '1.5px dashed #78716C', fontSize: 11.5 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ color: '#57534E' }}>Order Type:</span>
-                      <strong style={{ textTransform: 'uppercase' }}>
-                        {selectedReceiptOrder.tableNumber === 0 || selectedReceiptOrder.tableNumber === 'Takeaway' || selectedReceiptOrder.tableNumber === '0'
-                          ? 'Takeaway & In-Flat'
-                          : `Dine-In (Table ${selectedReceiptOrder.tableNumber})`}
-                      </strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ color: '#57534E' }}>Customer Name:</span>
-                      <strong>{selectedReceiptOrder.customerName || 'Guest'}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ color: '#57534E' }}>Mobile Phone:</span>
-                      <span>+91 {selectedReceiptOrder.customerPhone || 'Counter Walk-in'}</span>
-                    </div>
-                    {selectedReceiptOrder.customerFlat && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                        <span style={{ color: '#57534E' }}>Anassa Tower/Flat:</span>
-                        <strong>{selectedReceiptOrder.customerFlat}</strong>
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#57534E' }}>Cashier / Floor Staff:</span>
-                      <span>{currentUser?.name || 'Floor Admin'}</span>
-                    </div>
-                  </div>
-
-                  {/* SECTION 3: ITEM DETAILS TABLE */}
-                  <div style={{ padding: '10px 0', borderBottom: '1.5px dashed #78716C' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 55px 65px', fontWeight: 800, fontSize: 10.5, borderBottom: '1px solid #D6D3D1', paddingBottom: 5, marginBottom: 6, color: '#44403C' }}>
+                  {/* ITEMS ORDERED */}
+                  <div style={{ padding: '12px 0', borderBottom: '1.5px dashed #78716C' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 36px 60px 65px', fontWeight: 800, fontSize: 11, borderBottom: '1px solid #D6D3D1', paddingBottom: 5, marginBottom: 8, color: '#44403C' }}>
                       <span>ITEM</span>
                       <span style={{ textAlign: 'center' }}>QTY</span>
                       <span style={{ textAlign: 'right' }}>RATE</span>
@@ -3075,60 +3027,41 @@ export default function AdminPage() {
                       const itemQty = Number(it.quantity) || 1;
                       const itemAmt = itemRate * itemQty;
                       return (
-                        <div key={idx} style={{ marginBottom: 6 }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 55px 65px', fontSize: 11.5 }}>
-                            <div style={{ fontWeight: 600, paddingRight: 4 }}>
-                              {it.name}
-                              {it.selectedSize && it.selectedSize !== 'Regular' && (
-                                <span style={{ fontSize: 10, color: '#78716C', marginLeft: 4 }}>
-                                  ({it.selectedSize})
-                                </span>
-                              )}
-                            </div>
-                            <span style={{ textAlign: 'center', fontWeight: 700 }}>{itemQty}</span>
-                            <span style={{ textAlign: 'right', color: '#57534E' }}>₹{itemRate.toFixed(2)}</span>
-                            <span style={{ textAlign: 'right', fontWeight: 700 }}>₹{itemAmt.toFixed(2)}</span>
-                          </div>
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 36px 60px 65px', fontSize: 11.5, marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600, paddingRight: 4 }}>
+                            {it.name}
+                            {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
+                          </span>
+                          <span style={{ textAlign: 'center', fontWeight: 700 }}>{itemQty}</span>
+                          <span style={{ textAlign: 'right', color: '#57534E' }}>₹{itemRate.toFixed(2)}</span>
+                          <span style={{ textAlign: 'right', fontWeight: 700 }}>₹{itemAmt.toFixed(2)}</span>
                         </div>
                       );
                     })}
-
-                    {selectedReceiptOrder.specialInstructions && (
-                      <div style={{ fontSize: 10, color: '#57534E', background: '#F5F5F4', padding: '4px 6px', borderRadius: 4, marginTop: 4 }}>
-                        <strong>Note:</strong> {selectedReceiptOrder.specialInstructions}
-                      </div>
-                    )}
                   </div>
 
-                  {/* SECTION 4: FINANCIAL SUMMARY & GST BREAKDOWN */}
-                  <div style={{ padding: '10px 0', fontSize: 11.5 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ color: '#57534E' }}>Item Subtotal (Net Value):</span>
+                  {/* PRICES, GST & TOTAL */}
+                  <div style={{ padding: '12px 0', fontSize: 11.5 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ color: '#57534E' }}>Item Subtotal:</span>
                       <span style={{ fontWeight: 700 }}>₹{orderSubtotal.toFixed(2)}</span>
                     </div>
 
-                    {/* GST Section Division */}
-                    <div style={{ background: '#F5F5F4', padding: '7px 9px', borderRadius: 6, margin: '6px 0', border: '1px solid #E7E5E4' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#44403C', marginBottom: 2 }}>
+                    <div style={{ background: '#F5F5F4', padding: '8px 10px', borderRadius: 6, margin: '6px 0', border: '1px solid #E7E5E4' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#44403C', marginBottom: 3 }}>
                         <span>CGST ({halfRate}%):</span>
                         <span>₹{cgst.toFixed(2)}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#44403C', marginBottom: 3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#44403C', marginBottom: 4 }}>
                         <span>SGST ({halfRate}%):</span>
                         <span>₹{sgst.toFixed(2)}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 700, color: '#1C1917', borderTop: '1px dashed #D6D3D1', paddingTop: 3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 700, color: '#1C1917', borderTop: '1px dashed #D6D3D1', paddingTop: 4 }}>
                         <span>Total GST ({gstPercent}%):</span>
                         <span>₹{orderTax.toFixed(2)}</span>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#78716C', marginBottom: 4 }}>
-                      <span>Round Off:</span>
-                      <span>₹0.00</span>
-                    </div>
-
-                    {/* GRAND TOTAL HIGHLIGHT */}
                     <div
                       style={{
                         display: 'flex',
@@ -3136,34 +3069,19 @@ export default function AdminPage() {
                         alignItems: 'center',
                         borderTop: '2px solid #1C1917',
                         borderBottom: '2px solid #1C1917',
-                        padding: '8px 0',
-                        marginTop: 6,
-                        marginBottom: 6,
+                        padding: '10px 0',
+                        marginTop: 10,
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: 900, fontSize: 14, letterSpacing: '0.04em' }}>TOTAL AMOUNT PAID</div>
-                        <div style={{ fontSize: 9.5, color: '#78716C', fontWeight: 600 }}>Total Items: {totalQty} portion(s)</div>
-                      </div>
-                      <span style={{ fontWeight: 900, fontSize: 17, color: '#1C1917' }}>₹{orderTotal.toFixed(2)}</span>
-                    </div>
-
-                    <div style={{ fontSize: 10, color: '#57534E', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Settlement: Digital / Direct Settlement</span>
-                      <span style={{ fontWeight: 700, color: '#15803D' }}>● PAID IN FULL</span>
+                      <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.04em' }}>TOTAL</span>
+                      <span style={{ fontWeight: 900, fontSize: 18, color: '#1C1917' }}>₹{orderTotal.toFixed(2)}</span>
                     </div>
                   </div>
 
-                  {/* SECTION 5: FOOTER & STORE GREETING */}
-                  <div style={{ textAlign: 'center', borderTop: '1.5px dashed #78716C', paddingTop: 12, marginTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#1C1917' }}>
+                  {/* THANK YOU MSG */}
+                  <div style={{ textAlign: 'center', borderTop: '1.5px dashed #78716C', paddingTop: 14, marginTop: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#1C1917' }}>
                       Thank You For Visiting OZKAFE ANASSA!
-                    </div>
-                    <div style={{ fontSize: 10, color: '#78716C', marginTop: 2 }}>
-                      We hope you loved your handcrafted coffee & treats.
-                    </div>
-                    <div style={{ fontSize: 9.5, color: '#A8A29E', marginTop: 4, letterSpacing: '0.15em' }}>
-                      *** VISIT US AGAIN ***
                     </div>
                   </div>
                 </div>
