@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
   image_url TEXT NOT NULL,
   is_veg BOOLEAN DEFAULT TRUE,
   is_available BOOLEAN DEFAULT TRUE,
+  stock INT DEFAULT 10,
   sizes JSONB DEFAULT '["Regular"]'::JSONB,
   size_price_multiplier JSONB,
   sort_order INT DEFAULT 0,
@@ -209,3 +210,6 @@ VALUES
   ('tea-2', 'premium-tea', 'Artisan Tea', 'Cutting Chai', 'TIMELESS', 'A symphony of freshly crushed green cardamom, ginger, and Assam tea boiled in rich milk.', 49.00, '/images/cutting_chai_tea-2.png', true, true, '["Regular"]'::jsonb, 8),
   ('ss-1', 'shakes-spritzers', 'Shake & Spritzer', 'Classic Mojito', 'MOCKTAILS', 'Muddled fresh mint leaves, cane sugar syrup, lime wedges, and sparkling cold soda.', 129.00, '/images/classic_mojito_ss-1.png', true, true, '["Regular"]'::jsonb, 9)
 ON CONFLICT (id) DO NOTHING;
+
+-- 14. Stock Migration for Live Menu Inventory
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS stock INT DEFAULT 10;
