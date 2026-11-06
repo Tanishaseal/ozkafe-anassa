@@ -116,8 +116,15 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     const payload = verifyToken(token);
-    if (payload && (payload.role === 'admin' || allowedRoles.includes(payload.role as 'admin' | 'kitchen'))) {
-      return true;
+    if (payload) {
+      const email = payload.email?.toLowerCase().trim();
+      // STRICT CHECK: mamonix109@gmail.com is strictly prohibited from admin
+      if (email === 'mamonix109@gmail.com' && allowedRoles.includes('admin')) {
+        return false;
+      }
+      if (payload.role === 'admin' || allowedRoles.includes(payload.role as 'admin' | 'kitchen')) {
+        return true;
+      }
     }
   }
 
@@ -125,10 +132,14 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
   const cookieHeader = request.headers.get('cookie') || '';
   const cookies = parseCookies(cookieHeader);
 
-  // Admin cookie grants both admin & kitchen
+  // Admin cookie grants both admin & kitchen (except mamonix109@gmail.com who is strictly prohibited from admin)
   if (cookies.oz_admin_token) {
     const payload = verifyToken(cookies.oz_admin_token);
-    if (payload && payload.role === 'admin') return true;
+    if (payload && payload.role === 'admin') {
+      const email = payload.email?.toLowerCase().trim();
+      if (email === 'mamonix109@gmail.com') return false;
+      return true;
+    }
   }
 
   // Kitchen cookie grants kitchen role

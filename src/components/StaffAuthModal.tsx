@@ -52,6 +52,11 @@ export default function StaffAuthModal({
       return;
     }
 
+    if (!isKitchen && (cleanId.toLowerCase() === 'mamonix109@gmail.com' || cleanId === '6289418003')) {
+      setError('Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.');
+      return;
+    }
+
     if (!cleanPin) {
       setError('Please enter your 4-digit Master PIN.');
       return;

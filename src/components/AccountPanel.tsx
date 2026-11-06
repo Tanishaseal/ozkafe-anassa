@@ -24,6 +24,7 @@ export default function AccountPanel({
   // Edit Profile States
   const [nameInput, setNameInput] = useState(user?.name || '');
   const [phoneInput, setPhoneInput] = useState(user?.phone || '');
+  const [avatarColorInput, setAvatarColorInput] = useState(user?.avatarColor || '#5C381E');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
   const [profileError, setProfileError] = useState('');
@@ -33,6 +34,7 @@ export default function AccountPanel({
     if (user) {
       setNameInput(user.name || '');
       setPhoneInput(user.phone || '');
+      setAvatarColorInput(user.avatarColor || '#5C381E');
     }
   }, [user]);
 
@@ -47,7 +49,8 @@ export default function AccountPanel({
 
   if (!isOpen || !user) return null;
 
-  const isSuperAdmin = user.roles.includes('admin') && user.roles.includes('kitchen');
+  // STRICT CHECK: Only Tanisha Seal can be Super Admin with access to both consoles
+  const isSuperAdmin = user.email.toLowerCase().trim() === 'tanishaseal20@gmail.com' && user.roles.includes('admin');
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +70,7 @@ export default function AccountPanel({
         body: JSON.stringify({
           name: nameInput.trim(),
           phone: phoneInput.trim(),
+          avatarColor: avatarColorInput,
         }),
       });
 
@@ -293,26 +297,44 @@ export default function AccountPanel({
 
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
-                Access Roles
+                Profile Avatar Color
               </label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {user.roles.map((r) => (
-                  <span
-                    key={r}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {['#5C381E', '#15803D', '#1E3A8A', '#991B1B', '#B45309', '#6B21A8'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setAvatarColorInput(c)}
                     style={{
-                      padding: '4px 10px',
-                      borderRadius: 20,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      background: r === 'admin' ? 'rgba(92, 56, 30, 0.12)' : 'rgba(22, 163, 74, 0.12)',
-                      color: r === 'admin' ? '#5C381E' : '#15803D',
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      background: c,
+                      border: avatarColorInput === c ? '3px solid #1A1410' : '2px solid transparent',
+                      boxShadow: avatarColorInput === c ? '0 0 0 2px #FFF inset' : 'none',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s ease',
+                      transform: avatarColorInput === c ? 'scale(1.15)' : 'scale(1)',
                     }}
-                  >
-                    {r === 'admin' ? 'Floor Admin' : 'Kitchen KDS'}
-                  </span>
+                    title={`Select avatar color ${c}`}
+                  />
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--adm-text-muted, #73675C)', display: 'block', marginBottom: 6 }}>
+                Access Permissions
+              </label>
+              {user.email.toLowerCase().trim() === 'mamonix109@gmail.com' ? (
+                <div style={{ fontSize: 11.5, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '8px 12px', borderRadius: 8, fontWeight: 700, lineHeight: 1.4 }}>
+                  🛡️ <strong>Kitchen Lead</strong> · Assigned exclusively to Kitchen Display System (Admin access strictly prohibited).
+                </div>
+              ) : (
+                <div style={{ fontSize: 11.5, color: '#15803D', background: '#DCFCE7', border: '1px solid #BBF7D0', padding: '8px 12px', borderRadius: 8, fontWeight: 700, lineHeight: 1.4 }}>
+                  👑 <strong>Super Admin & Founder</strong> · Full master clearance for Floor Admin, Menus, Receipts & Kitchen Display.
+                </div>
+              )}
             </div>
 
             {profileError && (

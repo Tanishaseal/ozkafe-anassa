@@ -4,9 +4,8 @@ import { addAuditLog } from './store';
 import nodemailer from 'nodemailer';
 
 // ── STRICT WHITELISTS OF AUTHORIZED IDENTIFIERS ──
-// For Admin: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com — NOBODY ELSE.
+// For Admin: ONLY tanishaseal20@gmail.com — mamonix109@gmail.com is STRICTLY PROHIBITED.
 export const ALLOWED_ADMIN_EMAILS = [
-  'sonmarinventure@gmail.com',
   'tanishaseal20@gmail.com',
 ] as const;
 
@@ -18,6 +17,12 @@ export const ALLOWED_KITCHEN_IDENTIFIERS = [
   '8902159596',
 ] as const;
 
+// Allowed Staff in the entire system: ONLY tanishaseal20@gmail.com and mamonix109@gmail.com
+export const ALLOWED_STAFF_EMAILS = [
+  'tanishaseal20@gmail.com',
+  'mamonix109@gmail.com',
+] as const;
+
 // ── CLEAN BASELINE AUTHORIZED USERS ──
 export const INITIAL_STAFF_USERS: StaffUser[] = [
   {
@@ -25,7 +30,7 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     email: 'tanishaseal20@gmail.com',
     phone: '8902159596',
     name: 'Tanisha Seal',
-    roles: ['admin', 'kitchen'], // Special master owner access for ALL panels
+    roles: ['admin', 'kitchen'], // Master owner access for Admin & Kitchen
     badge: 'Super Admin & Founder',
     masterPin: '1234',
     hasCustomPin: false,
@@ -37,27 +42,11 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     },
   },
   {
-    id: 'user_sonmarin',
-    email: 'sonmarinventure@gmail.com',
-    phone: '',
-    name: 'Sonmarin Venture',
-    roles: ['admin'],
-    badge: 'Floor Admin',
-    masterPin: '1234',
-    hasCustomPin: false,
-    avatarInitials: 'SV',
-    avatarColor: '#1E3A8A',
-    preferences: {
-      theme: 'light',
-      soundEnabled: true,
-    },
-  },
-  {
     id: 'user_mamoni',
     email: 'mamonix109@gmail.com',
     phone: '6289418003',
     name: 'Mamoni',
-    roles: ['kitchen'],
+    roles: ['kitchen'], // Kitchen only — STRICTLY prohibited from Admin
     badge: 'Kitchen Lead',
     masterPin: '1234',
     hasCustomPin: false,
@@ -127,10 +116,16 @@ export async function getStaffUsers(): Promise<StaffUser[]> {
         .single();
 
       if (!error && data?.value && Array.isArray(data.value) && data.value.length > 0) {
-        const allowedEmails = ['sonmarinventure@gmail.com', 'tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
-        const dbUsers: StaffUser[] = data.value.filter((u: StaffUser) =>
-          allowedEmails.includes(u.email?.toLowerCase().trim())
-        );
+        const allowedEmails = ['tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
+        const dbUsers: StaffUser[] = data.value
+          .filter((u: StaffUser) => allowedEmails.includes(u.email?.toLowerCase().trim()))
+          .map((u: StaffUser) => {
+            // STRICT GUARANTEE: mamonix109@gmail.com is strictly prohibited from having the admin role
+            if (u.email?.toLowerCase().trim() === 'mamonix109@gmail.com') {
+              return { ...u, roles: ['kitchen'] as StaffRole[] };
+            }
+            return u;
+          });
 
         const merged: StaffUser[] = [...INITIAL_STAFF_USERS];
         for (const u of dbUsers) {
@@ -185,7 +180,7 @@ export async function clearAllStaffUserData(): Promise<StaffUser[]> {
   await addAuditLog({
     actor: 'admin',
     action: 'SETTINGS_RESET',
-    details: 'All user entries cleared and reset to fresh baseline. Only sonmarinventure@gmail.com and tanishaseal20@gmail.com allowed for Admin.',
+    details: 'All user entries reset to fresh baseline. Only tanishaseal20@gmail.com has Admin access; mamonix109@gmail.com is prohibited from Admin.',
   });
 
   return freshUsers;
@@ -196,8 +191,16 @@ export async function clearAllStaffUserData(): Promise<StaffUser[]> {
  */
 export async function saveStaffUsers(users: StaffUser[]): Promise<void> {
   // Filter out any unauthorized entries before saving
-  const allowedEmails = ['sonmarinventure@gmail.com', 'tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
-  const sanitized = users.filter((u) => allowedEmails.includes(u.email?.toLowerCase().trim()));
+  const allowedEmails = ['tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
+  const sanitized = users
+    .filter((u) => allowedEmails.includes(u.email?.toLowerCase().trim()))
+    .map((u) => {
+      // STRICT GUARANTEE: mamonix109@gmail.com is strictly prohibited from having the admin role
+      if (u.email?.toLowerCase().trim() === 'mamonix109@gmail.com') {
+        return { ...u, roles: ['kitchen'] as StaffRole[] };
+      }
+      return u;
+    });
 
   globalStore.__anassa_staff_users = sanitized;
 
@@ -234,12 +237,15 @@ export async function findStaffUserByIdentifier(rawId: string): Promise<StaffUse
 
 /**
  * Strict check if a user has access to a specific console role:
- * For Admin: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com!
+ * For Admin: ONLY tanishaseal20@gmail.com!
+ * mamonix109@gmail.com is STRICTLY PROHIBITED from accessing Admin!
  */
 export function isUserAuthorizedForRole(user: StaffUser, role: StaffRole): boolean {
   const emailNorm = user.email.toLowerCase().trim();
 
+  // mamonix109@gmail.com is STRICTLY prohibited from the admin panel
   if (role === 'admin') {
+    if (emailNorm === 'mamonix109@gmail.com') return false;
     return ALLOWED_ADMIN_EMAILS.includes(emailNorm as any);
   }
 
@@ -288,7 +294,16 @@ export async function updateStaffProfile(userId: string, updates: Partial<StaffU
   const target = users.find((u) => u.id === userId);
   if (!target) return null;
 
-  if (updates.name && updates.name.trim()) target.name = updates.name.trim();
+  if (updates.name && updates.name.trim()) {
+    target.name = updates.name.trim();
+    // Auto-update initials
+    const parts = target.name.split(' ').filter(Boolean);
+    if (parts.length >= 2) {
+      target.avatarInitials = `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    } else if (parts.length === 1) {
+      target.avatarInitials = parts[0].slice(0, 2).toUpperCase();
+    }
+  }
   if (updates.phone !== undefined) target.phone = updates.phone.trim();
   if (updates.avatarColor) target.avatarColor = updates.avatarColor;
   if (updates.preferences) {
@@ -310,6 +325,10 @@ export async function generateAndSendOtp(
   identifier: string,
   consoleType: 'admin' | 'kitchen'
 ): Promise<{ success: boolean; previewOtp?: string; destinationType: 'email' | 'phone'; destinationMasked: string; message: string }> {
+  if (consoleType === 'admin' && user.email?.toLowerCase().trim() === 'mamonix109@gmail.com') {
+    throw new Error('Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.');
+  }
+
   // 6-digit cryptographic random OTP
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const exp = Date.now() + 10 * 60 * 1000; // 10 minutes

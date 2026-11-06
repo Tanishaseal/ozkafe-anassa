@@ -274,6 +274,14 @@ export default function AdminPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated && data.staff) {
+            // STRICT PROHIBITION: mamonix109@gmail.com is strictly prohibited from Admin
+            if (data.staff.email?.toLowerCase().trim() === 'mamonix109@gmail.com') {
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+              await fetch('/api/admin/auth', { method: 'DELETE' });
+              alert('Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.');
+              return;
+            }
             setIsAuthenticated(true);
             setCurrentUser(data.staff);
             if (data.staff.preferences?.theme) {

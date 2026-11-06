@@ -9,7 +9,18 @@ export async function GET(request: Request) {
     const payload = verifyToken(token);
     if (payload && payload.role === 'admin' && payload.email) {
       const emailNorm = payload.email.toLowerCase().trim();
-      // STRICT CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+
+      // STRICT PROHIBITION: mamonix109@gmail.com is strictly prohibited from Admin panel
+      if (emailNorm === 'mamonix109@gmail.com') {
+        const response = NextResponse.json(
+          { authenticated: false, error: 'Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.' },
+          { status: 403 }
+        );
+        response.cookies.delete('oz_admin_token');
+        return response;
+      }
+
+      // STRICT CHECK: ONLY tanishaseal20@gmail.com
       if (ALLOWED_ADMIN_EMAILS.includes(emailNorm as any)) {
         const users = await getStaffUsers();
         const matched = users.find((u) => u.email.toLowerCase() === emailNorm);
@@ -43,7 +54,23 @@ export async function POST(request: Request) {
     const { pin, email, phone } = await request.json();
     const identifier = (email || phone || '').trim().toLowerCase();
 
-    // STRICT WHITELIST CHECK: Only sonmarinventure@gmail.com and tanishaseal20@gmail.com
+    // STRICT PROHIBITION: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel
+    if (identifier === 'mamonix109@gmail.com' || identifier === '6289418003') {
+      await addAuditLog({
+        actor: 'admin',
+        action: 'AUTH_ADMIN_FAILED',
+        details: `Access Denied: mamonix109@gmail.com is strictly prohibited from Admin panel`,
+        ipAddress: ip,
+        userAgent,
+      });
+
+      return NextResponse.json(
+        { error: 'Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.' },
+        { status: 403 }
+      );
+    }
+
+    // STRICT WHITELIST CHECK: Only tanishaseal20@gmail.com allowed for Admin
     if (!ALLOWED_ADMIN_EMAILS.includes(identifier as any)) {
       await addAuditLog({
         actor: 'admin',
@@ -54,7 +81,7 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json(
-        { error: 'Invalid credentials or access unauthorized.' },
+        { error: 'Invalid credentials or access unauthorized for Admin.' },
         { status: 403 }
       );
     }

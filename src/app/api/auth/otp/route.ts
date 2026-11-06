@@ -44,7 +44,23 @@ export async function POST(request: Request) {
       const role = consoleType === 'kitchen' ? 'kitchen' : 'admin';
       const cleanId = identifier.trim().toLowerCase();
 
-      // STRICT ADMIN CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+      // STRICT PROHIBITION: mamonix109@gmail.com is strictly prohibited from Admin
+      if (role === 'admin' && (cleanId === 'mamonix109@gmail.com' || cleanId === '6289418003')) {
+        await addAuditLog({
+          actor: 'admin',
+          action: 'AUTH_ADMIN_FAILED',
+          details: `Blocked prohibited Admin OTP attempt by mamonix109@gmail.com`,
+          ipAddress: ip,
+          userAgent,
+        });
+
+        return NextResponse.json(
+          { error: 'Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.' },
+          { status: 403 }
+        );
+      }
+
+      // STRICT ADMIN CHECK: ONLY tanishaseal20@gmail.com
       if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
         await addAuditLog({
           actor: 'admin',
@@ -55,7 +71,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          { error: 'Invalid credentials or access unauthorized.' },
+          { error: 'Invalid credentials or access unauthorized for Admin.' },
           { status: 403 }
         );
       }
@@ -109,11 +125,20 @@ export async function POST(request: Request) {
       }
 
       // Re-verify strictly for admin
-      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(user.email.toLowerCase().trim() as any)) {
-        return NextResponse.json(
-          { error: 'Invalid credentials or access unauthorized.' },
-          { status: 403 }
-        );
+      if (role === 'admin') {
+        const userEmailNorm = user.email.toLowerCase().trim();
+        if (userEmailNorm === 'mamonix109@gmail.com') {
+          return NextResponse.json(
+            { error: 'Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.' },
+            { status: 403 }
+          );
+        }
+        if (!ALLOWED_ADMIN_EMAILS.includes(userEmailNorm as any)) {
+          return NextResponse.json(
+            { error: 'Invalid credentials or access unauthorized for Admin.' },
+            { status: 403 }
+          );
+        }
       }
 
       const verification = verifyStaffOtp(user.id, otp);
@@ -189,7 +214,23 @@ export async function POST(request: Request) {
       const role = consoleType === 'kitchen' ? 'kitchen' : 'admin';
       const cleanId = identifier.trim().toLowerCase();
 
-      // STRICT ADMIN CHECK: ONLY sonmarinventure@gmail.com and tanishaseal20@gmail.com
+      // STRICT PROHIBITION: mamonix109@gmail.com is strictly prohibited from Admin
+      if (role === 'admin' && (cleanId === 'mamonix109@gmail.com' || cleanId === '6289418003')) {
+        await addAuditLog({
+          actor: 'admin',
+          action: 'AUTH_ADMIN_FAILED',
+          details: `Blocked prohibited Admin PIN attempt by mamonix109@gmail.com`,
+          ipAddress: ip,
+          userAgent,
+        });
+
+        return NextResponse.json(
+          { error: 'Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.' },
+          { status: 403 }
+        );
+      }
+
+      // STRICT ADMIN CHECK: ONLY tanishaseal20@gmail.com
       if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
         await addAuditLog({
           actor: 'admin',
@@ -200,7 +241,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-          { error: 'Invalid credentials or access unauthorized.' },
+          { error: 'Invalid credentials or access unauthorized for Admin.' },
           { status: 403 }
         );
       }
