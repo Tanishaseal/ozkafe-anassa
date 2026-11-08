@@ -12,7 +12,7 @@
 html {
   scroll-behavior: smooth;
   background-color: var(--bg-dark);
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
 }
 
@@ -21,7 +21,7 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-primary);
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
   -webkit-font-smoothing: antialiased;
 }
@@ -64,7 +64,8 @@ img {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   border-left: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-lg);

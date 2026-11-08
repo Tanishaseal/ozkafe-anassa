@@ -4,6 +4,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { Category, MenuItem, MenuAddon, CartItem, Order, CafeSettings } from '@/lib/types';
 
+interface FlyingParticle {
+  id: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  img?: string;
+  icon?: string;
+}
+
 interface CustomerMenuProps {
   initialCategories: Category[];
   initialItems: MenuItem[];
@@ -71,6 +81,12 @@ export default function CustomerMenu({
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [cartBadgePop, setCartBadgePop] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+
+  // Flying particles animation & cart impact
+  const [flyingParticles, setFlyingParticles] = useState<FlyingParticle[]>([]);
+  const [cartImpactActive, setCartImpactActive] = useState(false);
+  const cartBtnRef = useRef<HTMLButtonElement>(null);
+  const heroImageRef = useRef<HTMLDivElement>(null);
 
   // Guest Identification & Device Native Picker
   const [isContactPickerSupported, setIsContactPickerSupported] = useState(false);
@@ -414,7 +430,61 @@ export default function CustomerMenu({
   const currentSizes = activeItem?.sizes && activeItem.sizes.length > 0 ? activeItem.sizes : ['Regular'];
   const selectedSize = currentSizes[selectedSizeIdx] || 'Regular';
 
-  const handleAddToCart = () => {
+  // Visual Fly-to-Cart Drag Animation
+  const triggerFlyAnimation = (
+    sourceRect: { left: number; top: number; width: number; height: number },
+    options: { img?: string; icon?: string }
+  ) => {
+    if (typeof window === 'undefined') return;
+
+    // Find cart button coordinates (fallback to top-right if ref not mounted yet)
+    let endX = window.innerWidth - 36;
+    let endY = 32;
+    if (cartBtnRef.current) {
+      const rect = cartBtnRef.current.getBoundingClientRect();
+      endX = Math.round(rect.left + rect.width / 2);
+      endY = Math.round(rect.top + rect.height / 2);
+    }
+
+    const startX = Math.round(sourceRect.left + sourceRect.width / 2);
+    const startY = Math.round(sourceRect.top + sourceRect.height / 2);
+
+    const particleId = 'dish_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const newParticle: FlyingParticle = {
+      id: particleId,
+      startX,
+      startY,
+      endX,
+      endY,
+      img: options.img,
+      icon: options.icon,
+    };
+
+    setFlyingParticles((prev) => [...prev, newParticle]);
+
+    // When item reaches cart (~600ms): trigger cart bounce impact and haptics
+    setTimeout(() => {
+      setCartImpactActive(true);
+      setCartBadgePop(true);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate([20, 30, 20]);
+        } catch {}
+      }
+    }, 600);
+
+    setTimeout(() => {
+      setCartImpactActive(false);
+      setCartBadgePop(false);
+    }, 1050);
+
+    // Remove particle after animation completes
+    setTimeout(() => {
+      setFlyingParticles((prev) => prev.filter((p) => p.id !== particleId));
+    }, 720);
+  };
+
+  const handleAddToCart = (e?: React.MouseEvent) => {
     if (!activeItem || !activeItem.isAvailable || (typeof activeItem.stock === 'number' && activeItem.stock <= 0)) return;
 
     const cartKey = `${activeItem.id}_${selectedSize}`;
@@ -438,13 +508,40 @@ export default function CustomerMenu({
       },
     }));
 
+    // Trigger visual drag-into-cart flying animation
+    try {
+      let sourceRect: { left: number; top: number; width: number; height: number } | null = null;
+      if (heroImageRef.current) {
+        const rect = heroImageRef.current.getBoundingClientRect();
+        if (rect.bottom > 60 && rect.top < window.innerHeight) {
+          sourceRect = rect;
+        }
+      }
+      if (!sourceRect && e?.currentTarget) {
+        sourceRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      }
+      if (!sourceRect && typeof window !== 'undefined') {
+        sourceRect = {
+          left: window.innerWidth / 2 - 40,
+          top: window.innerHeight / 2 - 40,
+          width: 80,
+          height: 80,
+        };
+      }
+      if (sourceRect) {
+        triggerFlyAnimation(sourceRect, { img: activeItem.img });
+      }
+    } catch (err) {
+      console.error('Fly animation error:', err);
+    }
+
     // Trigger cart pop
     setCartBadgePop(true);
     setTimeout(() => setCartBadgePop(false), 400);
     setQuantity(1);
   };
 
-  const handleAddAddonToCart = (addon: MenuAddon) => {
+  const handleAddAddonToCart = (addon: MenuAddon, e?: React.MouseEvent) => {
     const cartKey = `addon_${addon.id}`;
     const existing = cart[cartKey];
     const newQty = existing ? existing.quantity + 1 : 1;
@@ -462,6 +559,13 @@ export default function CustomerMenu({
         icon: addon.icon,
       },
     }));
+
+    if (e?.currentTarget) {
+      try {
+        const sourceRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        triggerFlyAnimation(sourceRect, { icon: addon.icon || '✨' });
+      } catch {}
+    }
   };
 
   const updateCartItemQuantity = (cartKey: string, delta: number) => {
@@ -714,6 +818,28 @@ export default function CustomerMenu({
         </div>
       )}
 
+      {/* ── FLYING FOOD PARTICLES TO CART ANIMATION ── */}
+      {flyingParticles.map((p) => (
+        <div
+          key={p.id}
+          className="flying-dish-particle"
+          style={{
+            '--start-x': `${p.startX}px`,
+            '--start-y': `${p.startY}px`,
+            '--end-x': `${p.endX}px`,
+            '--end-y': `${p.endY}px`,
+          } as React.CSSProperties}
+          aria-hidden="true"
+        >
+          {p.img ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={p.img} alt="" />
+          ) : (
+            <span className="flying-emoji">{p.icon || '✨'}</span>
+          )}
+        </div>
+      ))}
+
       {/* ── HEADER ── */}
       <header className="header">
         <button
@@ -770,7 +896,8 @@ export default function CustomerMenu({
           )}
 
           <button
-            className="icon-btn header-btn-right"
+            ref={cartBtnRef}
+            className={`icon-btn header-btn-right ${cartImpactActive ? 'cart-impact' : ''}`}
             onClick={() => setIsCartOpen(true)}
             aria-label="View Cart"
             title="Cart"
@@ -861,7 +988,7 @@ export default function CustomerMenu({
         <div className="light-ray"></div>
         <div className="hero-slider">
           {activeItem && (
-            <div className="hero-slide-item">
+            <div className="hero-slide-item" ref={heroImageRef}>
               <Image
                 src={activeItem.img}
                 alt={activeItem.name}
@@ -1018,7 +1145,7 @@ export default function CustomerMenu({
 
         <button
           className="btn-solid"
-          onClick={handleAddToCart}
+          onClick={(e) => handleAddToCart(e)}
           disabled={!activeItem?.isAvailable || (typeof activeItem?.stock === 'number' && activeItem.stock <= 0)}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1146,7 +1273,7 @@ export default function CustomerMenu({
                         <div
                           key={ad.id}
                           className={`cart-addon-card ${cart[`addon_${ad.id}`] ? 'in-cart' : ''}`}
-                          onClick={() => handleAddAddonToCart(ad)}
+                          onClick={(e) => handleAddAddonToCart(ad, e)}
                         >
                           <span style={{ fontSize: 12, fontWeight: 600 }}>
                             {ad.icon} {ad.name}
