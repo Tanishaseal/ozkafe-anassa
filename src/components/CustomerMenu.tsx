@@ -4,16 +4,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { Category, MenuItem, MenuAddon, CartItem, Order, CafeSettings } from '@/lib/types';
 
-interface FlyingParticle {
-  id: string;
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-  img?: string;
-  icon?: string;
-}
-
 interface CustomerMenuProps {
   initialCategories: Category[];
   initialItems: MenuItem[];
@@ -63,7 +53,7 @@ export default function CustomerMenu({
   const [activeCategoryIdx, setActiveCategoryIdx] = useState(0);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
   const [selectedSizeIdx, setSelectedSizeIdx] = useState(0);
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(0);
 
   // Modals
   const [isCategoriesOpen, setIsCategoriesOpen] = useState(false);
@@ -82,8 +72,7 @@ export default function CustomerMenu({
   const [cartBadgePop, setCartBadgePop] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // Flying particles animation & cart impact
-  const [flyingParticles, setFlyingParticles] = useState<FlyingParticle[]>([]);
+  // Cart impact & interaction refs
   const [cartImpactActive, setCartImpactActive] = useState(false);
   const cartBtnRef = useRef<HTMLButtonElement>(null);
   const heroImageRef = useRef<HTMLDivElement>(null);
@@ -384,7 +373,7 @@ export default function CustomerMenu({
     if (firstItemIndex !== -1) {
       setActiveItemIdx(firstItemIndex);
       setSelectedSizeIdx(0);
-      setQuantity(1);
+      setQuantity(0);
 
       // Scroll thumbnail track
       if (thumbnailTrackRef.current) {
@@ -408,7 +397,7 @@ export default function CustomerMenu({
   const handleSelectItem = (itemIdx: number) => {
     setActiveItemIdx(itemIdx);
     setSelectedSizeIdx(0);
-    setQuantity(1);
+    setQuantity(0);
 
     const it = flattenedItems[itemIdx];
     if (it) {
@@ -430,62 +419,158 @@ export default function CustomerMenu({
   const currentSizes = activeItem?.sizes && activeItem.sizes.length > 0 ? activeItem.sizes : ['Regular'];
   const selectedSize = currentSizes[selectedSizeIdx] || 'Regular';
 
-  // Visual Fly-to-Cart Drag Animation
+  // Visual Fly-to-Cart Drag Animation using Web Animations API (direct to document.body)
   const triggerFlyAnimation = (
-    sourceRect: { left: number; top: number; width: number; height: number },
-    options: { img?: string; icon?: string }
+    sourceEl?: HTMLElement | null,
+    options?: { img?: string; icon?: string }
   ) => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-    // Find cart button coordinates (fallback to top-right if ref not mounted yet)
-    let endX = window.innerWidth - 36;
-    let endY = 32;
-    if (cartBtnRef.current) {
-      const rect = cartBtnRef.current.getBoundingClientRect();
-      endX = Math.round(rect.left + rect.width / 2);
-      endY = Math.round(rect.top + rect.height / 2);
-    }
-
-    const startX = Math.round(sourceRect.left + sourceRect.width / 2);
-    const startY = Math.round(sourceRect.top + sourceRect.height / 2);
-
-    const particleId = 'dish_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const newParticle: FlyingParticle = {
-      id: particleId,
-      startX,
-      startY,
-      endX,
-      endY,
-      img: options.img,
-      icon: options.icon,
-    };
-
-    setFlyingParticles((prev) => [...prev, newParticle]);
-
-    // When item reaches cart (~600ms): trigger cart bounce impact and haptics
-    setTimeout(() => {
-      setCartImpactActive(true);
-      setCartBadgePop(true);
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try {
-          navigator.vibrate([20, 30, 20]);
-        } catch {}
+    try {
+      // 1. Get destination (Cart button in header)
+      const cartEl = cartBtnRef.current || document.querySelector('.header-btn-right');
+      let targetX = window.innerWidth - 38;
+      let targetY = 32;
+      if (cartEl) {
+        const rect = cartEl.getBoundingClientRect();
+        targetX = Math.round(rect.left + rect.width / 2);
+        targetY = Math.round(rect.top + rect.height / 2);
       }
-    }, 600);
 
-    setTimeout(() => {
-      setCartImpactActive(false);
-      setCartBadgePop(false);
-    }, 1050);
+      // 2. Get origin (Hero dish image, or clicked button, or center)
+      let startX = window.innerWidth / 2;
+      let startY = window.innerHeight / 2;
 
-    // Remove particle after animation completes
-    setTimeout(() => {
-      setFlyingParticles((prev) => prev.filter((p) => p.id !== particleId));
-    }, 720);
+      const heroImgEl = heroImageRef.current || document.querySelector('.hero-slide-item');
+      if (heroImgEl) {
+        const rect = heroImgEl.getBoundingClientRect();
+        if (rect.bottom > 80 && rect.top < window.innerHeight) {
+          startX = Math.round(rect.left + rect.width / 2);
+          startY = Math.round(rect.top + rect.height / 2);
+        } else if (sourceEl) {
+          const rect = sourceEl.getBoundingClientRect();
+          startX = Math.round(rect.left + rect.width / 2);
+          startY = Math.round(rect.top + rect.height / 2);
+        }
+      } else if (sourceEl) {
+        const rect = sourceEl.getBoundingClientRect();
+        startX = Math.round(rect.left + rect.width / 2);
+        startY = Math.round(rect.top + rect.height / 2);
+      }
+
+      // 3. Create flyer DOM element directly on document.body (bypasses all overflow/stacking contexts)
+      const flyer = document.createElement('div');
+      flyer.className = 'flying-dish-particle';
+      flyer.style.position = 'fixed';
+      flyer.style.top = '0px';
+      flyer.style.left = '0px';
+      flyer.style.width = '64px';
+      flyer.style.height = '64px';
+      flyer.style.marginLeft = '-32px';
+      flyer.style.marginTop = '-32px';
+      flyer.style.borderRadius = '50%';
+      flyer.style.pointerEvents = 'none';
+      flyer.style.zIndex = '999999';
+      flyer.style.backgroundColor = '#FFFFFF';
+      flyer.style.border = '2.5px solid #C59A6F';
+      flyer.style.boxShadow = '0 12px 28px rgba(166, 107, 51, 0.45), 0 4px 14px rgba(0,0,0,0.25)';
+      flyer.style.display = 'flex';
+      flyer.style.alignItems = 'center';
+      flyer.style.justifyContent = 'center';
+      flyer.style.overflow = 'hidden';
+      flyer.style.willChange = 'transform, opacity';
+      flyer.style.transform = `translate3d(${startX}px, ${startY}px, 0)`;
+
+      const imgSrc = options?.img || activeItem?.img;
+      if (imgSrc) {
+        const img = document.createElement('img');
+        img.src = imgSrc;
+        img.alt = 'Dish';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        img.style.borderRadius = '50%';
+        img.style.display = 'block';
+        flyer.appendChild(img);
+      } else {
+        const span = document.createElement('span');
+        span.textContent = options?.icon || '☕';
+        span.style.fontSize = '28px';
+        span.style.lineHeight = '1';
+        flyer.appendChild(span);
+      }
+
+      document.body.appendChild(flyer);
+
+      // 4. Parabolic arc trajectory to cart
+      const midX = Math.round(startX + (targetX - startX) * 0.45);
+      const midY = Math.round(Math.min(startY, targetY) - 60);
+
+      const keyframes = [
+        {
+          transform: `translate3d(${startX}px, ${startY}px, 0) scale(1) rotate(0deg)`,
+          opacity: 1,
+        },
+        {
+          transform: `translate3d(${midX}px, ${midY}px, 0) scale(1.18) rotate(-16deg)`,
+          opacity: 1,
+          offset: 0.35,
+        },
+        {
+          transform: `translate3d(${Math.round(startX + (targetX - startX) * 0.8)}px, ${targetY - 10}px, 0) scale(0.65) rotate(16deg)`,
+          opacity: 0.95,
+          offset: 0.75,
+        },
+        {
+          transform: `translate3d(${targetX}px, ${targetY}px, 0) scale(0.16) rotate(35deg)`,
+          opacity: 0,
+          offset: 1,
+        },
+      ];
+
+      const handleImpact = () => {
+        try {
+          flyer.remove();
+        } catch {}
+
+        // Trigger Cart Button magnetic impact bounce
+        setCartImpactActive(true);
+        setCartBadgePop(true);
+        setTimeout(() => {
+          setCartImpactActive(false);
+          setCartBadgePop(false);
+        }, 500);
+
+        // Mobile haptics feedback
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate([25, 35, 25]);
+          } catch {}
+        }
+      };
+
+      if (typeof flyer.animate === 'function') {
+        const anim = flyer.animate(keyframes, {
+          duration: 680,
+          easing: 'cubic-bezier(0.2, 0.85, 0.3, 1)',
+          fill: 'forwards',
+        });
+        anim.onfinish = handleImpact;
+      } else {
+        setTimeout(handleImpact, 680);
+      }
+    } catch (err) {
+      console.error('Flying animation error:', err);
+    }
   };
 
   const handleAddToCart = (e?: React.MouseEvent) => {
     if (!activeItem || !activeItem.isAvailable || (typeof activeItem.stock === 'number' && activeItem.stock <= 0)) return;
+
+    if (quantity <= 0) {
+      alert('Please press the + sign to select quantity before adding to order.');
+      return;
+    }
 
     const cartKey = `${activeItem.id}_${selectedSize}`;
     const existing = cart[cartKey];
@@ -509,36 +594,12 @@ export default function CustomerMenu({
     }));
 
     // Trigger visual drag-into-cart flying animation
-    try {
-      let sourceRect: { left: number; top: number; width: number; height: number } | null = null;
-      if (heroImageRef.current) {
-        const rect = heroImageRef.current.getBoundingClientRect();
-        if (rect.bottom > 60 && rect.top < window.innerHeight) {
-          sourceRect = rect;
-        }
-      }
-      if (!sourceRect && e?.currentTarget) {
-        sourceRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      }
-      if (!sourceRect && typeof window !== 'undefined') {
-        sourceRect = {
-          left: window.innerWidth / 2 - 40,
-          top: window.innerHeight / 2 - 40,
-          width: 80,
-          height: 80,
-        };
-      }
-      if (sourceRect) {
-        triggerFlyAnimation(sourceRect, { img: activeItem.img });
-      }
-    } catch (err) {
-      console.error('Fly animation error:', err);
-    }
+    triggerFlyAnimation(e?.currentTarget as HTMLElement, { img: activeItem.img });
 
     // Trigger cart pop
     setCartBadgePop(true);
     setTimeout(() => setCartBadgePop(false), 400);
-    setQuantity(1);
+    setQuantity(0);
   };
 
   const handleAddAddonToCart = (addon: MenuAddon, e?: React.MouseEvent) => {
@@ -560,12 +621,7 @@ export default function CustomerMenu({
       },
     }));
 
-    if (e?.currentTarget) {
-      try {
-        const sourceRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        triggerFlyAnimation(sourceRect, { icon: addon.icon || '✨' });
-      } catch {}
-    }
+    triggerFlyAnimation(e?.currentTarget as HTMLElement, { icon: addon.icon || '✨' });
   };
 
   const updateCartItemQuantity = (cartKey: string, delta: number) => {
@@ -817,28 +873,6 @@ export default function CustomerMenu({
           </div>
         </div>
       )}
-
-      {/* ── FLYING FOOD PARTICLES TO CART ANIMATION ── */}
-      {flyingParticles.map((p) => (
-        <div
-          key={p.id}
-          className="flying-dish-particle"
-          style={{
-            '--start-x': `${p.startX}px`,
-            '--start-y': `${p.startY}px`,
-            '--end-x': `${p.endX}px`,
-            '--end-y': `${p.endY}px`,
-          } as React.CSSProperties}
-          aria-hidden="true"
-        >
-          {p.img ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={p.img} alt="" />
-          ) : (
-            <span className="flying-emoji">{p.icon || '✨'}</span>
-          )}
-        </div>
-      ))}
 
       {/* ── HEADER ── */}
       <header className="header">
@@ -1111,7 +1145,7 @@ export default function CustomerMenu({
             <div className="qty-stepper">
               <button
                 className="stepper-btn"
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => setQuantity((q) => Math.max(0, q - 1))}
                 aria-label="Decrease"
               >
                 −
@@ -1153,7 +1187,9 @@ export default function CustomerMenu({
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <path d="M16 10a4 4 0 0 1-8 0"></path>
           </svg>
-          {activeItem?.isAvailable && (typeof activeItem?.stock !== 'number' || activeItem.stock > 0) ? 'ADD TO ORDER' : 'SOLD OUT'}
+          {activeItem?.isAvailable && (typeof activeItem?.stock !== 'number' || activeItem.stock > 0)
+            ? (quantity > 0 ? `ADD TO ORDER (${quantity})` : 'ADD TO ORDER')
+            : 'SOLD OUT'}
         </button>
       </footer>
 

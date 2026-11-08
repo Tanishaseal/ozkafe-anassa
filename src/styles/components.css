@@ -134,21 +134,20 @@
   position: fixed;
   top: 0;
   left: 0;
-  width: 62px;
-  height: 62px;
-  margin-top: -31px;
-  margin-left: -31px;
+  width: 64px;
+  height: 64px;
+  margin-top: -32px;
+  margin-left: -32px;
   border-radius: 50%;
   pointer-events: none;
-  z-index: 99999;
+  z-index: 999999;
   background: #FFFFFF;
   border: 2.5px solid var(--brand-gold, #C59A6F);
-  box-shadow: 0 14px 30px rgba(166, 107, 51, 0.5), 0 4px 12px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 12px 28px rgba(166, 107, 51, 0.45), 0 4px 14px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  animation: flyToCart 0.68s cubic-bezier(0.2, 0.85, 0.3, 1) forwards;
   will-change: transform, opacity;
 }
 
@@ -157,39 +156,12 @@
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  display: block;
 }
 
 .flying-dish-particle .flying-emoji {
   font-size: 28px;
   line-height: 1;
-}
-
-@keyframes flyToCart {
-  0% {
-    transform: translate3d(var(--start-x), var(--start-y), 0) scale(1) rotate(0deg);
-    opacity: 1;
-  }
-  30% {
-    /* Dramatic arcing lift-off */
-    transform: translate3d(
-      calc(var(--start-x) + (var(--end-x) - var(--start-x)) * 0.25),
-      calc(var(--start-y) + (var(--end-y) - var(--start-y)) * 0.15 - 55px),
-      0
-    ) scale(1.15) rotate(-16deg);
-    opacity: 1;
-  }
-  75% {
-    transform: translate3d(
-      calc(var(--start-x) + (var(--end-x) - var(--start-x)) * 0.8),
-      calc(var(--start-y) + (var(--end-y) - var(--start-y)) * 0.75 - 10px),
-      0
-    ) scale(0.65) rotate(16deg);
-    opacity: 0.95;
-  }
-  100% {
-    transform: translate3d(var(--end-x), var(--end-y), 0) scale(0.18) rotate(35deg);
-    opacity: 0;
-  }
 }
 
 /* ── TOP BADGES (TABLE & VEG) ── */
