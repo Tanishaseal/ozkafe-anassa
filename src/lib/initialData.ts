@@ -162,8 +162,6 @@ export const initialAddons: MenuAddon[] = [
   { id: 'ad-1', name: 'Caramel Syrup Flavour', price: 19, icon: '🍯', tag: 'FLAVOUR', isAvailable: true },
   { id: 'ad-2', name: 'Hazelnut Syrup Flavour', price: 19, icon: '🌰', tag: 'FLAVOUR', isAvailable: true },
   { id: 'ad-3', name: 'Vanilla Syrup Flavour', price: 19, icon: '🌼', tag: 'FLAVOUR', isAvailable: true },
-  { id: 'ad-4', name: 'Extra Cold Brew Flavour Shot', price: 20, icon: '☕', tag: 'SHOT', isAvailable: true },
-  { id: 'ad-5', name: 'Plant Oat Milk Swap', price: 40, icon: '🌾', tag: 'MILK', isAvailable: true },
 ];
 
 const rawMenuItems: MenuItem[] = [

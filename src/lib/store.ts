@@ -22,7 +22,7 @@ if (!globalStore.__anassa_categories) {
 if (!globalStore.__anassa_items) {
   globalStore.__anassa_items = [...initialMenuItems];
 }
-if (!globalStore.__anassa_addons) {
+if (!globalStore.__anassa_addons || globalStore.__anassa_addons.length > 3) {
   globalStore.__anassa_addons = [...initialAddons];
 }
 if (!globalStore.__anassa_orders) {
@@ -483,7 +483,14 @@ export async function deleteMenuItem(id: string): Promise<boolean> {
 // ADD-ONS
 // ──────────────────────────────────────────
 export async function getAddons(): Promise<MenuAddon[]> {
-  return globalStore.__anassa_addons || [];
+  const current = globalStore.__anassa_addons || initialAddons;
+  return current.filter(
+    (a) =>
+      a.id !== 'ad-4' &&
+      a.id !== 'ad-5' &&
+      a.name !== 'Extra Cold Brew Flavour Shot' &&
+      a.name !== 'Plant Oat Milk Swap'
+  );
 }
 
 // ──────────────────────────────────────────

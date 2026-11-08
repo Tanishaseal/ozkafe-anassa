@@ -158,12 +158,24 @@ export async function POST(request: Request) {
     const targetTable = tableNumber ?? 'Takeaway';
     const isTakeaway = targetTable === 'Takeaway' || targetTable === 0 || targetTable === '0';
 
-    // 2b. Mandatory Flat Number Check for Takeaway & In-Flat Orders
+    // 2b. Mandatory & Strict Flat Number Validation (must contain both digits and letters, e.g. 14B)
     if (isTakeaway && (!customerFlat || !customerFlat.trim())) {
       return NextResponse.json({
-        error: 'Flat Number is required for Takeaway & In-Flat orders (e.g. Tower 2 - 14B)',
+        error: 'Flat Number is required for Takeaway & In-Flat orders (e.g. 14B or Tower 2 - 14B)',
         code: 'FLAT_NUMBER_REQUIRED',
       }, { status: 400 });
+    }
+
+    if (customerFlat && customerFlat.trim()) {
+      const trimmedFlat = customerFlat.trim();
+      const hasDigits = /\d/.test(trimmedFlat);
+      const hasLetters = /[a-zA-Z]/.test(trimmedFlat);
+      if (!hasDigits || !hasLetters) {
+        return NextResponse.json({
+          error: 'Invalid Flat Number: Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)',
+          code: 'INVALID_FLAT_NUMBER',
+        }, { status: 400 });
+      }
     }
 
     // 3. Server-side Menu Validation & Anti-Tampering Price Calculation

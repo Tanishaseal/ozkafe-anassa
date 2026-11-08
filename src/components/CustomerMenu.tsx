@@ -40,7 +40,15 @@ export default function CustomerMenu({
   // State
   const [categories] = useState<Category[]>(initialCategories);
   const [items, setItems] = useState<MenuItem[]>(initialItems);
-  const [addons] = useState<MenuAddon[]>(initialAddons);
+  const [addons] = useState<MenuAddon[]>(() =>
+    (initialAddons || []).filter(
+      (a) =>
+        a.name !== 'Extra Cold Brew Flavour Shot' &&
+        a.name !== 'Plant Oat Milk Swap' &&
+        a.id !== 'ad-4' &&
+        a.id !== 'ad-5'
+    )
+  );
 
   const [activeCategoryIdx, setActiveCategoryIdx] = useState(0);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
@@ -69,6 +77,7 @@ export default function CustomerMenu({
   const [isGuestProfileSaved, setIsGuestProfileSaved] = useState(false);
   const [isEditingGuestProfile, setIsEditingGuestProfile] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  const [flatError, setFlatError] = useState('');
   const [isOffline, setIsOffline] = useState(false);
 
   const thumbnailTrackRef = useRef<HTMLDivElement>(null);
@@ -118,6 +127,22 @@ export default function CustomerMenu({
       setPhoneError('Please enter a 10-digit mobile number');
     } else {
       setPhoneError('');
+    }
+  };
+
+  const handleFlatChange = (val: string) => {
+    setCustomerFlat(val);
+    const trimmed = val.trim();
+    if (trimmed.length > 0) {
+      const hasDigits = /\d/.test(trimmed);
+      const hasLetters = /[a-zA-Z]/.test(trimmed);
+      if (!hasDigits || !hasLetters) {
+        setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
+      } else {
+        setFlatError('');
+      }
+    } else {
+      setFlatError('');
     }
   };
 
@@ -498,9 +523,27 @@ export default function CustomerMenu({
       return;
     }
 
-    if (isTakeaway && (!customerFlat || !customerFlat.trim())) {
-      alert('Flat Number is required for Takeaway / In-Flat orders (e.g. Tower 2 - 14B).');
-      return;
+    if (isTakeaway) {
+      if (!customerFlat || !customerFlat.trim()) {
+        setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
+        alert('Flat Number is required for Takeaway / In-Flat orders (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
+      const hasDigits = /\d/.test(customerFlat);
+      const hasLetters = /[a-zA-Z]/.test(customerFlat);
+      if (!hasDigits || !hasLetters) {
+        setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
+        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
+    } else if (customerFlat && customerFlat.trim()) {
+      const hasDigits = /\d/.test(customerFlat);
+      const hasLetters = /[a-zA-Z]/.test(customerFlat);
+      if (!hasDigits || !hasLetters) {
+        setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
+        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
     }
 
     // Trigger haptic vibration feedback on mobile
@@ -1250,8 +1293,8 @@ export default function CustomerMenu({
                         </div>
 
                         {(initialTable === 'Takeaway' || initialTable === '0') ? (
-                          <div style={{ background: '#FFFDF9', padding: '10px 12px', border: '1.5px solid var(--brand-gold)', borderRadius: 10 }}>
-                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-accent)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                          <div style={{ background: '#FFFDF9', padding: '10px 12px', border: `1.5px solid ${flatError ? '#DC2626' : 'var(--brand-gold)'}`, borderRadius: 10 }}>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: flatError ? '#DC2626' : 'var(--brand-accent)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                               <span>🏢</span> Flat / Apartment Number (Mandatory for Takeaway) *
                             </label>
                             <input
@@ -1259,15 +1302,21 @@ export default function CustomerMenu({
                               name="flat"
                               id="customer-flat"
                               className="instructions-input"
-                              placeholder="e.g. Tower 2 - 14B or Block A - 402"
+                              placeholder="e.g. 14B or Tower 2 - 14B"
                               value={customerFlat}
-                              onChange={(e) => setCustomerFlat(e.target.value)}
+                              onChange={(e) => handleFlatChange(e.target.value)}
                               required
-                              style={{ fontSize: 14, background: '#FFFFFF' }}
+                              style={{ fontSize: 14, background: '#FFFFFF', borderColor: flatError ? '#DC2626' : undefined }}
                             />
-                            <span style={{ fontSize: 10.5, color: '#7C4A1E', marginTop: 3, display: 'block' }}>
-                              Required for Anassa flat delivery & counter order dispatch
-                            </span>
+                            {flatError ? (
+                              <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                                ⚠️ {flatError}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 10.5, color: '#7C4A1E', marginTop: 3, display: 'block' }}>
+                                Required for Anassa flat delivery & counter order dispatch (must contain both digits & letters, e.g. 14B)
+                              </span>
+                            )}
                           </div>
                         ) : null}
 
@@ -1286,8 +1335,18 @@ export default function CustomerMenu({
                               }
                               const isTakeaway = initialTable === 'Takeaway' || initialTable === '0';
                               if (isTakeaway && !customerFlat.trim()) {
-                                alert('Please enter your Flat Number for Takeaway / In-Flat order.');
+                                setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
+                                alert('Please enter your Flat Number for Takeaway / In-Flat order (e.g. 14B or Tower 2 - 14B).');
                                 return;
+                              }
+                              if (customerFlat.trim()) {
+                                const hasDigits = /\d/.test(customerFlat);
+                                const hasLetters = /[a-zA-Z]/.test(customerFlat);
+                                if (!hasDigits || !hasLetters) {
+                                  setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
+                                  alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+                                  return;
+                                }
                               }
                               localStorage.setItem('anassa_guest_profile', JSON.stringify({
                                 name: customerName.trim(),

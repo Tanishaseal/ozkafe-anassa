@@ -501,6 +501,15 @@ export default function AdminPage() {
       return;
     }
 
+    if (manualFlat.trim()) {
+      const hasDigits = /\d/.test(manualFlat.trim());
+      const hasLetters = /[a-zA-Z]/.test(manualFlat.trim());
+      if (!hasDigits || !hasLetters) {
+        alert('Flat Number must contain both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
+    }
+
     try {
       const qty = Math.max(1, Number(manualQuantity) || 1);
       const subtotal = item.price * qty;
@@ -619,6 +628,15 @@ export default function AdminPage() {
     if (editItems.length === 0) {
       alert('Order must contain at least one item');
       return;
+    }
+
+    if (editCustomerFlat.trim()) {
+      const hasDigits = /\d/.test(editCustomerFlat.trim());
+      const hasLetters = /[a-zA-Z]/.test(editCustomerFlat.trim());
+      if (!hasDigits || !hasLetters) {
+        alert('Flat Number must contain both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
     }
 
     try {

@@ -339,6 +339,15 @@ export default function KitchenDashboard() {
       return;
     }
 
+    if (editCustomerFlat.trim()) {
+      const hasDigits = /\d/.test(editCustomerFlat.trim());
+      const hasLetters = /[a-zA-Z]/.test(editCustomerFlat.trim());
+      if (!hasDigits || !hasLetters) {
+        alert('Flat Number must contain both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
+    }
+
     setIsSavingReceipt(true);
     try {
       const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
