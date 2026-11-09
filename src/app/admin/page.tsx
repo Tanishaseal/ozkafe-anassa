@@ -3644,67 +3644,79 @@ export default function AdminPage() {
                     </label>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: 12, borderRadius: 8, border: '1px solid var(--adm-border)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: 12, borderRadius: 8, border: '1px solid var(--adm-border)', width: '100%', boxSizing: 'border-box' }}>
                     {editItems.map((item, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 80px 32px', gap: 8, alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          value={item.name}
-                          onChange={(e) => {
-                            const updated = [...editItems];
-                            updated[idx].name = e.target.value;
-                            setEditItems(updated);
-                          }}
-                          className="admin-form-input"
-                          style={{ fontSize: 12 }}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItemQty(idx, -1)}
-                            className="admin-alert-action-btn"
-                            style={{ width: 26, height: 26, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            -
-                          </button>
-                          <span style={{ fontWeight: 700, minWidth: 20, textAlign: 'center', fontSize: 13 }}>
-                            {item.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItemQty(idx, 1)}
-                            className="admin-alert-action-btn"
-                            style={{ width: 26, height: 26, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            +
-                          </button>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, marginRight: 2 }}>₹</span>
+                      <div key={idx} className="receipt-item-row-card">
+                        <div className="receipt-item-top">
                           <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={item.price}
-                            onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
-                            className="admin-form-input"
-                            style={{ fontSize: 12, padding: '4px 6px', textAlign: 'right' }}
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => {
+                              const updated = [...editItems];
+                              updated[idx].name = e.target.value;
+                              setEditItems(updated);
+                            }}
+                            className="receipt-item-name-input"
+                            placeholder="Dish name"
                           />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDishFromEditReceipt(idx)}
+                            title="Remove item"
+                            className="receipt-item-del-btn"
+                          >
+                            ✕
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDishFromEditReceipt(idx)}
-                          title="Remove item"
-                          style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 16, padding: 0 }}
-                        >
-                          ✕
-                        </button>
+
+                        <div className="receipt-item-bottom">
+                          <div className="receipt-item-stepper">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateItemQty(idx, -1)}
+                              className="receipt-item-stepper-btn"
+                              title="Decrease quantity"
+                            >
+                              -
+                            </button>
+                            <span className="receipt-item-stepper-val">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateItemQty(idx, 1)}
+                              className="receipt-item-stepper-btn"
+                              title="Increase quantity"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <div className="receipt-item-pricing">
+                            <span className="receipt-item-price-label">Price:</span>
+                            <div className="receipt-item-price-wrapper">
+                              <span className="receipt-item-currency">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={item.price}
+                                onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                                className="receipt-item-price-input"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="receipt-item-subtotal-badge">
+                            = ₹{((Number(item.price) || 0) * (Number(item.quantity) || 1)).toFixed(2)}
+                          </div>
+                        </div>
                       </div>
                     ))}
 
                     {/* Searchable Add Item Row */}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px dashed var(--adm-border)', alignItems: 'center' }}>
-                      <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px dashed var(--adm-border)', alignItems: 'center', width: '100%' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <SearchableDishPicker
                           items={menuItems}
                           selectedId={editAddItemId}
@@ -3716,7 +3728,7 @@ export default function AdminPage() {
                         type="button"
                         onClick={handleAddDishToEditReceipt}
                         className="admin-alert-action-btn"
-                        style={{ whiteSpace: 'nowrap', fontWeight: 700, height: 38 }}
+                        style={{ whiteSpace: 'nowrap', fontWeight: 700, height: 38, flexShrink: 0 }}
                       >
                         + Add
                       </button>

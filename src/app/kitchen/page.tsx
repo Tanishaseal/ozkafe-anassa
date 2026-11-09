@@ -1981,65 +1981,79 @@ export default function KitchenDashboard() {
                   Receipt Items ({editItems.length})
                 </label>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8F6F2', padding: 12, borderRadius: 8, border: '1px solid #E5DFD7' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8F6F2', padding: 12, borderRadius: 8, border: '1px solid #E5DFD7', width: '100%', boxBoxSizing: 'border-box' } as React.CSSProperties}>
                   {editItems.map((item, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 85px 30px', gap: 6, alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        value={item.name}
-                        onChange={(e) => {
-                          const updated = [...editItems];
-                          updated[idx].name = e.target.value;
-                          setEditItems(updated);
-                        }}
-                        className="kds-search-input"
-                        style={{ fontSize: 12, padding: '4px 8px' }}
-                      />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <button
-                          type="button"
-                          onClick={() => handleItemQtyChange(idx, -1)}
-                          style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid #D6D3D1', background: '#FFF', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          -
-                        </button>
-                        <span style={{ fontWeight: 700, minWidth: 20, textAlign: 'center', fontSize: 12.5 }}>
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleItemQtyChange(idx, 1)}
-                          style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid #D6D3D1', background: '#FFF', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          +
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, marginRight: 2 }}>₹</span>
+                    <div key={idx} className="receipt-item-row-card">
+                      <div className="receipt-item-top">
                         <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={item.price}
-                          onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
-                          className="kds-search-input"
-                          style={{ fontSize: 12, padding: '4px 6px', textAlign: 'right' }}
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => {
+                            const updated = [...editItems];
+                            updated[idx].name = e.target.value;
+                            setEditItems(updated);
+                          }}
+                          className="receipt-item-name-input"
+                          placeholder="Dish name"
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          title="Remove dish from receipt"
+                          className="receipt-item-del-btn"
+                        >
+                          ✕
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItem(idx)}
-                        title="Remove dish"
-                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}
-                      >
-                        ✕
-                      </button>
+
+                      <div className="receipt-item-bottom">
+                        <div className="receipt-item-stepper">
+                          <button
+                            type="button"
+                            onClick={() => handleItemQtyChange(idx, -1)}
+                            className="receipt-item-stepper-btn"
+                            title="Decrease quantity"
+                          >
+                            -
+                          </button>
+                          <span className="receipt-item-stepper-val">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleItemQtyChange(idx, 1)}
+                            className="receipt-item-stepper-btn"
+                            title="Increase quantity"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="receipt-item-pricing">
+                          <span className="receipt-item-price-label">Price:</span>
+                          <div className="receipt-item-price-wrapper">
+                            <span className="receipt-item-currency">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.price}
+                              onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                              className="receipt-item-price-input"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="receipt-item-subtotal-badge">
+                          = ₹{((Number(item.price) || 0) * (Number(item.quantity) || 1)).toFixed(2)}
+                        </div>
+                      </div>
                     </div>
                   ))}
 
                   {/* Searchable Add dish picker */}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4, paddingTop: 8, borderTop: '1px dashed #D6D3D1', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, paddingTop: 8, borderTop: '1px dashed #D6D3D1', alignItems: 'center', width: '100%' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <SearchableDishPicker
                         items={availableMenuItems}
                         selectedId={editAddItemId}
@@ -2051,7 +2065,7 @@ export default function KitchenDashboard() {
                       type="button"
                       onClick={handleAddItem}
                       disabled={!editAddItemId}
-                      style={{ height: 38, padding: '0 14px', background: '#5C381E', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 700, cursor: editAddItemId ? 'pointer' : 'not-allowed', fontSize: 12, whiteSpace: 'nowrap' }}
+                      style={{ height: 38, padding: '0 14px', background: '#5C381E', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 700, cursor: editAddItemId ? 'pointer' : 'not-allowed', fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
                     >
                       + Add
                     </button>
@@ -2328,14 +2342,13 @@ export default function KitchenDashboard() {
                           )}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 100px', gap: 8, alignItems: 'center' }}>
-                          <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 100px', minWidth: 90 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Portion</label>
                             <select
                               value={item.selectedSize}
                               onChange={(e) => handleUpdateCustomBillItem(idx, { selectedSize: e.target.value })}
-                              className="kds-search-input"
-                              style={{ width: '100%', fontSize: 11.5, padding: '4px 6px', marginTop: 2, cursor: 'pointer' }}
+                              style={{ width: '100%', minWidth: 0, height: 28, fontSize: 11.5, padding: '0 6px', marginTop: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid #D6D3D1', background: '#FFF' }}
                             >
                               {sizes.map((s) => (
                                 <option key={s} value={s}>{s}</option>
@@ -2343,7 +2356,7 @@ export default function KitchenDashboard() {
                             </select>
                           </div>
 
-                          <div>
+                          <div style={{ flex: '0 0 auto' }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Quantity</label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
                               <button
@@ -2370,8 +2383,7 @@ export default function KitchenDashboard() {
                                 max="99"
                                 value={item.quantity}
                                 onChange={(e) => handleUpdateCustomBillItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                                className="kds-search-input"
-                                style={{ width: 40, height: 26, textAlign: 'center', fontWeight: 700, padding: 0 }}
+                                style={{ width: 38, minWidth: 0, height: 26, textAlign: 'center', fontWeight: 700, padding: 0, borderRadius: 4, border: '1px solid #D6D3D1', background: '#FFF' }}
                               />
                               <button
                                 type="button"
@@ -2394,7 +2406,7 @@ export default function KitchenDashboard() {
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right' }}>
+                          <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Total</label>
                             <div style={{ fontSize: 12.5, fontWeight: 800, color: '#8E402A', marginTop: 4 }}>
                               ₹{(item.price * item.quantity).toFixed(2)}

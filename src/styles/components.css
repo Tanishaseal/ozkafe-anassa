@@ -1561,4 +1561,191 @@
   white-space: nowrap;
 }
 
+/* ═══════════════════════════════════════════════════════
+   RECEIPT ITEM ROW — FULLY RESPONSIVE POS / RECEIPT STYLES
+   Fixes mobile/narrow overflow & makes receipt editing responsive
+   ═══════════════════════════════════════════════════════ */
+.receipt-item-row-card {
+  background: #FFFFFF;
+  border: 1px solid #E5DFD7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.receipt-item-row-card:focus-within {
+  border-color: #5C381E;
+  box-shadow: 0 0 0 2px rgba(92, 56, 30, 0.1);
+}
+
+.receipt-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.receipt-item-name-input {
+  flex: 1 1 auto;
+  min-width: 0 !important;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #D6D3D1;
+  background: #FAF8F5;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A1410;
+  box-sizing: border-box;
+}
+
+.receipt-item-name-input:focus {
+  background: #FFFFFF;
+  border-color: #5C381E;
+  outline: none;
+}
+
+.receipt-item-del-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid #FECACA;
+  background: #FEF2F2;
+  color: #DC2626;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.receipt-item-del-btn:hover {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+}
+
+.receipt-item-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: nowrap;
+  padding-top: 6px;
+  border-top: 1px dashed #EDE8E1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.receipt-item-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #FAF8F5;
+  border: 1px solid #E5DFD7;
+  border-radius: 6px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.receipt-item-stepper-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #D6D3D1;
+  background: #FFFFFF;
+  color: #2A2118;
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  padding: 0;
+}
+
+.receipt-item-stepper-btn:hover {
+  background: #EAE5DC;
+}
+
+.receipt-item-stepper-val {
+  min-width: 22px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #1A1410;
+}
+
+.receipt-item-pricing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.receipt-item-price-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78716C;
+}
+
+.receipt-item-price-wrapper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #D6D3D1;
+  border-radius: 6px;
+  background: #FAF8F5;
+  padding: 0 6px;
+  height: 28px;
+}
+
+.receipt-item-currency {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #57534E;
+  margin-right: 2px;
+}
+
+.receipt-item-price-input {
+  width: 58px !important;
+  min-width: 0 !important;
+  max-width: 68px !important;
+  border: none !important;
+  background: transparent !important;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #1A1410;
+  outline: none;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.receipt-item-subtotal-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5C381E;
+  background: #F5EBE1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+
+
 
