@@ -597,6 +597,9 @@ export async function createOrder(data: {
   customerLng?: number;
   distanceMeters?: number;
   createdAt?: number;
+  status?: OrderStatus;
+  isPaid?: boolean;
+  settledBy?: string;
 }): Promise<Order> {
   const now = data.createdAt ? Number(data.createdAt) : Date.now();
   
@@ -662,7 +665,10 @@ export async function createOrder(data: {
     taxAmount: data.taxAmount,
     total: data.total,
     specialInstructions: data.specialInstructions,
-    status: 'received',
+    status: data.status || 'received',
+    isPaid: Boolean(data.isPaid),
+    paidAt: data.isPaid ? now : undefined,
+    settledBy: data.settledBy,
     customerLat: data.customerLat,
     customerLng: data.customerLng,
     distanceMeters: data.distanceMeters,
@@ -687,6 +693,9 @@ export async function createOrder(data: {
         total: newOrder.total,
         special_instructions: newOrder.specialInstructions,
         status: newOrder.status,
+        is_paid: newOrder.isPaid,
+        paid_at: newOrder.paidAt ? new Date(newOrder.paidAt).toISOString() : null,
+        settled_by: newOrder.settledBy || null,
         customer_lat: newOrder.customerLat,
         customer_lng: newOrder.customerLng,
         distance_meters: newOrder.distanceMeters,

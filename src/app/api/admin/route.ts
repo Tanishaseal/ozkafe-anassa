@@ -155,7 +155,7 @@ export async function POST(request: Request) {
 
     // Action 5: Create a manual in-person counter order from Admin
     if (action === 'manual_order' || body.action === 'manual_order') {
-      const { tableNumber, customerName, customerPhone, customerFlat, items, subtotal, taxAmount, total, specialInstructions, createdAt } = body;
+      const { tableNumber, customerName, customerPhone, customerFlat, items, subtotal, taxAmount, total, specialInstructions, createdAt, status, isPaid, settledBy } = body;
       const order = await createOrder({
         tableNumber: tableNumber || 'Takeaway',
         customerName: customerName || 'Counter Walk-in',
@@ -167,6 +167,9 @@ export async function POST(request: Request) {
         total: Number(total) || 0,
         specialInstructions: specialInstructions || 'Admin custom / counter order',
         createdAt: createdAt ? Number(createdAt) : undefined,
+        status: status || 'served',
+        isPaid: Boolean(isPaid),
+        settledBy: isPaid ? (settledBy || 'Admin') : undefined,
       });
       return NextResponse.json({ success: true, order });
     }

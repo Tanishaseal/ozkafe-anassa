@@ -588,6 +588,43 @@
   box-shadow: 0 2px 8px rgba(42, 33, 24, 0.2);
 }
 
+.kds-custom-bill-btn {
+  margin-left: auto;
+  background: linear-gradient(135deg, #FAF7F2 0%, #F5EFEB 100%);
+  border-color: var(--brand-gold, #C59A6F);
+  color: #8E402A;
+  box-shadow: 0 2px 6px rgba(142, 64, 42, 0.08);
+}
+
+.kds-custom-bill-btn:hover {
+  background: #F2EAE1;
+  border-color: #8E402A;
+  transform: translateY(-1px);
+}
+
+.kds-action-btn-custom-bill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--brand-gold, #C59A6F);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 12.5px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(197, 154, 111, 0.3);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.kds-action-btn-custom-bill:hover {
+  background: #A66B33;
+  transform: translateY(-1px);
+}
+
 .kds-view-badge {
   padding: 2px 8px;
   border-radius: 999px;

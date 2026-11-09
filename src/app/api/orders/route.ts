@@ -29,8 +29,13 @@ export async function GET(request: Request) {
       }
       const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
       const allOrders = await getOrders({ limit: 1000 });
-      // Filter out orders older than 15 days
-      const historyOrders = allOrders.filter((o) => o.createdAt >= fifteenDaysAgo);
+      // Filter orders from the past 15 days or custom recorded bills so kitchen staff can review past bills
+      const historyOrders = allOrders.filter(
+        (o) =>
+          o.createdAt >= fifteenDaysAgo ||
+          o.specialInstructions?.toLowerCase().includes('custom') ||
+          o.specialInstructions?.toLowerCase().includes('manual')
+      );
       return NextResponse.json(historyOrders);
     }
 
@@ -109,6 +114,73 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    // ── KITCHEN / STAFF / ADMIN CUSTOM BILL (PREVIOUS ORDERS) ──
+    if (body.action === 'kitchen_custom_order' || body.action === 'manual_order') {
+      if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
+        return NextResponse.json({ error: 'Unauthorized. Kitchen or Admin credentials required.' }, { status: 401 });
+      }
+
+      const {
+        tableNumber,
+        customerName,
+        customerPhone,
+        customerFlat,
+        items,
+        subtotal,
+        taxAmount,
+        total,
+        specialInstructions,
+        createdAt,
+        status,
+        isPaid,
+        staffName,
+      } = body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return NextResponse.json({ error: 'Order must contain at least one dish / item' }, { status: 400 });
+      }
+
+      if (customerFlat && customerFlat.trim()) {
+        const trimmedFlat = customerFlat.trim();
+        const hasDigits = /\d/.test(trimmedFlat);
+        const hasLetters = /[a-zA-Z]/.test(trimmedFlat);
+        if (!hasDigits || !hasLetters) {
+          return NextResponse.json({
+            error: 'Invalid Flat Number: Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)',
+            code: 'INVALID_FLAT_NUMBER',
+          }, { status: 400 });
+        }
+      }
+
+      const customCreatedAt = createdAt ? Number(createdAt) : Date.now();
+      const order = await createOrder({
+        tableNumber: tableNumber || 'Takeaway',
+        customerName: customerName ? customerName.trim() : 'Counter Guest',
+        customerPhone: customerPhone ? customerPhone.trim() : '9830000000',
+        customerFlat: customerFlat ? customerFlat.trim() : undefined,
+        items: items.map((it: any) => ({
+          id: it.id,
+          name: it.name,
+          price: Number(it.price) || 0,
+          quantity: Math.max(1, Number(it.quantity) || 1),
+          selectedSize: it.selectedSize || 'Regular',
+          category: it.category || 'General',
+          isAddon: Boolean(it.isAddon),
+        })),
+        subtotal: Number(subtotal) || 0,
+        taxAmount: Number(taxAmount) || 0,
+        total: Number(total) || 0,
+        specialInstructions: specialInstructions?.trim() || `Custom bill recorded from Kitchen by ${staffName || 'Staff'}`,
+        createdAt: customCreatedAt,
+        status: status || 'served',
+        isPaid: Boolean(isPaid),
+        settledBy: isPaid ? (staffName || 'Kitchen Staff') : undefined,
+      });
+
+      return NextResponse.json({ success: true, order });
+    }
+
     const {
       tableNumber,
       tableKey,

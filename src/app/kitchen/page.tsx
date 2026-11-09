@@ -38,6 +38,26 @@ export default function KitchenDashboard() {
   const [editAddItemId, setEditAddItemId] = useState('');
   const [isSavingReceipt, setIsSavingReceipt] = useState(false);
 
+  // Custom / Previous Order Bill Creation State for Kitchen
+  const [isCustomBillModalOpen, setIsCustomBillModalOpen] = useState(false);
+  const [customBillDateTime, setCustomBillDateTime] = useState('');
+  const [customBillTable, setCustomBillTable] = useState('Takeaway');
+  const [customBillGuest, setCustomBillGuest] = useState('');
+  const [customBillPhone, setCustomBillPhone] = useState('');
+  const [customBillFlat, setCustomBillFlat] = useState('');
+  const [customBillItems, setCustomBillItems] = useState<{ id: string; name: string; price: number; quantity: number; selectedSize: string; category?: string }[]>([]);
+  const [customBillNotes, setCustomBillNotes] = useState('');
+  const [customBillIsPaid, setCustomBillIsPaid] = useState(false);
+  const [customBillPaymentMethod, setCustomBillPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
+  const [isSubmittingCustomBill, setIsSubmittingCustomBill] = useState(false);
+  const [customBillSuccessMsg, setCustomBillSuccessMsg] = useState('');
+
+  const getNowLocalDateTimeString = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const [recentServed, setRecentServed] = useState<Order[]>([]);
   const [isRecentServedOpen, setIsRecentServedOpen] = useState(false);
   const [clock, setClock] = useState('00:00:00');
@@ -81,6 +101,7 @@ export default function KitchenDashboard() {
   // Check persistent kitchen session on mount (do NOT lock on refresh!)
   useEffect(() => {
     fetchKitchenSettings();
+    fetchMenuItems();
 
     // Verify session with server
     fetch(`/api/kitchen/auth?_t=${Date.now()}`)
@@ -401,6 +422,183 @@ export default function KitchenDashboard() {
     }
   };
 
+  // ── CUSTOM / PREVIOUS ORDER BILL CREATION ──
+  const openCustomBillModal = async () => {
+    setCustomBillDateTime(getNowLocalDateTimeString());
+    setCustomBillTable('Takeaway');
+    setCustomBillGuest('');
+    setCustomBillPhone('');
+    setCustomBillFlat('');
+    setCustomBillNotes('');
+    setCustomBillIsPaid(false);
+    setCustomBillPaymentMethod('Cash');
+
+    let items = availableMenuItems;
+    if (!items || items.length === 0) {
+      try {
+        const res = await fetch('/api/menu');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.items) {
+            items = data.items;
+            setAvailableMenuItems(data.items);
+          }
+        }
+      } catch {
+        // silent
+      }
+    }
+
+    if (items && items.length > 0) {
+      const first = items[0];
+      setCustomBillItems([
+        {
+          id: first.id,
+          name: first.name,
+          price: first.price,
+          quantity: 1,
+          selectedSize: first.sizes?.[0] || 'Regular',
+          category: first.category,
+        },
+      ]);
+    } else {
+      setCustomBillItems([]);
+    }
+
+    setIsCustomBillModalOpen(true);
+  };
+
+  const handleAddCustomBillItem = () => {
+    if (availableMenuItems.length === 0) return;
+    const item = availableMenuItems[0];
+    setCustomBillItems((prev) => [
+      ...prev,
+      {
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: 1,
+        selectedSize: item.sizes?.[0] || 'Regular',
+        category: item.category,
+      },
+    ]);
+  };
+
+  const handleUpdateCustomBillItem = (
+    index: number,
+    updates: Partial<{ id: string; name: string; price: number; quantity: number; selectedSize: string; category?: string }>
+  ) => {
+    setCustomBillItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const updated = { ...it, ...updates };
+        if (updates.id) {
+          const matched = availableMenuItems.find((m) => m.id === updates.id);
+          if (matched) {
+            updated.name = matched.name;
+            updated.price = matched.price;
+            updated.category = matched.category;
+            updated.selectedSize = matched.sizes?.[0] || 'Regular';
+          }
+        }
+        return updated;
+      })
+    );
+  };
+
+  const handleRemoveCustomBillItem = (index: number) => {
+    setCustomBillItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmitCustomBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customBillItems.length === 0) {
+      alert('Please add at least one dish / item to the custom bill.');
+      return;
+    }
+
+    for (const it of customBillItems) {
+      if (!it.id) {
+        alert('Please choose a valid dish for all items.');
+        return;
+      }
+    }
+
+    if (customBillFlat.trim()) {
+      const hasDigits = /\d/.test(customBillFlat.trim());
+      const hasLetters = /[a-zA-Z]/.test(customBillFlat.trim());
+      if (!hasDigits || !hasLetters) {
+        alert('Flat Number must contain both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        return;
+      }
+    }
+
+    setIsSubmittingCustomBill(true);
+    try {
+      const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+      const gstRate = 5;
+      const taxAmount = Math.round((subtotal * gstRate) / 100);
+      const total = subtotal + taxAmount;
+      const customCreatedAt = customBillDateTime ? new Date(customBillDateTime).getTime() : Date.now();
+
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'kitchen_custom_order',
+          tableNumber: customBillTable,
+          customerName: customBillGuest.trim() || 'Counter Walk-in',
+          customerPhone: customBillPhone.trim() || '9830000000',
+          customerFlat: customBillFlat.trim() || undefined,
+          items: customBillItems.map((it) => ({
+            id: it.id,
+            name: it.name,
+            price: it.price,
+            quantity: Math.max(1, Number(it.quantity) || 1),
+            selectedSize: it.selectedSize || 'Regular',
+            category: it.category || 'General',
+          })),
+          subtotal,
+          taxAmount,
+          total,
+          specialInstructions: customBillNotes.trim() || `Custom bill recorded from Kitchen by ${currentUser?.name || staffName || 'Kitchen Staff'}`,
+          createdAt: customCreatedAt,
+          status: 'served', // Directly completed! Does not go to new/prep/ready
+          isPaid: customBillIsPaid,
+          settledBy: customBillIsPaid ? (currentUser?.name || staffName || 'Kitchen Staff') : undefined,
+          staffName: currentUser?.name || staffName || 'Kitchen Staff',
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const createdOrder: Order = data.order;
+        setIsCustomBillModalOpen(false);
+        setCustomBillSuccessMsg(`✓ Custom Bill #${createdOrder.orderNumber} successfully recorded!`);
+        setTimeout(() => setCustomBillSuccessMsg(''), 5000);
+
+        // Refresh orders & history
+        await fetchHistoryOrders();
+        await fetchOrders();
+
+        // Switch to history view so kitchen staff immediately sees the logged bill
+        setKitchenViewMode('history');
+
+        // Offer to print receipt
+        if (confirm(`Bill #${createdOrder.orderNumber} (₹${createdOrder.total}) recorded directly to Order History & Admin!\n\nWould you like to print or view the receipt now?`)) {
+          setPrintOrder(createdOrder);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Failed to record custom bill. Please check inputs.');
+      }
+    } catch {
+      alert('Network error while creating custom bill.');
+    } finally {
+      setIsSubmittingCustomBill(false);
+    }
+  };
+
   // Sound chime
   const playChime = () => {
     try {
@@ -664,7 +862,57 @@ export default function KitchenDashboard() {
           <span>📜 Order History</span>
           <span className="kds-view-badge">Past 15 Days</span>
         </button>
+
+        <button
+          type="button"
+          onClick={openCustomBillModal}
+          className="kds-view-btn kds-custom-bill-btn"
+          title="Add a custom bill for previous orders directly to history and admin records"
+        >
+          <span>🧾 + Add Custom Bill</span>
+          <span className="kds-view-badge" style={{ background: '#8E402A', color: '#FFFFFF', fontSize: 10, letterSpacing: 0.3 }}>
+            PREVIOUS ORDER
+          </span>
+        </button>
       </nav>
+
+      {/* Custom Bill Feedback Toast */}
+      {customBillSuccessMsg && (
+        <div
+          style={{
+            background: '#DCFCE7',
+            color: '#15803D',
+            borderBottom: '1px solid #86EFAC',
+            padding: '10px 24px',
+            fontWeight: 700,
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>✓</span>
+            <span>{customBillSuccessMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCustomBillSuccessMsg('')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#15803D',
+              cursor: 'pointer',
+              fontWeight: 800,
+              fontSize: 16,
+              padding: '0 4px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── VIEW 1: LIVE KANBAN BOARD ── */}
       {kitchenViewMode === 'board' && (
@@ -1231,6 +1479,15 @@ export default function KitchenDashboard() {
                 <option value="received">New Orders</option>
                 <option value="cancelled">Cancelled</option>
               </select>
+
+              <button
+                type="button"
+                onClick={openCustomBillModal}
+                className="kds-action-btn-custom-bill"
+                title="Add custom bill for previous orders directly to history & admin"
+              >
+                <span>🧾 + Add Custom Bill</span>
+              </button>
             </div>
           </div>
 
@@ -1239,6 +1496,14 @@ export default function KitchenDashboard() {
               <span className="empty-icon">📜</span>
               <p>No orders found in the past 15 days</p>
               <span className="empty-sub">Past dining and takeaway orders completed within 15 days are logged here.</span>
+              <button
+                type="button"
+                onClick={openCustomBillModal}
+                className="kds-action-btn-custom-bill"
+                style={{ marginTop: 14 }}
+              >
+                🧾 + Add Custom Bill for Previous Order
+              </button>
             </div>
           ) : (
             <div className="kds-history-table-box" style={{ overflowX: 'auto' }}>
@@ -1763,6 +2028,479 @@ export default function KitchenDashboard() {
                   style={{ flex: 1, height: 42, borderRadius: 8, border: 'none', background: '#5C381E', color: '#FFF', fontWeight: 800, cursor: isSavingReceipt ? 'wait' : 'pointer' }}
                 >
                   {isSavingReceipt ? 'Saving...' : '✓ Save & Update Receipt'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── KITCHEN CUSTOM BILL (PREVIOUS ORDER) MODAL ── */}
+      {isCustomBillModalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setIsCustomBillModalOpen(false)}>
+          <div
+            className="admin-modal-box"
+            style={{
+              maxWidth: 540,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#FFFFFF',
+              borderRadius: 16,
+              padding: '22px 26px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #E5DFD7', paddingBottom: 14, marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#1A1410', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>🧾</span> + Add Custom Bill (Previous Order)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#78716C', lineHeight: 1.4 }}>
+                  Directly record counter or previous orders into Order History and Admin ledger. No kitchen prep queue required.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCustomBillModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#78716C', padding: '0 4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitCustomBill} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* 1. Order Date & Time */}
+              <div style={{ background: '#FAF8F5', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5DFD7' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#44403C', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>📅</span> Order Date & Time (Previous or Current)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomBillDateTime(getNowLocalDateTimeString())}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#8E402A',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Set to Now
+                  </button>
+                </div>
+                <input
+                  type="datetime-local"
+                  value={customBillDateTime}
+                  onChange={(e) => setCustomBillDateTime(e.target.value)}
+                  required
+                  className="kds-search-input"
+                  style={{ width: '100%', fontWeight: 700, fontSize: 13 }}
+                />
+                <div style={{ fontSize: 11, color: '#78716C', marginTop: 4 }}>
+                  Timestamp this bill for today, or backdate to any previous day/time.
+                </div>
+              </div>
+
+              {/* 2. Customer Name & Table/Type */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
+                    Table / Order Type
+                  </label>
+                  <select
+                    value={customBillTable}
+                    onChange={(e) => setCustomBillTable(e.target.value)}
+                    className="kds-search-input"
+                    style={{ width: '100%', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    <option value="Takeaway">Takeaway & In-Flat</option>
+                    <option value="1">Table 1</option>
+                    <option value="2">Table 2</option>
+                    <option value="3">Table 3</option>
+                    <option value="4">Table 4</option>
+                    <option value="5">Table 5</option>
+                    <option value="6">Table 6</option>
+                    <option value="7">Table 7</option>
+                    <option value="8">Table 8</option>
+                    <option value="9">Table 9</option>
+                    <option value="10">Table 10</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
+                    Customer / Guest Name
+                  </label>
+                  <input
+                    type="text"
+                    value={customBillGuest}
+                    onChange={(e) => setCustomBillGuest(e.target.value)}
+                    placeholder="e.g. Rahul Sen"
+                    className="kds-search-input"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Phone & Flat Number */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
+                    Phone Number (Optional)
+                  </label>
+                  <input
+                    type="tel"
+                    value={customBillPhone}
+                    onChange={(e) => setCustomBillPhone(e.target.value)}
+                    placeholder="e.g. 9830012345"
+                    className="kds-search-input"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
+                    Flat / Apartment (Digits & Letters, e.g. 14B)
+                  </label>
+                  <input
+                    type="text"
+                    value={customBillFlat}
+                    onChange={(e) => setCustomBillFlat(e.target.value)}
+                    placeholder="e.g. 14B or Tower 2 - 14B"
+                    className="kds-search-input"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              {/* 4. Dishes / Bill Items */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#44403C' }}>
+                    Dishes & Drinks on this Bill ({customBillItems.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomBillItem}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#8E402A',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    + Add Another Dish
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8F6F2', padding: 12, borderRadius: 10, border: '1px solid #E5DFD7', maxHeight: 220, overflowY: 'auto' }}>
+                  {customBillItems.map((item, idx) => {
+                    const menuItem = availableMenuItems.find((m) => m.id === item.id);
+                    const sizes = menuItem?.sizes && menuItem.sizes.length > 0 ? menuItem.sizes : ['Regular'];
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8,
+                          background: '#FFFFFF',
+                          padding: 10,
+                          borderRadius: 8,
+                          border: '1px solid #E5DFD7',
+                        }}
+                      >
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                          <select
+                            value={item.id}
+                            onChange={(e) => handleUpdateCustomBillItem(idx, { id: e.target.value })}
+                            className="kds-search-input"
+                            style={{ width: '100%', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                            required
+                          >
+                            {availableMenuItems.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} — ₹{m.price} · {m.category}
+                              </option>
+                            ))}
+                          </select>
+                          {customBillItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCustomBillItem(idx)}
+                              style={{
+                                background: '#FEE2E2',
+                                color: '#DC2626',
+                                border: '1px solid #FCA5A5',
+                                borderRadius: 6,
+                                width: 28,
+                                height: 32,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                fontWeight: 800,
+                                fontSize: 13,
+                              }}
+                              title="Remove dish"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 100px', gap: 8, alignItems: 'center' }}>
+                          <div>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Portion</label>
+                            <select
+                              value={item.selectedSize}
+                              onChange={(e) => handleUpdateCustomBillItem(idx, { selectedSize: e.target.value })}
+                              className="kds-search-input"
+                              style={{ width: '100%', fontSize: 11.5, padding: '4px 6px', marginTop: 2, cursor: 'pointer' }}
+                            >
+                              {sizes.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Quantity</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateCustomBillItem(idx, { quantity: Math.max(1, item.quantity - 1) })}
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 4,
+                                  border: '1px solid #D6D3D1',
+                                  background: '#FAF8F5',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={item.quantity}
+                                onChange={(e) => handleUpdateCustomBillItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                className="kds-search-input"
+                                style={{ width: 40, height: 26, textAlign: 'center', fontWeight: 700, padding: 0 }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateCustomBillItem(idx, { quantity: item.quantity + 1 })}
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 4,
+                                  border: '1px solid #D6D3D1',
+                                  background: '#FAF8F5',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: '#78716C', textTransform: 'uppercase' }}>Total</label>
+                            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#8E402A', marginTop: 4 }}>
+                              ₹{(item.price * item.quantity).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 5. Payment & Settlement Status */}
+              <div style={{ background: '#FAF8F5', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5DFD7' }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 6 }}>
+                  💳 Settlement Status
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: `1.5px solid ${!customBillIsPaid ? '#8E402A' : '#E5DFD7'}`,
+                      background: !customBillIsPaid ? '#FFF7ED' : '#FFFFFF',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: !customBillIsPaid ? '#8E402A' : '#57534E',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentStatus"
+                      checked={!customBillIsPaid}
+                      onChange={() => setCustomBillIsPaid(false)}
+                      style={{ accentColor: '#8E402A' }}
+                    />
+                    <span>⏳ Unsettled (Collect Later)</span>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: `1.5px solid ${customBillIsPaid ? '#15803D' : '#E5DFD7'}`,
+                      background: customBillIsPaid ? '#DCFCE7' : '#FFFFFF',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: customBillIsPaid ? '#15803D' : '#57534E',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentStatus"
+                      checked={customBillIsPaid}
+                      onChange={() => setCustomBillIsPaid(true)}
+                      style={{ accentColor: '#15803D' }}
+                    />
+                    <span>✅ Already Settled / Paid</span>
+                  </label>
+                </div>
+
+                {customBillIsPaid && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#44403C' }}>Payment Method:</span>
+                    {(['Cash', 'UPI', 'Card'] as const).map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setCustomBillPaymentMethod(method)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: customBillPaymentMethod === method ? '1.5px solid #15803D' : '1px solid #D6D3D1',
+                          background: customBillPaymentMethod === method ? '#15803D' : '#FFFFFF',
+                          color: customBillPaymentMethod === method ? '#FFFFFF' : '#44403C',
+                        }}
+                      >
+                        {method}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 6. Special Instructions */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
+                  Special Instructions / Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={customBillNotes}
+                  onChange={(e) => setCustomBillNotes(e.target.value)}
+                  placeholder="e.g. Previous walk-in counter bill, VIP guest, cash collected..."
+                  className="kds-search-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* 7. Live Bill Total */}
+              {(() => {
+                const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+                const taxAmount = Math.round((subtotal * 5) / 100);
+                const total = subtotal + taxAmount;
+
+                return (
+                  <div style={{ background: '#2A2118', color: '#FFFFFF', padding: '12px 16px', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 11.5, color: '#D6CEC3' }}>
+                        Subtotal: ₹{subtotal.toFixed(2)} + GST 5%: ₹{taxAmount.toFixed(2)}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#A8A29E', marginTop: 2 }}>
+                        {customBillItems.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0)} items · Direct to History & Admin
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10.5, color: '#C59A6F', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Total Bill
+                      </div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#FAF8F5' }}>
+                        ₹{total.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Footer Buttons */}
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomBillModalOpen(false)}
+                  style={{
+                    flex: 1,
+                    height: 42,
+                    borderRadius: 8,
+                    border: '1px solid #D6D3D1',
+                    background: '#FAF8F5',
+                    color: '#44403C',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCustomBill || customBillItems.length === 0}
+                  style={{
+                    flex: 2,
+                    height: 42,
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #8E402A 0%, #A64E35 100%)',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: isSubmittingCustomBill ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 8px rgba(142, 64, 42, 0.3)',
+                    opacity: isSubmittingCustomBill ? 0.7 : 1,
+                  }}
+                >
+                  {isSubmittingCustomBill ? 'Recording Bill...' : '✓ Record Bill (To History & Admin)'}
                 </button>
               </div>
             </form>
