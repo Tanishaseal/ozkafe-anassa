@@ -6,7 +6,11 @@
 
 /* ── COLOR SYSTEM & THEME TOKENS ── */
 :root {
-  /* Common Palette */
+  /* Common Palette & Fallbacks */
+  --adm-card-bg: #FFFFFF;
+  --adm-surface: #FFFFFF;
+  --adm-border: #E5DFD7;
+  --adm-border-subtle: #EFE9E1;
   --adm-coffee-dark: #3A2312;
   --adm-coffee: #5C381E;
   --adm-coffee-light: #7C4A1E;
@@ -1698,8 +1702,9 @@ input:checked + .admin-slider:before {
 }
 
 .admin-modal-box {
-  background: var(--adm-card-bg);
-  border: 1px solid var(--adm-border);
+  background: #FFFFFF;
+  background-color: #FFFFFF;
+  border: 1px solid var(--adm-border, #E5DFD7);
   border-radius: 20px;
   width: 100%;
   max-width: 560px;

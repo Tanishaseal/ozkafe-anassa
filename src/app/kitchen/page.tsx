@@ -1606,7 +1606,19 @@ export default function KitchenDashboard() {
       {/* ── RECENT SERVED ORDERS DRAWER ── */}
       {isRecentServedOpen && (
         <div className="admin-modal-overlay" onClick={() => setIsRecentServedOpen(false)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440, padding: 20 }}>
+          <div
+            className="admin-modal-box"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 440,
+              padding: 20,
+              background: '#FFFFFF',
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)',
+              border: '1px solid #E5DFD7',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Recent Served Orders</h3>
               <button onClick={() => setIsRecentServedOpen(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -1661,8 +1673,29 @@ export default function KitchenDashboard() {
 
         return (
           <div className="admin-modal-overlay" onClick={() => setPrintOrder(null)}>
-            <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, padding: '20px 20px 16px' }}>
-              <div className="kot-print-area" style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: '#1C1917' }}>
+            <div
+              className="admin-modal-box"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: 420,
+                padding: '22px 24px',
+                background: '#FFFFFF',
+                backgroundColor: '#FFFFFF',
+                borderRadius: 16,
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                border: '1px solid #E5DFD7',
+              }}
+            >
+              <div
+                className="kot-print-area"
+                style={{
+                  fontFamily: 'var(--font-mono), monospace',
+                  fontSize: 12,
+                  color: '#1C1917',
+                  background: '#FFFFFF',
+                  backgroundColor: '#FFFFFF',
+                }}
+              >
                 {/* STORE & ORDER ID */}
                 <div style={{ textAlign: 'center', borderBottom: '1.5px dashed #78716C', paddingBottom: 10, marginBottom: 8 }}>
                   <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 900 }}>OZKAFE · ANASSA</h2>

@@ -68,9 +68,17 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_lat NUMERIC(10, 6),
   customer_lng NUMERIC(10, 6),
   distance_meters NUMERIC(10, 2),
+  is_paid BOOLEAN DEFAULT FALSE,
+  paid_at TIMESTAMPTZ,
+  settled_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration guards for existing databases
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_by TEXT;
 
 -- Indexes for ultra-fast querying on Vercel Serverless
 CREATE INDEX IF NOT EXISTS idx_orders_session_id ON orders(session_id);

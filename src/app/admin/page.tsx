@@ -3360,7 +3360,7 @@ export default function AdminPage() {
 
         return (
           <div className="admin-modal-overlay" onClick={() => setSelectedReceiptOrder(null)}>
-            <div className="admin-modal-box" style={{ maxWidth: 410, padding: 0, overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-box" style={{ maxWidth: 410, padding: 0, overflow: 'hidden', background: '#FFFFFF', backgroundColor: '#FFFFFF' }} onClick={(e) => e.stopPropagation()}>
               <div className="admin-modal-header" style={{ padding: '14px 18px', borderBottom: '1px solid var(--adm-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>🧾</span>

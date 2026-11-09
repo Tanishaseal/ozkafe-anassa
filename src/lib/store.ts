@@ -678,7 +678,13 @@ export async function createOrder(data: {
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      await supabaseServer.from('orders').insert({
+      let instructionsForDb = newOrder.specialInstructions || '';
+      if (newOrder.isPaid && !instructionsForDb.includes('[SETTLED')) {
+        const tag = `[SETTLED:${now}:${newOrder.settledBy || 'Staff'}]`;
+        instructionsForDb = instructionsForDb ? `${instructionsForDb} ${tag}` : tag;
+      }
+
+      const baseInsertPayload = {
         id: newOrder.id,
         order_number: newOrder.orderNumber,
         table_number: String(newOrder.tableNumber),
@@ -691,17 +697,27 @@ export async function createOrder(data: {
         subtotal: newOrder.subtotal,
         tax_amount: newOrder.taxAmount,
         total: newOrder.total,
-        special_instructions: newOrder.specialInstructions,
+        special_instructions: instructionsForDb || null,
         status: newOrder.status,
-        is_paid: newOrder.isPaid,
-        paid_at: newOrder.paidAt ? new Date(newOrder.paidAt).toISOString() : null,
-        settled_by: newOrder.settledBy || null,
         customer_lat: newOrder.customerLat,
         customer_lng: newOrder.customerLng,
         distance_meters: newOrder.distanceMeters,
         created_at: new Date(now).toISOString(),
         updated_at: new Date(now).toISOString(),
-      });
+      };
+
+      const fullInsertPayload = {
+        ...baseInsertPayload,
+        is_paid: newOrder.isPaid,
+        paid_at: newOrder.paidAt ? new Date(newOrder.paidAt).toISOString() : null,
+        settled_by: newOrder.settledBy || null,
+      };
+
+      const { error: insertErr } = await supabaseServer.from('orders').insert(fullInsertPayload);
+      if (insertErr) {
+        console.warn('Supabase insert with paid columns failed, falling back to base schema:', insertErr.message);
+        await supabaseServer.from('orders').insert(baseInsertPayload);
+      }
     } catch (err) {
       console.warn('Supabase createOrder error, saved in memory store:', err);
     }
@@ -749,30 +765,41 @@ export async function getOrders(filter?: {
       }
       const { data, error } = await query;
       if (!error && data) {
-        const rawOrders: Order[] = data.map((o) => ({
-          id: o.id,
-          orderNumber: o.order_number || '',
-          tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
-          tableKey: o.table_key,
-          sessionId: o.session_id,
-          customerName: o.customer_name,
-          customerPhone: o.customer_phone,
-          customerFlat: o.customer_flat,
-          items: o.items || [],
-          subtotal: Number(o.subtotal || o.total),
-          taxAmount: Number(o.tax_amount || 0),
-          total: Number(o.total),
-          specialInstructions: o.special_instructions,
-          status: o.status as OrderStatus,
-          isPaid: Boolean(o.is_paid ?? (o as any).isPaid),
-          paidAt: o.paid_at ? new Date(o.paid_at).getTime() : (o as any).paidAt,
-          settledBy: o.settled_by || (o as any).settledBy,
-          customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
-          customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
-          distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
-          createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
-          updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
-        }));
+        const rawOrders: Order[] = data.map((o) => {
+          const rawInstructions = o.special_instructions || '';
+          const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
+          const isPaid = Boolean(o.is_paid ?? (settledMatch !== null));
+          const paidAt = o.paid_at
+            ? new Date(o.paid_at).getTime()
+            : (settledMatch ? Number(settledMatch[1]) : (o as any).paidAt);
+          const settledBy = o.settled_by || (settledMatch ? settledMatch[2] : (o as any).settledBy);
+          const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+
+          return {
+            id: o.id,
+            orderNumber: o.order_number || '',
+            tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
+            tableKey: o.table_key,
+            sessionId: o.session_id,
+            customerName: o.customer_name,
+            customerPhone: o.customer_phone,
+            customerFlat: o.customer_flat,
+            items: o.items || [],
+            subtotal: Number(o.subtotal || o.total),
+            taxAmount: Number(o.tax_amount || 0),
+            total: Number(o.total),
+            specialInstructions: cleanInstructions || undefined,
+            status: o.status as OrderStatus,
+            isPaid,
+            paidAt,
+            settledBy,
+            customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
+            customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
+            distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
+            createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
+            updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
+          };
+        });
         return normalizeAndSyncOrders(rawOrders);
       }
     } catch (err) {
@@ -807,6 +834,15 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
         const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
         const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
 
+        const rawInstructions = data.special_instructions || '';
+        const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
+        const isPaid = Boolean(data.is_paid ?? (settledMatch !== null));
+        const paidAt = data.paid_at
+          ? new Date(data.paid_at).getTime()
+          : (settledMatch ? Number(settledMatch[1]) : (data as any).paidAt);
+        const settledBy = data.settled_by || (settledMatch ? settledMatch[2] : (data as any).settledBy);
+        const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+
         return {
           id: data.id,
           orderNumber,
@@ -820,11 +856,11 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
           subtotal: Number(data.subtotal || data.total),
           taxAmount: Number(data.tax_amount || 0),
           total: Number(data.total),
-          specialInstructions: data.special_instructions,
+          specialInstructions: cleanInstructions || undefined,
           status: data.status as OrderStatus,
-          isPaid: Boolean(data.is_paid ?? (data as any).isPaid),
-          paidAt: data.paid_at ? new Date(data.paid_at).getTime() : (data as any).paidAt,
-          settledBy: data.settled_by || (data as any).settledBy,
+          isPaid,
+          paidAt,
+          settledBy,
           customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
           customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
           distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
@@ -951,44 +987,88 @@ export async function updateOrderDetails(
   staffName?: string
 ): Promise<Order | null> {
   const now = Date.now();
+  if (!globalStore.__anassa_orders) globalStore.__anassa_orders = [];
+  let existing = globalStore.__anassa_orders;
+  let idx = existing.findIndex((o) => o.id === orderId);
+
+  // If order is not in memory store, fetch from database or load into memory first!
+  let currentOrder: Order | null = idx !== -1 ? existing[idx] : null;
+  if (!currentOrder) {
+    currentOrder = await getOrderById(orderId);
+    if (currentOrder) {
+      existing.unshift(currentOrder);
+      idx = 0;
+    }
+  }
+
+  // Handle instructions & settlement tag
+  let newInstructions = updates.specialInstructions !== undefined ? updates.specialInstructions : currentOrder?.specialInstructions;
+  let rawInstructionsForDb = newInstructions || '';
+
+  if (updates.isPaid === true) {
+    const sName = updates.settledBy || staffName || (actor === 'kitchen' ? 'Kitchen Staff' : 'Admin');
+    const pTime = updates.paidAt || now;
+    const tag = `[SETTLED:${pTime}:${sName}]`;
+    if (!rawInstructionsForDb.includes('[SETTLED')) {
+      rawInstructionsForDb = rawInstructionsForDb ? `${rawInstructionsForDb} ${tag}` : tag;
+    }
+  } else if (updates.isPaid === false) {
+    rawInstructionsForDb = rawInstructionsForDb.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+  }
+
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      const dbUpdates: Record<string, unknown> = {
+      const baseUpdates: Record<string, unknown> = {
         updated_at: new Date(now).toISOString(),
       };
-      if (updates.orderNumber !== undefined) dbUpdates.order_number = updates.orderNumber;
-      if (updates.tableNumber !== undefined) dbUpdates.table_number = String(updates.tableNumber);
-      if (updates.customerName !== undefined) dbUpdates.customer_name = updates.customerName;
-      if (updates.customerPhone !== undefined) dbUpdates.customer_phone = updates.customerPhone;
-      if (updates.customerFlat !== undefined) dbUpdates.customer_flat = updates.customerFlat;
-      if (updates.items !== undefined) dbUpdates.items = updates.items;
-      if (updates.subtotal !== undefined) dbUpdates.subtotal = updates.subtotal;
-      if (updates.taxAmount !== undefined) dbUpdates.tax_amount = updates.taxAmount;
-      if (updates.total !== undefined) dbUpdates.total = updates.total;
-      if (updates.status !== undefined) dbUpdates.status = updates.status;
-      if (updates.isPaid !== undefined) dbUpdates.is_paid = updates.isPaid;
-      if (updates.paidAt !== undefined) dbUpdates.paid_at = updates.paidAt ? new Date(updates.paidAt).toISOString() : null;
-      if (updates.settledBy !== undefined) dbUpdates.settled_by = updates.settledBy;
-      if (updates.specialInstructions !== undefined) dbUpdates.special_instructions = updates.specialInstructions;
-      if (updates.createdAt !== undefined) dbUpdates.created_at = new Date(updates.createdAt).toISOString();
+      if (updates.orderNumber !== undefined) baseUpdates.order_number = updates.orderNumber;
+      if (updates.tableNumber !== undefined) baseUpdates.table_number = String(updates.tableNumber);
+      if (updates.customerName !== undefined) baseUpdates.customer_name = updates.customerName;
+      if (updates.customerPhone !== undefined) baseUpdates.customer_phone = updates.customerPhone;
+      if (updates.customerFlat !== undefined) baseUpdates.customer_flat = updates.customerFlat;
+      if (updates.items !== undefined) baseUpdates.items = updates.items;
+      if (updates.subtotal !== undefined) baseUpdates.subtotal = updates.subtotal;
+      if (updates.taxAmount !== undefined) baseUpdates.tax_amount = updates.taxAmount;
+      if (updates.total !== undefined) baseUpdates.total = updates.total;
+      if (updates.status !== undefined) baseUpdates.status = updates.status;
+      if (updates.createdAt !== undefined) baseUpdates.created_at = new Date(updates.createdAt).toISOString();
+      if (rawInstructionsForDb !== undefined) baseUpdates.special_instructions = rawInstructionsForDb || null;
 
-      await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId);
+      // Try updating with dedicated paid columns first
+      const fullUpdates = {
+        ...baseUpdates,
+        ...(updates.isPaid !== undefined ? { is_paid: updates.isPaid } : {}),
+        ...(updates.paidAt !== undefined ? { paid_at: updates.paidAt ? new Date(updates.paidAt).toISOString() : null } : {}),
+        ...(updates.settledBy !== undefined ? { settled_by: updates.settledBy } : {}),
+      };
+
+      const { error: fullErr } = await supabaseServer.from('orders').update(fullUpdates).eq('id', orderId);
+      if (fullErr) {
+        // If Postgres fails (e.g. column is_paid does not exist), fall back to baseUpdates which is guaranteed to succeed!
+        const { error: baseErr } = await supabaseServer.from('orders').update(baseUpdates).eq('id', orderId);
+        if (baseErr) {
+          console.warn('Supabase base update error:', baseErr.message);
+        }
+      }
     } catch (err) {
       console.warn('Supabase updateOrderDetails error:', err);
     }
   }
 
-  const existing = globalStore.__anassa_orders || [];
-  const idx = existing.findIndex((o) => o.id === orderId);
-  if (idx !== -1) {
+  if (currentOrder && idx !== -1) {
+    const cleanInstructions = rawInstructionsForDb.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
     existing[idx] = {
       ...existing[idx],
       ...updates,
+      specialInstructions: cleanInstructions || undefined,
+      isPaid: updates.isPaid !== undefined ? updates.isPaid : existing[idx].isPaid,
+      paidAt: updates.paidAt !== undefined ? updates.paidAt : existing[idx].paidAt,
+      settledBy: updates.settledBy !== undefined ? updates.settledBy : existing[idx].settledBy,
       updatedAt: now,
     };
     broadcastOrder(existing[idx]);
 
-    const isSettlement = updates.isPaid === true && updates.paidAt;
+    const isSettlement = updates.isPaid === true && (updates.paidAt || true);
     const actorLabel = actor === 'kitchen' ? `Kitchen Staff (${staffName || 'Mamoni'})` : `Admin (${staffName || 'Floor Manager'})`;
 
     if (isSettlement) {
