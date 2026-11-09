@@ -1324,13 +1324,25 @@ export default function CustomerMenu({
                               }}
                             >
                               <div className="directory-dish-left">
-                                <Image
-                                  src={dish.img}
-                                  alt={dish.name}
-                                  width={38}
-                                  height={38}
-                                  className="directory-dish-thumb"
-                                />
+                                <div className="directory-dish-thumb-wrap">
+                                  {dish.img ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img
+                                      src={dish.img}
+                                      alt={dish.name}
+                                      className="directory-dish-thumb"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (!target.src.endsWith('ozkafe_logo.jpeg')) {
+                                          target.src = '/images/ozkafe_logo.jpeg';
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <span style={{ fontSize: '18px' }}>☕</span>
+                                  )}
+                                </div>
                                 <div className="directory-dish-info">
                                   <span className="directory-dish-name">{dish.name}</span>
                                   {dish.subheading && (
