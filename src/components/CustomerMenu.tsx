@@ -60,6 +60,7 @@ export default function CustomerMenu({
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
   const [isSplashVisible, setIsSplashVisible] = useState(true);
+  const [isGuestLoginModalOpen, setIsGuestLoginModalOpen] = useState(false);
 
   // Cart & Orders
   const [cart, setCart] = useState<Record<string, CartItem>>({});
@@ -1008,7 +1009,7 @@ export default function CustomerMenu({
           className="guest-login-edit-btn"
           onClick={() => {
             setIsEditingGuestProfile(true);
-            setIsCartOpen(true);
+            setIsGuestLoginModalOpen(true);
           }}
         >
           {customerPhone ? 'Edit Profile' : '+ Guest Login'}
@@ -1368,6 +1369,200 @@ export default function CustomerMenu({
         </div>
       )}
 
+      {/* ── GUEST LOGIN & PROFILE MODAL SHEET ── */}
+      {isGuestLoginModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsGuestLoginModalOpen(false)}>
+          <div className="bottom-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-handle"></div>
+
+            <div className="sheet-header">
+              <div>
+                <span style={{ fontSize: '10px', color: 'var(--brand-gold-dark)', fontWeight: 700, letterSpacing: 1 }}>
+                  OZKAFE ANASSA · GUEST ACCESS
+                </span>
+                <h2>{customerPhone ? 'Edit Guest Profile' : 'Guest Login & Fast Checkout'}</h2>
+                <div style={{ fontSize: 11.5, color: 'var(--text-grey)', marginTop: 2 }}>
+                  Saved securely on your device for instant 1-tap ordering
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => setIsGuestLoginModalOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="sheet-content" style={{ padding: '16px 20px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {isContactPickerSupported && (
+                <button
+                  type="button"
+                  onClick={handlePickFromContacts}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: '10px 14px',
+                    background: 'linear-gradient(135deg, #2D1A10, #3E2415)',
+                    color: '#FFFFFF',
+                    border: '1px solid rgba(166, 107, 51, 0.4)',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  <span>📱</span> Auto-Select Phone from Device Contacts
+                </button>
+              )}
+
+              <div>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: 5 }}>
+                  Mobile Number (for order notifications & status) *
+                </label>
+                <input
+                  type="tel"
+                  name="tel"
+                  autoComplete="tel mobile"
+                  inputMode="tel"
+                  id="guest-login-phone"
+                  className="instructions-input"
+                  placeholder="10-digit mobile number"
+                  value={customerPhone}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  maxLength={10}
+                  required
+                  style={{ fontSize: 15 }}
+                />
+                {phoneError && (
+                  <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                    ⚠️ {phoneError}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: 5 }}>
+                  Your Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  autoComplete="name"
+                  id="guest-login-name"
+                  className="instructions-input"
+                  placeholder="e.g. Rahul Sen"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  required
+                  style={{ fontSize: 15 }}
+                />
+              </div>
+
+              {(initialTable === 'Takeaway' || initialTable === '0' || String(initialTable).toLowerCase() === 'takeaway') && (
+                <div style={{ background: '#FFFDF9', padding: '12px 14px', border: `1.5px solid ${flatError ? '#DC2626' : 'var(--brand-gold)'}`, borderRadius: 12 }}>
+                  <label style={{ fontSize: 11.5, fontWeight: 700, color: flatError ? '#DC2626' : 'var(--brand-accent)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                    <span>🏢</span> Flat / Apartment Number (Mandatory for Takeaway) *
+                  </label>
+                  <input
+                    type="text"
+                    name="flat"
+                    id="guest-login-flat"
+                    className="instructions-input"
+                    placeholder="e.g. 14B or Tower 2 - 14B"
+                    value={customerFlat}
+                    onChange={(e) => handleFlatChange(e.target.value)}
+                    required
+                    style={{ fontSize: 14, background: '#FFFFFF', borderColor: flatError ? '#DC2626' : undefined }}
+                  />
+                  {flatError ? (
+                    <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                      ⚠️ {flatError}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 10.5, color: '#7C4A1E', marginTop: 4, display: 'block' }}>
+                      Required for Anassa flat delivery (must contain both digits & letters, e.g. 14B)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleaned = sanitizePhoneNumber(customerPhone);
+                    if (!cleaned || cleaned.length !== 10) {
+                      alert('Please enter a valid 10-digit mobile number.');
+                      return;
+                    }
+                    if (!customerName.trim()) {
+                      alert('Please enter your name.');
+                      return;
+                    }
+                    const isTakeaway = initialTable === 'Takeaway' || initialTable === '0' || String(initialTable).toLowerCase() === 'takeaway';
+                    if (isTakeaway && !customerFlat.trim()) {
+                      setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
+                      alert('Please enter your Flat Number for Takeaway / In-Flat order (e.g. 14B or Tower 2 - 14B).');
+                      return;
+                    }
+                    if (customerFlat.trim()) {
+                      const hasDigits = /\d/.test(customerFlat);
+                      const hasLetters = /[a-zA-Z]/.test(customerFlat);
+                      if (!hasDigits || !hasLetters) {
+                        setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
+                        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+                        return;
+                      }
+                    }
+                    const profileData = {
+                      name: customerName.trim(),
+                      phone: cleaned,
+                      flat: customerFlat.trim(),
+                    };
+                    localStorage.setItem('anassa_guest_profile', JSON.stringify(profileData));
+                    localStorage.setItem('anassa_billing_details', JSON.stringify(profileData));
+                    setIsGuestProfileSaved(true);
+                    setIsEditingGuestProfile(false);
+                    setIsGuestLoginModalOpen(false);
+                  }}
+                  className="btn-solid"
+                  style={{ height: 44, fontSize: 14, flex: 1, borderRadius: 12 }}
+                >
+                  ✓ Save Profile & Continue
+                </button>
+
+                {customerPhone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Clear saved guest profile on this device?')) {
+                        localStorage.removeItem('anassa_guest_profile');
+                        localStorage.removeItem('anassa_billing_details');
+                        setCustomerPhone('');
+                        setCustomerName('');
+                        setCustomerFlat('');
+                        setIsGuestProfileSaved(false);
+                        setIsEditingGuestProfile(true);
+                        setIsGuestLoginModalOpen(false);
+                      }
+                    }}
+                    className="btn-outline"
+                    style={{ height: 44, fontSize: 12, padding: '0 12px', borderRadius: 12, borderColor: '#DC2626', color: '#DC2626' }}
+                  >
+                    Logout
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── CART MODAL SHEET ── */}
       {isCartOpen && (
         <div className="modal-overlay" onClick={() => setIsCartOpen(false)}>
@@ -1479,7 +1674,10 @@ export default function CustomerMenu({
                         </div>
                         <button
                           type="button"
-                          onClick={() => setIsEditingGuestProfile(true)}
+                          onClick={() => {
+                            setIsEditingGuestProfile(true);
+                            setIsGuestLoginModalOpen(true);
+                          }}
                           style={{
                             background: '#FFFFFF',
                             border: '1px solid rgba(166, 107, 51, 0.3)',
@@ -1491,7 +1689,7 @@ export default function CustomerMenu({
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          Edit Profile
                         </button>
                       </div>
                     ) : (
