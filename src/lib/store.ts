@@ -81,6 +81,13 @@ export async function getCategories(): Promise<Category[]> {
         .select('*')
         .order('sort_order', { ascending: true });
       if (!error && data && data.length >= initialCategories.length) {
+        // Count items per category
+        const items = await getMenuItems();
+        const counts: Record<string, number> = {};
+        items.forEach((it) => {
+          counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
+        });
+
         return data.map((c) => ({
           id: c.id,
           title: c.title,
@@ -89,6 +96,7 @@ export async function getCategories(): Promise<Category[]> {
           heroLabel: c.hero_label || '',
           iconSvg: c.icon_svg,
           sortOrder: c.sort_order,
+          itemsCount: counts[c.id] || 0,
         }));
       } else {
         // Auto-sync categories if Supabase table has fewer categories

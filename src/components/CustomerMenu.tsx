@@ -63,7 +63,6 @@ export default function CustomerMenu({
 
   // Cart & Orders
   const [cart, setCart] = useState<Record<string, CartItem>>({});
-  const [specialNote, setSpecialNote] = useState('');
   const [customerFlat, setCustomerFlat] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -96,6 +95,29 @@ export default function CustomerMenu({
   const flattenedItems = useMemo(() => {
     return items;
   }, [items]);
+
+  // Real-time count of items per category (ensures counts never show 0)
+  const categoryItemCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    flattenedItems.forEach((it) => {
+      counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
+    });
+    return counts;
+  }, [flattenedItems]);
+
+  // Menu Directory Drawer Search & Expanded Dropdowns
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [expandedCatIds, setExpandedCatIds] = useState<Record<string, boolean>>({
+    'hot-coffee': true,
+  });
+
+  const toggleCategoryDropdown = (catId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExpandedCatIds((prev) => ({
+      ...prev,
+      [catId]: !prev[catId],
+    }));
+  };
 
   const activeItem: MenuItem | undefined = flattenedItems[activeItemIdx] || flattenedItems[0];
   const activeCategory: Category | undefined = categories[activeCategoryIdx] || categories[0];
@@ -759,7 +781,7 @@ export default function CustomerMenu({
         subtotal: cartSubtotal,
         taxAmount: cartTax,
         total: cartGrandTotal,
-        specialInstructions: specialNote.trim(),
+        specialInstructions: '',
       };
 
       const res = await fetch('/api/orders', {
@@ -795,7 +817,6 @@ export default function CustomerMenu({
 
       // Clear cart
       setCart({});
-      setSpecialNote('');
       setIsCartOpen(false);
 
       // Trigger celebration confetti
@@ -1010,9 +1031,9 @@ export default function CustomerMenu({
               />
             )}
             <span className="cat-pill-text">{cat.title}</span>
-            {cat.itemsCount !== undefined && (
-              <span className="cat-pill-count">{cat.itemsCount}</span>
-            )}
+            <span className="cat-pill-count">
+              {categoryItemCounts[cat.id] ?? cat.itemsCount ?? 0}
+            </span>
           </button>
         ))}
       </nav>
@@ -1174,7 +1195,7 @@ export default function CustomerMenu({
             <line x1="12" y1="8" x2="12" y2="16"></line>
             <line x1="8" y1="12" x2="16" y2="12"></line>
           </svg>
-          NOTE / ADDONS
+          ADD-ONS
         </button>
 
         <button
@@ -1193,59 +1214,155 @@ export default function CustomerMenu({
         </button>
       </footer>
 
-      {/* ── CATEGORIES MODAL SHEET ── */}
+      {/* ── PROFESSIONAL MENU DIRECTORY SIDEBAR / DRAWER ── */}
       {isCategoriesOpen && (
         <div className="modal-overlay" onClick={() => setIsCategoriesOpen(false)}>
           <div className="bottom-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-handle"></div>
-            <div className="sheet-header">
-              <div>
-                <span style={{ fontSize: '10px', color: 'var(--brand-gold-dark)', fontWeight: 700, letterSpacing: 1 }}>
-                  OZKAFE DIRECTORY
-                </span>
-                <h2>Menu Categories</h2>
-              </div>
-              <button className="btn-close" onClick={() => setIsCategoriesOpen(false)}>×</button>
-            </div>
-            <div className="sheet-content">
-              {categories.map((cat, idx) => (
-                <div
-                  key={cat.id}
-                  onClick={() => {
-                    handleSelectCategory(idx);
-                    setIsCategoriesOpen(false);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '14px 0',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    cursor: 'pointer',
-                  }}
+
+            <div className="directory-sheet-header">
+              <div className="directory-badge-row">
+                <span className="directory-tag">OZKAFE MENU DIRECTORY · ANASSA</span>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setIsCategoriesOpen(false)}
+                  aria-label="Close directory"
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div
-                      style={{ color: 'var(--brand-gold-dark)', display: 'flex' }}
-                      dangerouslySetInnerHTML={{ __html: cat.iconSvg || '☕' }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{cat.title}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-grey)' }}>{cat.subtitle}</div>
-                    </div>
+                  ×
+                </button>
+              </div>
+              <h2>Menu Categories & Brews</h2>
+              <div className="directory-sheet-sub">
+                100% Pure Veg Artisan Cafe · {flattenedItems.length} Handcrafted Dishes & Brews
+              </div>
+
+              {/* Instant Search Bar */}
+              <div className="directory-search-wrapper">
+                <svg className="directory-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="text"
+                  className="directory-search-input"
+                  placeholder="Search drinks, dishes, desserts..."
+                  value={directorySearch}
+                  onChange={(e) => setDirectorySearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="directory-content-list">
+              {categories.map((cat, idx) => {
+                const totalInCat = categoryItemCounts[cat.id] || 0;
+                const catDishes = flattenedItems.filter((it) => it.categoryId === cat.id);
+
+                // If user is searching, filter dishes
+                const searchQ = directorySearch.trim().toLowerCase();
+                const filteredDishes = searchQ
+                  ? catDishes.filter(
+                      (d) =>
+                        d.name.toLowerCase().includes(searchQ) ||
+                        (d.subheading && d.subheading.toLowerCase().includes(searchQ)) ||
+                        (d.desc && d.desc.toLowerCase().includes(searchQ))
+                    )
+                  : catDishes;
+
+                // When searching, auto-expand if there are matches
+                const isExpanded = searchQ ? filteredDishes.length > 0 : !!expandedCatIds[cat.id];
+
+                if (searchQ && filteredDishes.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div key={cat.id} className={`directory-cat-card ${idx === activeCategoryIdx ? 'active' : ''}`}>
+                    <button
+                      type="button"
+                      className="directory-cat-header-btn"
+                      onClick={() => toggleCategoryDropdown(cat.id)}
+                    >
+                      <div className="directory-cat-left">
+                        <div
+                          className="directory-cat-icon"
+                          dangerouslySetInnerHTML={{ __html: cat.iconSvg || '☕' }}
+                        />
+                        <div className="directory-cat-title-wrap">
+                          <span className="directory-cat-title">{cat.title}</span>
+                          <span className="directory-cat-subtitle">{cat.subtitle}</span>
+                        </div>
+                      </div>
+
+                      <div className="directory-cat-right">
+                        <span className="directory-count-badge">
+                          {totalInCat} items
+                        </span>
+                        <div className={`directory-chevron-btn ${isExpanded ? 'open' : ''}`}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                          </svg>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Sub-category / Dishes dropdown */}
+                    {isExpanded && (
+                      <div className="directory-dishes-dropdown">
+                        {filteredDishes.map((dish) => {
+                          const dishIndex = flattenedItems.findIndex((it) => it.id === dish.id);
+                          return (
+                            <div
+                              key={dish.id}
+                              className="directory-dish-item"
+                              onClick={() => {
+                                if (dishIndex !== -1) {
+                                  handleSelectItem(dishIndex);
+                                }
+                                setIsCategoriesOpen(false);
+                              }}
+                            >
+                              <div className="directory-dish-left">
+                                <Image
+                                  src={dish.img}
+                                  alt={dish.name}
+                                  width={38}
+                                  height={38}
+                                  className="directory-dish-thumb"
+                                />
+                                <div className="directory-dish-info">
+                                  <span className="directory-dish-name">{dish.name}</span>
+                                  {dish.subheading && (
+                                    <span className="directory-dish-sub">{dish.subheading}</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="directory-dish-right">
+                                <span className="directory-dish-price">₹{dish.price}</span>
+                                <span className="veg-icon-box" style={{ width: 11, height: 11 }}>
+                                  <span className="veg-icon-dot" style={{ width: 5, height: 5 }}></span>
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          className="directory-jump-btn"
+                          onClick={() => {
+                            handleSelectCategory(idx);
+                            setIsCategoriesOpen(false);
+                          }}
+                        >
+                          Explore All {cat.title} in Main View →
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    background: 'var(--bg-surface-light)',
-                    padding: '3px 8px',
-                    borderRadius: 999,
-                    color: 'var(--text-grey)'
-                  }}>
-                    {cat.itemsCount ?? 0} items
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1321,15 +1438,6 @@ export default function CustomerMenu({
                       ))}
                     </div>
                   </div>
-
-                  {/* Preparation Note */}
-                  <textarea
-                    className="instructions-input"
-                    placeholder="Any special preparation instructions? (e.g. Less sugar, extra hot...)"
-                    rows={2}
-                    value={specialNote}
-                    onChange={(e) => setSpecialNote(e.target.value)}
-                  />
 
                   {/* Guest Identification & Frictionless Details */}
                   <div style={{ marginTop: 18, borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 16 }}>
