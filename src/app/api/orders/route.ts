@@ -79,18 +79,22 @@ export async function GET(request: Request) {
     if (table) {
       const isStaff = verifyAuthHeaderOrCookie(request, ['kitchen', 'admin']);
       const tableSession = getTableSessionFromRequest(request, table);
+      const knownIds = searchParams.get('knownIds')?.split(',').map((s) => s.trim()).filter(Boolean);
+      const phone = searchParams.get('phone')?.trim();
 
-      // If not staff, enforce session filter so user only sees their own session's orders
+      // If not staff, enforce session filter or knownIds or phone so user only sees their own session's orders
       const filterSession = !isStaff ? (sessionId || tableSession?.sessionId) : undefined;
 
-      // Prevent data leakage: unauthenticated guest without a session cannot see any table orders
-      if (!isStaff && !filterSession) {
+      // Prevent data leakage: unauthenticated guest without a session, knownIds, or phone cannot see table orders
+      if (!isStaff && !filterSession && (!knownIds || knownIds.length === 0) && !phone) {
         return NextResponse.json([]);
       }
 
       const tableOrders = await getOrders({
         tableNumber: table,
         sessionId: filterSession,
+        knownIds: !isStaff ? knownIds : undefined,
+        phone: !isStaff && phone ? phone : undefined,
         status: 'active',
       });
 

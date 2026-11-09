@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { MenuItem, Category, Order, CafeSettings, AuditLog, StaffShift, OrderStatus, StaffUser } from '@/lib/types';
 import StaffAuthModal from '@/components/StaffAuthModal';
 import AccountPanel from '@/components/AccountPanel';
+import SearchableDishPicker from '@/components/SearchableDishPicker';
 
 // ── CURRENCY FORMATTER ──
 const formatCurrency = (val: number): string => {
@@ -16,6 +17,13 @@ const formatCurrency = (val: number): string => {
 // ── TIME ELAPSED HELPER ──
 const getElapsedMinutes = (timestamp: number): number => {
   return Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+};
+
+// Helper to get admin authorization headers (supports Bearer token for seamless cross-device auth)
+const getAdminAuthHeaders = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('oz_admin_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 export default function AdminPage() {
@@ -196,9 +204,9 @@ export default function AdminPage() {
   const fetchAdminData = useCallback(async () => {
     try {
       const [adminRes, menuRes, ordersRes] = await Promise.all([
-        fetch('/api/admin'),
-        fetch('/api/menu'),
-        fetch('/api/orders?all=true'),
+        fetch('/api/admin', { headers: getAdminAuthHeaders() }),
+        fetch('/api/menu', { headers: getAdminAuthHeaders() }),
+        fetch('/api/orders?all=true', { headers: getAdminAuthHeaders() }),
       ]);
 
       if (adminRes.status === 401) {
@@ -234,7 +242,7 @@ export default function AdminPage() {
 
   const fetchAuditLogs = async () => {
     try {
-      const res = await fetch('/api/audit-logs');
+      const res = await fetch('/api/audit-logs', { headers: getAdminAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.logs) setAuditLogs(data.logs);
@@ -246,7 +254,7 @@ export default function AdminPage() {
 
   const fetchTables = async () => {
     try {
-      const res = await fetch('/api/tables');
+      const res = await fetch('/api/tables', { headers: getAdminAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) setTablesList(data);
@@ -269,7 +277,9 @@ export default function AdminPage() {
 
   // Check persistent admin session on mount (do NOT lock on refresh!)
   useEffect(() => {
-    fetch(`/api/admin/auth?_t=${Date.now()}`)
+    fetch(`/api/admin/auth?_t=${Date.now()}`, {
+      headers: getAdminAuthHeaders(),
+    })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
@@ -278,7 +288,9 @@ export default function AdminPage() {
             if (data.staff.email?.toLowerCase().trim() === 'mamonix109@gmail.com') {
               setIsAuthenticated(false);
               setCurrentUser(null);
-              await fetch('/api/admin/auth', { method: 'DELETE' });
+              localStorage.removeItem('oz_admin_token');
+              localStorage.removeItem('anassa_admin_session');
+              await fetch('/api/admin/auth', { method: 'DELETE', headers: getAdminAuthHeaders() });
               alert('Access denied: mamonix109@gmail.com is strictly prohibited from accessing the Admin panel.');
               return;
             }
@@ -296,8 +308,9 @@ export default function AdminPage() {
   const handleLogout = async () => {
     if (!confirm('Lock Admin session and sign out?')) return;
     try {
+      localStorage.removeItem('oz_admin_token');
       localStorage.removeItem('anassa_admin_session');
-      await fetch('/api/admin/auth', { method: 'DELETE' });
+      await fetch('/api/admin/auth', { method: 'DELETE', headers: getAdminAuthHeaders() });
     } finally {
       setIsAuthenticated(false);
       setCurrentUser(null);
@@ -318,7 +331,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/menu', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({ id: itemId, isAvailable: nextAvailable, stock: nextStock }),
       });
       if (res.status === 401) {
@@ -341,7 +357,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/menu', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({ id: itemId, stock: finalStock, isAvailable }),
       });
       if (!res.ok) {
@@ -356,7 +375,10 @@ export default function AdminPage() {
     if (!confirm('Are you sure you want to delete this menu dish?')) return;
     setMenuItems((prev) => prev.filter((it) => it.id !== itemId));
     try {
-      await fetch(`/api/menu?id=${itemId}`, { method: 'DELETE' });
+      await fetch(`/api/menu?id=${itemId}`, {
+        method: 'DELETE',
+        headers: getAdminAuthHeaders(),
+      });
     } catch {
       fetchAdminData();
     }
@@ -368,7 +390,10 @@ export default function AdminPage() {
       const sizesArray = formSizes.split(',').map((s) => s.trim()).filter(Boolean);
       const res = await fetch('/api/menu', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({
           name: formName,
           category: formCategory,
@@ -408,7 +433,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/menu', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify(editingItem),
       });
 
@@ -435,7 +463,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({ id: orderId, status: nextStatus }),
       });
       if (res.ok) {
@@ -451,7 +482,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({
           id: orderId,
           action: 'settle_bill',
@@ -484,7 +518,10 @@ export default function AdminPage() {
     try {
       await fetch('/api/admin?action=update_staff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({ id: staffId, status: newStatus }),
       });
     } catch {
@@ -520,7 +557,10 @@ export default function AdminPage() {
 
       const res = await fetch('/api/admin?action=manual_order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({
           tableNumber: manualTable,
           customerName: manualGuest.trim() || 'Counter Guest',
@@ -662,7 +702,10 @@ export default function AdminPage() {
 
       const res = await fetch('/api/admin?action=edit_order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({
           orderId: editingReceiptOrder.id,
           updates,
@@ -693,7 +736,10 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/admin?action=delete_order`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify({ orderId: ord.id }),
       });
       if (res.ok) {
@@ -719,7 +765,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
 
@@ -748,7 +797,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin?action=purge_database', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
       });
 
       if (res.ok) {
@@ -783,7 +835,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin?action=sync_menu', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAdminAuthHeaders(),
+        },
       });
       if (res.ok) {
         await fetchAdminData();
@@ -3152,27 +3207,19 @@ export default function AdminPage() {
                 {/* 4. Dish Selection */}
                 <div className="admin-form-group">
                   <label className="admin-form-label">Select Dish / Beverage</label>
-                  <select
-                    value={manualSelectedItemId}
-                    onChange={(e) => {
-                      setManualSelectedItemId(e.target.value);
-                      const it = menuItems.find((m) => m.id === e.target.value);
-                      if (it && it.sizes && it.sizes.length > 0) {
-                        setManualSelectedSize(it.sizes[0]);
+                  <SearchableDishPicker
+                    items={menuItems}
+                    selectedId={manualSelectedItemId}
+                    placeholder="🔍 Search dish or beverage..."
+                    onSelect={(selectedDish) => {
+                      setManualSelectedItemId(selectedDish.id);
+                      if (selectedDish.sizes && selectedDish.sizes.length > 0) {
+                        setManualSelectedSize(selectedDish.sizes[0]);
                       } else {
                         setManualSelectedSize('Regular');
                       }
                     }}
-                    required
-                    className="admin-form-select"
-                  >
-                    <option value="">-- Choose a dish / beverage --</option>
-                    {menuItems.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} — ₹{m.price} ({m.stock !== undefined ? `${m.stock} left` : '10 left'}) · {m.category}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* 5. Quantity & Size */}
@@ -3238,19 +3285,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* 6. Special Instructions */}
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Special Instructions / Notes (Optional)</label>
-                  <input
-                    type="text"
-                    value={manualInstructions}
-                    onChange={(e) => setManualInstructions(e.target.value)}
-                    placeholder="e.g. Less spicy, extra sauce, oat milk, VIP guest"
-                    className="admin-form-input"
-                  />
-                </div>
-
-                {/* 7. Live Pricing Preview */}
+                {/* 6. Live Pricing Preview */}
                 {(() => {
                   const sel = menuItems.find((m) => m.id === manualSelectedItemId);
                   if (!sel) return null;
@@ -3667,26 +3702,21 @@ export default function AdminPage() {
                       </div>
                     ))}
 
-                    {/* Add Item Row */}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px dashed var(--adm-border)' }}>
-                      <select
-                        value={editAddItemId}
-                        onChange={(e) => setEditAddItemId(e.target.value)}
-                        className="admin-form-select"
-                        style={{ fontSize: 12 }}
-                      >
-                        <option value="">-- Add another dish to receipt --</option>
-                        {menuItems.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name} (₹{m.price})
-                          </option>
-                        ))}
-                      </select>
+                    {/* Searchable Add Item Row */}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px dashed var(--adm-border)', alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <SearchableDishPicker
+                          items={menuItems}
+                          selectedId={editAddItemId}
+                          placeholder="🔍 Search dish to add to receipt..."
+                          onSelect={(m) => setEditAddItemId(m.id)}
+                        />
+                      </div>
                       <button
                         type="button"
                         onClick={handleAddDishToEditReceipt}
                         className="admin-alert-action-btn"
-                        style={{ whiteSpace: 'nowrap', fontWeight: 700 }}
+                        style={{ whiteSpace: 'nowrap', fontWeight: 700, height: 38 }}
                       >
                         + Add
                       </button>
@@ -3716,18 +3746,6 @@ export default function AdminPage() {
                     </div>
                   );
                 })()}
-
-                {/* 6. Special Notes */}
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Notes / Instructions</label>
-                  <input
-                    type="text"
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    className="admin-form-input"
-                    placeholder="e.g. Corrected portion quantity"
-                  />
-                </div>
               </div>
 
               <div className="admin-modal-footer">

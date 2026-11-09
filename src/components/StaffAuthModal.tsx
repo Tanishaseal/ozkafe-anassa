@@ -78,6 +78,9 @@ export default function StaffAuthModal({
       const data = await res.json();
       if (res.ok && data.user) {
         localStorage.setItem(`oz_last_id_${consoleType}`, cleanId);
+        if (data.token) {
+          localStorage.setItem(`oz_${consoleType}_token`, data.token);
+        }
         // Immediately authenticate and unlock console!
         onAuthenticated(data.user);
       } else {

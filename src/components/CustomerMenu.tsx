@@ -72,6 +72,38 @@ export default function CustomerMenu({
   const [cartBadgePop, setCartBadgePop] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // Live Main Menu Search Bar (for easy dish discovery across all categories)
+  const [menuSearch, setMenuSearch] = useState('');
+
+  const searchResults = useMemo(() => {
+    const q = menuSearch.trim().toLowerCase();
+    if (!q) return [];
+    return items.filter(
+      (it) =>
+        it.name.toLowerCase().includes(q) ||
+        (it.subheading && it.subheading.toLowerCase().includes(q)) ||
+        (it.category && it.category.toLowerCase().includes(q)) ||
+        (it.desc && it.desc.toLowerCase().includes(q))
+    );
+  }, [items, menuSearch]);
+
+  const handleSelectSearchResult = (searchedItem: MenuItem) => {
+    const catIdx = categories.findIndex((c) => c.id === searchedItem.categoryId);
+    if (catIdx !== -1) {
+      setActiveCategoryIdx(catIdx);
+      const catItems = items.filter((it) => it.categoryId === searchedItem.categoryId);
+      const itemIdx = catItems.findIndex((it) => it.id === searchedItem.id);
+      if (itemIdx !== -1) {
+        setActiveItemIdx(itemIdx);
+      }
+    }
+    setQuantity(1);
+    setMenuSearch('');
+    setTimeout(() => {
+      heroImageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  };
+
   // Cart impact & interaction refs
   const [cartImpactActive, setCartImpactActive] = useState(false);
   const cartBtnRef = useRef<HTMLButtonElement>(null);
@@ -232,18 +264,25 @@ export default function CustomerMenu({
       // 3. Authenticate table & obtain/recover Session ID
       const sessionKey = `anassa_session_${initialTable}`;
       let existingSessionId = localStorage.getItem(sessionKey) || '';
+      if (!existingSessionId) {
+        existingSessionId = `sess_${initialTable}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        localStorage.setItem(sessionKey, existingSessionId);
+      }
+      setTableSessionId(existingSessionId);
 
       try {
-        const queryUrl = initialKey
-          ? `/api/tables?table=${encodeURIComponent(initialTable)}&key=${encodeURIComponent(initialKey)}`
-          : `/api/tables?table=${encodeURIComponent(initialTable)}`;
+        const queryParams = new URLSearchParams({
+          table: String(initialTable),
+          session: existingSessionId,
+        });
+        if (initialKey) queryParams.set('key', initialKey);
 
-        const res = await fetch(queryUrl);
+        const res = await fetch(`/api/tables?${queryParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
           setIsTableVerified(Boolean(data.isVerified || data.valid));
 
-          if (data.sessionId) {
+          if (data.sessionId && data.sessionId !== existingSessionId) {
             existingSessionId = data.sessionId;
             localStorage.setItem(sessionKey, existingSessionId);
             setTableSessionId(existingSessionId);
@@ -263,12 +302,6 @@ export default function CustomerMenu({
       } catch (err) {
         console.warn('Table validation error:', err);
       }
-
-      if (!existingSessionId) {
-        existingSessionId = `sess_${initialTable}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        localStorage.setItem(sessionKey, existingSessionId);
-      }
-      setTableSessionId(existingSessionId);
 
       // 4. Fetch active orders for this specific table session (Restores state if page closed and re-scanned!)
       fetchSessionOrders(initialTable, existingSessionId);
@@ -297,13 +330,42 @@ export default function CustomerMenu({
     }
   }, [customerFlat, customerName, customerPhone]);
 
-  // Fetch orders strictly bound to this dining session
+  // Fetch orders strictly bound to this dining session + recover local placed orders
   const fetchSessionOrders = async (tbl: string, sessId: string) => {
     try {
-      const res = await fetch(`/api/orders?table=${encodeURIComponent(tbl)}&session=${encodeURIComponent(sessId)}&_t=${Date.now()}`);
+      const savedOrdersStr = typeof window !== 'undefined' ? localStorage.getItem('anassa_orders') : null;
+      let knownIds = '';
+      if (savedOrdersStr) {
+        try {
+          const ids: string[] = JSON.parse(savedOrdersStr);
+          if (Array.isArray(ids) && ids.length > 0) {
+            knownIds = ids.slice(0, 15).join(',');
+          }
+        } catch {}
+      }
+
+      const qParams = new URLSearchParams({
+        table: String(tbl),
+        _t: String(Date.now()),
+      });
+      if (sessId) qParams.set('session', sessId);
+      if (knownIds) qParams.set('knownIds', knownIds);
+      if (customerPhone) qParams.set('phone', customerPhone);
+
+      const res = await fetch(`/api/orders?${qParams.toString()}`);
       if (res.ok) {
         const data: Order[] = await res.json();
-        setActiveOrders(data);
+        if (Array.isArray(data)) {
+          if (data.length > 0) {
+            setActiveOrders(data);
+          } else {
+            // Guard: Retain active orders placed within the last 10 minutes so tracker never flashes empty
+            setActiveOrders((prev) => {
+              const recent = prev.filter((o) => Date.now() - o.createdAt < 10 * 60 * 1000);
+              return recent.length > 0 ? recent : [];
+            });
+          }
+        }
       }
     } catch (err) {
       console.warn('Fetch session orders error:', err);
@@ -799,11 +861,19 @@ export default function CustomerMenu({
       const data = await res.json();
       const placedOrder: Order = data.order;
 
-      // Save to localStorage
+      // Ensure session ID is synchronized with server response
+      if (data.sessionId) {
+        setTableSessionId(data.sessionId);
+        localStorage.setItem(`anassa_session_${initialTable}`, data.sessionId);
+      }
+
+      // Save to localStorage for persistent state recovery
       const savedOrdersStr = localStorage.getItem('anassa_orders');
       const savedOrders: string[] = savedOrdersStr ? JSON.parse(savedOrdersStr) : [];
-      savedOrders.unshift(placedOrder.id);
-      localStorage.setItem('anassa_orders', JSON.stringify(savedOrders));
+      if (!savedOrders.includes(placedOrder.id)) {
+        savedOrders.unshift(placedOrder.id);
+      }
+      localStorage.setItem('anassa_orders', JSON.stringify(savedOrders.slice(0, 30)));
 
       // Save guest profile for 1-tap ordering on next visit
       localStorage.setItem('anassa_guest_profile', JSON.stringify({
@@ -814,7 +884,7 @@ export default function CustomerMenu({
       setIsGuestProfileSaved(true);
       setIsEditingGuestProfile(false);
 
-      setActiveOrders((prev) => [placedOrder, ...prev]);
+      setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id)]);
 
       // Clear cart
       setCart({});
@@ -1038,6 +1108,71 @@ export default function CustomerMenu({
           </button>
         ))}
       </nav>
+
+      {/* ── ALL MENU INSTANT SEARCH BAR ── */}
+      <div className="main-menu-search-container">
+        <div className="main-menu-search-bar">
+          <svg className="main-menu-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="text"
+            className="main-menu-search-input"
+            placeholder="Search all 76 coffees, bites & desserts..."
+            value={menuSearch}
+            onChange={(e) => setMenuSearch(e.target.value)}
+          />
+          {menuSearch && (
+            <button
+              type="button"
+              className="main-menu-search-clear"
+              onClick={() => setMenuSearch('')}
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Live Search Results Dropdown */}
+        {menuSearch.trim() && (
+          <div className="main-menu-search-results-box">
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#78716C', padding: '4px 6px' }}>
+              {searchResults.length} dish{searchResults.length === 1 ? '' : 'es'} found for &ldquo;{menuSearch}&rdquo;
+            </div>
+            {searchResults.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', fontSize: 12.5, color: '#78716C' }}>
+                No dishes found. Try searching for &quot;Latte&quot;, &quot;Cold&quot;, &quot;Pasta&quot;, or &quot;Cake&quot;.
+              </div>
+            ) : (
+              searchResults.map((item) => (
+                <div
+                  key={item.id}
+                  className="main-menu-search-result-item"
+                  onClick={() => handleSelectSearchResult(item)}
+                >
+                  <Image
+                    src={item.img}
+                    alt={item.name}
+                    width={48}
+                    height={48}
+                    className="main-menu-search-result-img"
+                  />
+                  <div className="main-menu-search-result-info">
+                    <div className="main-menu-search-result-name">{item.name}</div>
+                    <div className="main-menu-search-result-meta">
+                      <span>{item.category}</span>
+                      {item.subheading && <span>· {item.subheading}</span>}
+                    </div>
+                  </div>
+                  <div className="main-menu-search-result-price">₹{item.price}</div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── HERO SPOTLIGHT SECTION ── */}
       <section className="hero-section">
@@ -1924,6 +2059,11 @@ export default function CustomerMenu({
                   const isReceived = ['received', 'preparing', 'ready', 'served'].includes(ord.status);
                   const isPreparing = ['preparing', 'ready', 'served'].includes(ord.status);
                   const isReady = ['ready', 'served'].includes(ord.status);
+                  const isServed = ord.status === 'served';
+
+                  const badgeBg = isServed ? '#DCFCE7' : ord.status === 'ready' ? '#DCFCE7' : ord.status === 'preparing' ? '#FEF3C7' : '#FEE2E2';
+                  const badgeColor = isServed ? '#166534' : ord.status === 'ready' ? '#166534' : ord.status === 'preparing' ? '#92400E' : '#991B1B';
+                  const badgeText = isServed ? 'Served / Completed' : ord.status;
 
                   return (
                     <div
@@ -1940,7 +2080,7 @@ export default function CustomerMenu({
                         <div>
                           <span style={{ fontWeight: 800, fontSize: 15 }}>{ord.orderNumber}</span>
                           <span style={{ fontSize: 12, color: 'var(--text-grey)', marginLeft: 8 }}>
-                            ({ord.tableNumber === 'Takeaway' ? 'Takeaway' : `Table ${ord.tableNumber}`})
+                            ({ord.tableNumber === 'Takeaway' || ord.tableNumber === 0 ? 'Takeaway' : `Table ${ord.tableNumber}`})
                           </span>
                           <div style={{ fontSize: 11, color: 'var(--text-grey)', marginTop: 2 }}>
                             📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
@@ -1952,10 +2092,10 @@ export default function CustomerMenu({
                           padding: '3px 10px',
                           borderRadius: 999,
                           textTransform: 'uppercase',
-                          background: ord.status === 'ready' ? '#DCFCE7' : ord.status === 'preparing' ? '#FEF3C7' : '#FEE2E2',
-                          color: ord.status === 'ready' ? '#166534' : ord.status === 'preparing' ? '#92400E' : '#991B1B',
+                          background: badgeBg,
+                          color: badgeColor,
                         }}>
-                          {ord.status}
+                          {badgeText}
                         </span>
                       </div>
 
@@ -1969,10 +2109,16 @@ export default function CustomerMenu({
                           <span className="step-title">In Preparation</span>
                           <span className="step-desc">Barista & chef are preparing your order fresh</span>
                         </div>
-                        <div className={`timeline-step ${isReady ? 'current' : ''}`}>
+                        <div className={`timeline-step ${isReady ? (isServed ? 'completed' : 'current') : ''}`}>
                           <span className="step-title">Ready for Pickup / Serving</span>
-                          <span className="step-desc">Your order is ready to enjoy</span>
+                          <span className="step-desc">{isServed ? 'Prepared fresh and served' : 'Your order is ready to enjoy'}</span>
                         </div>
+                        {isServed && (
+                          <div className="timeline-step completed">
+                            <span className="step-title">✨ Order Completed</span>
+                            <span className="step-desc">Served fresh! Thank you for choosing Anassa.</span>
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-strong)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>

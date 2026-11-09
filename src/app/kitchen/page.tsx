@@ -5,6 +5,14 @@ import Image from 'next/image';
 import { Order, OrderStatus, StaffUser, MenuItem } from '@/lib/types';
 import StaffAuthModal from '@/components/StaffAuthModal';
 import AccountPanel from '@/components/AccountPanel';
+import SearchableDishPicker from '@/components/SearchableDishPicker';
+
+// Helper to get kitchen authorization headers (supports Bearer token for seamless cross-device auth)
+const getKitchenAuthHeaders = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('oz_kitchen_token') || localStorage.getItem('oz_admin_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 export default function KitchenDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -103,8 +111,10 @@ export default function KitchenDashboard() {
     fetchKitchenSettings();
     fetchMenuItems();
 
-    // Verify session with server
-    fetch(`/api/kitchen/auth?_t=${Date.now()}`)
+    // Verify session with server using Bearer token or cookie
+    fetch(`/api/kitchen/auth?_t=${Date.now()}`, {
+      headers: getKitchenAuthHeaders(),
+    })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
@@ -121,11 +131,15 @@ export default function KitchenDashboard() {
 
   const handleLogout = async () => {
     if (!confirm('Lock Kitchen Display and sign out?')) return;
+    localStorage.removeItem('oz_kitchen_token');
     localStorage.removeItem('anassa_kitchen_session');
     setIsAuthenticated(false);
     setCurrentUser(null);
     setIsAccountPanelOpen(false);
-    await fetch('/api/kitchen/auth', { method: 'DELETE' });
+    await fetch('/api/kitchen/auth', {
+      method: 'DELETE',
+      headers: getKitchenAuthHeaders(),
+    });
   };
 
   // Clock
@@ -149,7 +163,9 @@ export default function KitchenDashboard() {
   // Fetch active orders
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch(`/api/orders?status=active&_t=${Date.now()}`);
+      const res = await fetch(`/api/orders?status=active&_t=${Date.now()}`, {
+        headers: getKitchenAuthHeaders(),
+      });
       if (res.status === 401) {
         setIsAuthenticated(false);
         return;
@@ -182,7 +198,9 @@ export default function KitchenDashboard() {
   const fetchHistoryOrders = useCallback(async () => {
     setIsLoadingHistory(true);
     try {
-      const res = await fetch(`/api/orders?history=true&_t=${Date.now()}`);
+      const res = await fetch(`/api/orders?history=true&_t=${Date.now()}`, {
+        headers: getKitchenAuthHeaders(),
+      });
       if (res.ok) {
         const data: Order[] = await res.json();
         setHistoryOrders(data);
@@ -197,7 +215,9 @@ export default function KitchenDashboard() {
   // Fetch available menu items for receipt editing
   const fetchMenuItems = useCallback(async () => {
     try {
-      const res = await fetch('/api/menu');
+      const res = await fetch('/api/menu', {
+        headers: getKitchenAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.items) setAvailableMenuItems(data.items);
@@ -265,7 +285,10 @@ export default function KitchenDashboard() {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getKitchenAuthHeaders(),
+        },
         body: JSON.stringify({
           id: orderId,
           action: 'settle_bill',
@@ -390,7 +413,10 @@ export default function KitchenDashboard() {
 
       const res = await fetch('/api/orders', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getKitchenAuthHeaders(),
+        },
         body: JSON.stringify({
           id: editingReceiptOrder.id,
           action: 'edit_receipt',
@@ -436,7 +462,9 @@ export default function KitchenDashboard() {
     let items = availableMenuItems;
     if (!items || items.length === 0) {
       try {
-        const res = await fetch('/api/menu');
+        const res = await fetch('/api/menu', {
+          headers: getKitchenAuthHeaders(),
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.items) {
@@ -543,7 +571,10 @@ export default function KitchenDashboard() {
 
       const res = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getKitchenAuthHeaders(),
+        },
         body: JSON.stringify({
           action: 'kitchen_custom_order',
           tableNumber: customBillTable,
@@ -627,10 +658,14 @@ export default function KitchenDashboard() {
     fetchHistoryOrders();
     fetchMenuItems();
 
-    // 1. Server-Sent Events (SSE) Stream
+    // 1. Server-Sent Events (SSE) Stream with token fallback for strict cross-browser support
     let eventSource: EventSource | null = null;
     try {
-      eventSource = new EventSource('/api/orders/stream');
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('oz_kitchen_token') || localStorage.getItem('oz_admin_token') || '')
+        : '';
+      const streamUrl = token ? `/api/orders/stream?token=${encodeURIComponent(token)}` : '/api/orders/stream';
+      eventSource = new EventSource(streamUrl);
       eventSource.addEventListener('order', () => {
         fetchOrders();
         fetchHistoryOrders();
@@ -673,7 +708,10 @@ export default function KitchenDashboard() {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getKitchenAuthHeaders(),
+        },
         body: JSON.stringify({ id: orderId, status: nextStatus }),
       });
       if (res.status === 401) {
@@ -706,6 +744,18 @@ export default function KitchenDashboard() {
   const receivedOrders = orders.filter((o) => o.status === 'received');
   const preparingOrders = orders.filter((o) => o.status === 'preparing');
   const readyOrders = orders.filter((o) => o.status === 'ready');
+
+  // Dynamic window / tab title alert for kitchen staff
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (receivedOrders.length > 0) {
+      document.title = `🔔 (${receivedOrders.length}) NEW ORDER! - OZKAFE Kitchen`;
+    } else if (orders.length > 0) {
+      document.title = `(${orders.length} Active) - OZKAFE Kitchen`;
+    } else {
+      document.title = 'OZKAFE Kitchen Display (KDS)';
+    }
+  }, [receivedOrders.length, orders.length]);
 
   // Elapsed time calculation
   const getElapsedMinutes = (timestamp: number) => {
@@ -832,7 +882,13 @@ export default function KitchenDashboard() {
           className={`kds-view-btn ${kitchenViewMode === 'board' ? 'active' : ''}`}
         >
           <span>🍳 Live KDS Board</span>
-          <span className="kds-view-badge">{orders.length}</span>
+          {receivedOrders.length > 0 ? (
+            <span className="kds-view-badge" style={{ background: '#DC2626', color: '#FFF', fontWeight: 800 }}>
+              {receivedOrders.length} NEW
+            </span>
+          ) : (
+            <span className="kds-view-badge">{orders.length}</span>
+          )}
         </button>
 
         <button
@@ -1981,26 +2037,21 @@ export default function KitchenDashboard() {
                     </div>
                   ))}
 
-                  {/* Add dish dropdown */}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4, paddingTop: 8, borderTop: '1px dashed #D6D3D1' }}>
-                    <select
-                      value={editAddItemId}
-                      onChange={(e) => setEditAddItemId(e.target.value)}
-                      className="kds-search-input"
-                      style={{ fontSize: 12, flex: 1 }}
-                    >
-                      <option value="">-- Add another dish to receipt --</option>
-                      {availableMenuItems.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} (₹{m.price})
-                        </option>
-                      ))}
-                    </select>
+                  {/* Searchable Add dish picker */}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, paddingTop: 8, borderTop: '1px dashed #D6D3D1', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <SearchableDishPicker
+                        items={availableMenuItems}
+                        selectedId={editAddItemId}
+                        placeholder="🔍 Search dish to add..."
+                        onSelect={(dish) => setEditAddItemId(dish.id)}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddItem}
                       disabled={!editAddItemId}
-                      style={{ padding: '0 12px', background: '#5C381E', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 700, cursor: editAddItemId ? 'pointer' : 'not-allowed', fontSize: 12 }}
+                      style={{ height: 38, padding: '0 14px', background: '#5C381E', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 700, cursor: editAddItemId ? 'pointer' : 'not-allowed', fontSize: 12, whiteSpace: 'nowrap' }}
                     >
                       + Add
                     </button>
@@ -2030,21 +2081,6 @@ export default function KitchenDashboard() {
                   </div>
                 );
               })()}
-
-              {/* Special Instructions / Notes */}
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
-                  Correction Notes (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="e.g. Corrected quantity per guest request"
-                  className="kds-search-input"
-                  style={{ width: '100%' }}
-                />
-              </div>
 
               {/* Footer buttons */}
               <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
@@ -2254,19 +2290,19 @@ export default function KitchenDashboard() {
                         }}
                       >
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
-                          <select
-                            value={item.id}
-                            onChange={(e) => handleUpdateCustomBillItem(idx, { id: e.target.value })}
-                            className="kds-search-input"
-                            style={{ width: '100%', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-                            required
-                          >
-                            {availableMenuItems.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name} — ₹{m.price} · {m.category}
-                              </option>
-                            ))}
-                          </select>
+                          <SearchableDishPicker
+                            items={availableMenuItems}
+                            selectedId={item.id}
+                            onSelect={(selectedDish) => {
+                              handleUpdateCustomBillItem(idx, {
+                                id: selectedDish.id,
+                                name: selectedDish.name,
+                                price: selectedDish.price,
+                                category: selectedDish.category,
+                                selectedSize: selectedDish.sizes?.[0] || 'Regular',
+                              });
+                            }}
+                          />
                           {customBillItems.length > 1 && (
                             <button
                               type="button"
@@ -2454,22 +2490,7 @@ export default function KitchenDashboard() {
                 )}
               </div>
 
-              {/* 6. Special Instructions */}
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 4 }}>
-                  Special Instructions / Notes (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={customBillNotes}
-                  onChange={(e) => setCustomBillNotes(e.target.value)}
-                  placeholder="e.g. Previous walk-in counter bill, VIP guest, cash collected..."
-                  className="kds-search-input"
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              {/* 7. Live Bill Total */}
+              {/* 6. Live Bill Total */}
               {(() => {
                 const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
                 const taxAmount = Math.round((subtotal * 5) / 100);

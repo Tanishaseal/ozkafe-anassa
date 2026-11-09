@@ -1,6 +1,11 @@
 import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction, InventoryItem, StaffShift } from './types';
 import { initialCategories, initialMenuItems, initialAddons, initialSettings, initialInventory, initialStaff } from './initialData';
 import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
+import fs from 'fs';
+import path from 'path';
+
+// Local storage backup file path (persists in-memory state across restarts/workers)
+const STORE_BACKUP_FILE = path.join(process.cwd(), '.anassa_store.json');
 
 // In-memory persistent caches for ultra-fast response and zero-config local testing
 const globalStore = globalThis as unknown as {
@@ -50,6 +55,62 @@ if (!globalStore.__anassa_tables) {
     { tableNumber: 1, label: 'Table 1', secretKey: 'oz-anassa-tbl-1-master', isActive: true },
   ];
   globalStore.__anassa_tables = defaultTables;
+}
+
+// Persist and load store to/from disk so orders NEVER vanish across restarts or worker reloads
+export function saveStoreToDisk() {
+  try {
+    const payload = {
+      orders: globalStore.__anassa_orders || [],
+      auditLogs: globalStore.__anassa_audit_logs || [],
+      updatedAt: Date.now(),
+    };
+    fs.writeFileSync(STORE_BACKUP_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch {
+    // Non-fatal if environment is read-only
+  }
+}
+
+export function loadStoreFromDisk() {
+  try {
+    if (fs.existsSync(STORE_BACKUP_FILE)) {
+      const raw = fs.readFileSync(STORE_BACKUP_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data && Array.isArray(data.orders) && data.orders.length > 0) {
+        if (!globalStore.__anassa_orders || globalStore.__anassa_orders.length === 0) {
+          globalStore.__anassa_orders = data.orders;
+        } else {
+          const map = new Map(globalStore.__anassa_orders.map((o) => [o.id, o]));
+          for (const ord of data.orders) {
+            if (!map.has(ord.id)) {
+              globalStore.__anassa_orders.push(ord);
+            }
+          }
+        }
+      }
+      if (data && Array.isArray(data.auditLogs) && (!globalStore.__anassa_audit_logs || globalStore.__anassa_audit_logs.length === 0)) {
+        globalStore.__anassa_audit_logs = data.auditLogs;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+// Initial hydration from disk
+loadStoreFromDisk();
+
+/**
+ * Universal table comparator that equates 'Takeaway', '0', and 0
+ */
+export function isSameTable(a: string | number | undefined | null, b: string | number | undefined | null): boolean {
+  if (a === undefined || a === null || b === undefined || b === null) return false;
+  const strA = String(a).toLowerCase().trim();
+  const strB = String(b).toLowerCase().trim();
+  if (strA === strB) return true;
+  const isTakeawayA = strA === '0' || strA === 'takeaway' || strA.includes('takeaway');
+  const isTakeawayB = strB === '0' || strB === 'takeaway' || strB.includes('takeaway');
+  return isTakeawayA && isTakeawayB;
 }
 
 // Event listener for Server-Sent Events (SSE)
@@ -716,7 +777,28 @@ export async function createOrder(data: {
       const { error: insertErr } = await supabaseServer.from('orders').insert(fullInsertPayload);
       if (insertErr) {
         console.warn('Supabase insert with paid columns failed, falling back to base schema:', insertErr.message);
-        await supabaseServer.from('orders').insert(baseInsertPayload);
+        const { error: baseErr } = await supabaseServer.from('orders').insert(baseInsertPayload);
+        if (baseErr) {
+          console.warn('Supabase base insert failed, falling back to minimal core payload:', baseErr.message);
+          const minimalPayload = {
+            id: newOrder.id,
+            order_number: newOrder.orderNumber,
+            table_number: String(newOrder.tableNumber),
+            customer_name: newOrder.customerName,
+            customer_phone: newOrder.customerPhone,
+            items: newOrder.items,
+            subtotal: newOrder.subtotal,
+            tax_amount: newOrder.taxAmount,
+            total: newOrder.total,
+            status: newOrder.status,
+            created_at: new Date(now).toISOString(),
+            updated_at: new Date(now).toISOString(),
+          };
+          const { error: minErr } = await supabaseServer.from('orders').insert(minimalPayload);
+          if (minErr) {
+            console.error('Supabase minimal insert error:', minErr.message);
+          }
+        }
       }
     } catch (err) {
       console.warn('Supabase createOrder error, saved in memory store:', err);
@@ -731,6 +813,7 @@ export async function createOrder(data: {
   }
 
   globalStore.__anassa_orders?.unshift(newOrder);
+  saveStoreToDisk();
   broadcastOrder(newOrder);
   addAuditLog({
     actor: 'customer',
@@ -744,18 +827,32 @@ export async function getOrders(filter?: {
   status?: OrderStatus | 'active';
   tableNumber?: number | string;
   sessionId?: string;
+  knownIds?: string[];
+  phone?: string;
   limit?: number;
 }): Promise<Order[]> {
+  loadStoreFromDisk();
+
   if (isSupabaseConfigured && supabaseServer) {
     try {
       let query = supabaseServer.from('orders').select('*').order('created_at', { ascending: false });
       if (filter?.status === 'active') {
-        query = query.in('status', ['received', 'preparing', 'ready']);
+        if (filter.tableNumber !== undefined) {
+          query = query.in('status', ['received', 'preparing', 'ready', 'served']);
+        } else {
+          query = query.in('status', ['received', 'preparing', 'ready']);
+        }
       } else if (filter?.status) {
         query = query.eq('status', filter.status);
       }
       if (filter?.tableNumber !== undefined) {
-        query = query.eq('table_number', String(filter.tableNumber));
+        const tblStr = String(filter.tableNumber);
+        const isTakeaway = tblStr === '0' || tblStr.toLowerCase() === 'takeaway';
+        if (isTakeaway) {
+          query = query.in('table_number', ['0', 'Takeaway', 'takeaway']);
+        } else {
+          query = query.eq('table_number', tblStr);
+        }
       }
       if (filter?.sessionId) {
         query = query.eq('session_id', filter.sessionId);
@@ -765,6 +862,7 @@ export async function getOrders(filter?: {
       }
       const { data, error } = await query;
       if (!error && data) {
+        const recentServedCutoff = Date.now() - 45 * 60 * 1000;
         const rawOrders: Order[] = data.map((o) => {
           const rawInstructions = o.special_instructions || '';
           const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
@@ -800,7 +898,28 @@ export async function getOrders(filter?: {
             updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
           };
         });
-        return normalizeAndSyncOrders(rawOrders);
+
+        let filtered = rawOrders;
+        if (filter?.status === 'active') {
+          filtered = filtered.filter((o) => {
+            if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+            if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
+              return true;
+            }
+            return false;
+          });
+        }
+
+        if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+          filtered = filtered.filter((o) => {
+            if (filter.sessionId && o.sessionId === filter.sessionId) return true;
+            if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
+            if (filter.phone && o.customerPhone && (o.customerPhone === filter.phone || o.customerPhone.slice(-10) === filter.phone.slice(-10))) return true;
+            return false;
+          });
+        }
+
+        return normalizeAndSyncOrders(filtered);
       }
     } catch (err) {
       console.warn('Supabase getOrders error, falling back to memory store:', err);
@@ -809,15 +928,27 @@ export async function getOrders(filter?: {
 
   let list = normalizeAndSyncOrders(globalStore.__anassa_orders || []);
   if (filter?.status === 'active') {
-    list = list.filter((o) => o.status === 'received' || o.status === 'preparing' || o.status === 'ready');
+    const recentServedCutoff = Date.now() - 45 * 60 * 1000;
+    list = list.filter((o) => {
+      if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+      if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
+        return true;
+      }
+      return false;
+    });
   } else if (filter?.status) {
     list = list.filter((o) => o.status === filter.status);
   }
   if (filter?.tableNumber !== undefined) {
-    list = list.filter((o) => String(o.tableNumber) === String(filter.tableNumber));
+    list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
   }
-  if (filter?.sessionId) {
-    list = list.filter((o) => o.sessionId === filter.sessionId);
+  if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+    list = list.filter((o) => {
+      if (filter.sessionId && o.sessionId === filter.sessionId) return true;
+      if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
+      if (filter.phone && o.customerPhone && (o.customerPhone === filter.phone || o.customerPhone.slice(-10) === filter.phone.slice(-10))) return true;
+      return false;
+    });
   }
   if (filter?.limit) {
     list = list.slice(0, filter.limit);
@@ -933,6 +1064,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
             ? `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) rejected / cancelled by kitchen staff`
             : `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) status changed to "${status}"`,
         });
+        saveStoreToDisk();
         return updatedOrder;
       }
     } catch (err) {
@@ -945,6 +1077,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
     order.status = status;
     order.updatedAt = now;
     broadcastOrder(order);
+    saveStoreToDisk();
     addAuditLog({
       actor: 'kitchen',
       action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
@@ -970,6 +1103,7 @@ export async function deleteOrder(orderId: string): Promise<boolean> {
   const idx = existing.findIndex((o) => o.id === orderId);
   if (idx !== -1) {
     const deleted = existing.splice(idx, 1)[0];
+    saveStoreToDisk();
     addAuditLog({
       actor: 'admin',
       action: 'ORDER_DELETED',
@@ -1084,6 +1218,7 @@ export async function updateOrderDetails(
         details: `Receipt/Order #${existing[idx].orderNumber} edited by ${actorLabel} (Total: ₹${existing[idx].total})`,
       });
     }
+    saveStoreToDisk();
     return existing[idx];
   }
   return null;

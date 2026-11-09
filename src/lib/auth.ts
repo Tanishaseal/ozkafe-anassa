@@ -118,8 +118,8 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
     const payload = verifyToken(token);
     if (payload) {
       const email = payload.email?.toLowerCase().trim();
-      // STRICT CHECK: mamonix109@gmail.com is strictly prohibited from admin
-      if (email === 'mamonix109@gmail.com' && allowedRoles.includes('admin')) {
+      // STRICT CHECK: mamonix109@gmail.com is strictly prohibited from admin console / admin-only endpoints
+      if (email === 'mamonix109@gmail.com' && !allowedRoles.includes('kitchen')) {
         return false;
       }
       if (payload.role === 'admin' || allowedRoles.includes(payload.role as 'admin' | 'kitchen')) {
@@ -148,16 +148,43 @@ export function verifyAuthHeaderOrCookie(request: Request, allowedRoles: ('admin
     if (payload && (payload.role === 'kitchen' || payload.role === 'admin')) return true;
   }
 
+  // 3. Check query param for SSE EventSource connections (browsers cannot set headers on EventSource)
+  try {
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get('token') || url.searchParams.get('auth');
+    if (queryToken) {
+      const payload = verifyToken(queryToken);
+      if (payload) {
+        const email = payload.email?.toLowerCase().trim();
+        if (email === 'mamonix109@gmail.com' && !allowedRoles.includes('kitchen')) {
+          return false;
+        }
+        if (payload.role === 'admin' || allowedRoles.includes(payload.role as 'admin' | 'kitchen')) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   return false;
 }
 
 /**
- * Extract token from Authorization header or specific cookie
+ * Extract token from Authorization header, query param, or specific cookie
  */
 export function getTokenFromRequest(request: Request, cookieName: string): string | null {
   const authHeader = request.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
+  }
+  try {
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get('token') || url.searchParams.get('auth');
+    if (queryToken) return queryToken;
+  } catch {
+    // ignore
   }
   const cookieHeader = request.headers.get('cookie') || '';
   const cookies = parseCookies(cookieHeader);

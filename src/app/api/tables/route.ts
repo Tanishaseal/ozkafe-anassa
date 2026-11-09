@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getTables, validateTable, ensureTablesCount } from '@/lib/store';
-import { verifyAuthHeaderOrCookie, signToken } from '@/lib/auth';
+import { verifyAuthHeaderOrCookie, signToken, verifyToken, getTokenFromRequest } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
@@ -13,8 +13,19 @@ export async function GET(request: Request) {
       const result = await validateTable(tableNumber, key);
       
       if (result.valid) {
-        const exp = Date.now() + 1000 * 60 * 60 * 12; // 12-hour dining session
-        const sessionId = `sess_${tableNumber}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        // Reuse existing session if already established by client to prevent dropping active customer orders!
+        const clientSessionId = searchParams.get('session');
+        const existingToken = getTokenFromRequest(request, `oz_tbl_session_${tableNumber}`);
+        let existingSessionFromToken: string | undefined;
+        if (existingToken) {
+          const payload = verifyToken(existingToken);
+          if (payload && payload.role === 'table' && String(payload.tableNumber) === String(tableNumber) && payload.sessionId) {
+            existingSessionFromToken = payload.sessionId;
+          }
+        }
+
+        const exp = Date.now() + 1000 * 60 * 60 * 24; // 24-hour dining session
+        const sessionId = clientSessionId || existingSessionFromToken || `sess_${tableNumber}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const sessionToken = signToken({
           role: 'table',
           tableNumber,
@@ -34,7 +45,7 @@ export async function GET(request: Request) {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
-          maxAge: 60 * 60 * 12,
+          maxAge: 60 * 60 * 24,
           path: '/',
         });
 
