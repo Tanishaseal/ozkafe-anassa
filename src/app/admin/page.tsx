@@ -3423,6 +3423,13 @@ export default function AdminPage() {
                 >
                   {/* STORE & ORDER ID */}
                   <div style={{ textAlign: 'center', paddingBottom: 12, borderBottom: '1.5px dashed #78716C' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                      <img
+                        src="/images/ozkafe_logo.jpeg"
+                        alt="OZKAFE"
+                        style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
+                      />
+                    </div>
                     <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: '0.05em', color: '#1C1917' }}>
                       OZKAFE · ANASSA
                     </div>
@@ -3496,13 +3503,6 @@ export default function AdminPage() {
                     >
                       <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.04em' }}>TOTAL</span>
                       <span style={{ fontWeight: 900, fontSize: 18, color: '#1C1917' }}>₹{orderTotal.toFixed(2)}</span>
-                    </div>
-
-                    {/* SETTLEMENT STATUS IN RECEIPT */}
-                    <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 4, background: selectedReceiptOrder.isPaid ? '#DCFCE7' : '#FEF3C7', color: selectedReceiptOrder.isPaid ? '#15803D' : '#92400E', fontWeight: 800, fontSize: 11, textAlign: 'center', border: `1px solid ${selectedReceiptOrder.isPaid ? '#86EFAC' : '#FDE68A'}` }}>
-                      {selectedReceiptOrder.isPaid
-                        ? `✓ PAID & SETTLED ${selectedReceiptOrder.settledBy ? `· Verified by ${selectedReceiptOrder.settledBy}` : ''}`
-                        : '⏳ PAYMENT PENDING · UNSETTLED'}
                     </div>
                   </div>
 

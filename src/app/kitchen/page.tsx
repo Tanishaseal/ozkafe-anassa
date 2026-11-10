@@ -20,8 +20,8 @@ export default function KitchenDashboard() {
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [staffName, setStaffName] = useState('');
 
-  // Top Section Mode: 'board' (Live KDS), 'settlement' (Bill Settlement), 'history' (15-Day Order History)
-  const [kitchenViewMode, setKitchenViewMode] = useState<'board' | 'settlement' | 'history'>('board');
+  // Top Section Mode: 'board' (Live KDS Board with All 4 Sections), 'history' (15-Day Order History)
+  const [kitchenViewMode, setKitchenViewMode] = useState<'board' | 'history'>('board');
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
@@ -30,8 +30,6 @@ export default function KitchenDashboard() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
 
   // Bill Settlement State
-  const [settleSearch, setSettleSearch] = useState('');
-  const [settleFilter, setSettleFilter] = useState<'all' | 'unsettled' | 'settled'>('unsettled');
   const [isSettlingId, setIsSettlingId] = useState<string | null>(null);
 
   // Receipt Editing State for Kitchen Staff
@@ -67,12 +65,48 @@ export default function KitchenDashboard() {
   };
 
   const [recentServed, setRecentServed] = useState<Order[]>([]);
-  const [isRecentServedOpen, setIsRecentServedOpen] = useState(false);
   const [clock, setClock] = useState('00:00:00');
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('oz_kds_sound');
+    return stored !== null ? stored === 'true' : true;
+  });
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
-  const [activeMobileTab, setActiveMobileTab] = useState<'received' | 'preparing' | 'ready'>('received');
+  const [activeMobileTab, setActiveMobileTab] = useState<'received' | 'preparing' | 'ready' | 'settlement'>('received');
   const previousOrderIdsRef = useRef<Set<string>>(new Set());
+
+  // Unlock Web Audio API on first user gesture
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          const dummy = new AudioCtx();
+          if (dummy.state === 'suspended') {
+            dummy.resume().catch(() => {});
+          }
+        }
+      } catch {}
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('oz_kds_sound', String(next));
+      }
+      return next;
+    });
+  };
 
   // Dynamic KDS Configuration
   const [kitchenSettings, setKitchenSettings] = useState<{
@@ -96,9 +130,6 @@ export default function KitchenDashboard() {
             dangerTimeMinutes: data.settings.dangerTimeMinutes ?? 15,
             allowOrderCancellation: data.settings.allowOrderCancellation ?? true,
           });
-          if (data.settings.kitchenSoundEnabled !== undefined) {
-            setSoundEnabled(data.settings.kitchenSoundEnabled);
-          }
         }
       }
     } catch {
@@ -236,28 +267,11 @@ export default function KitchenDashboard() {
     return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, [orders, historyOrders, recentServed]);
 
-  const unsettledOrdersCount = useMemo(() => {
-    return allCombinedOrders.filter((o) => !o.isPaid && o.status !== 'cancelled').length;
+  const unsettledOrders = useMemo(() => {
+    return allCombinedOrders.filter((o) => !o.isPaid && o.status !== 'cancelled');
   }, [allCombinedOrders]);
 
-  // Settlement filter
-  const filteredSettlementOrders = useMemo(() => {
-    return allCombinedOrders.filter((o) => {
-      if (o.status === 'cancelled') return false;
-      if (settleFilter === 'unsettled' && o.isPaid) return false;
-      if (settleFilter === 'settled' && !o.isPaid) return false;
-
-      if (settleSearch.trim()) {
-        const q = settleSearch.toLowerCase().trim();
-        const num = (o.orderNumber || '').toLowerCase();
-        const name = (o.customerName || '').toLowerCase();
-        const phone = (o.customerPhone || '').toLowerCase();
-        const flat = (o.customerFlat || '').toLowerCase();
-        return num.includes(q) || name.includes(q) || phone.includes(q) || flat.includes(q);
-      }
-      return true;
-    });
-  }, [allCombinedOrders, settleFilter, settleSearch]);
+  const unsettledOrdersCount = unsettledOrders.length;
 
   // 15-day history filter (strictly orders from the last 15 days; older kept hidden)
   const filteredHistoryOrders = useMemo(() => {
@@ -630,21 +644,42 @@ export default function KitchenDashboard() {
     }
   };
 
-  // Sound chime
+  // Crisp Restaurant Order Notification Chime
   const playChime = () => {
+    if (!soundEnabled) return;
     try {
-      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.6);
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+
+      // Tone 1: D5 (587.33 Hz)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now);
+      gain1.gain.setValueAtTime(0.4, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.45);
+
+      // Tone 2: A5 (880.00 Hz)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880, now + 0.15);
+      gain2.gain.setValueAtTime(0.5, now + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.85);
     } catch {
       // AudioContext unavailable or blocked
     }
@@ -804,23 +839,18 @@ export default function KitchenDashboard() {
           <div className="kitchen-clock">{clock}</div>
 
           <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
+            onClick={toggleSound}
             className={`btn-kds-header ${soundEnabled ? 'active' : ''}`}
-            title="Toggle Order Arrival Audio Chime"
+            title={soundEnabled ? 'Order sound alert is ON (click to mute)' : 'Order sound alert is MUTED (click to turn ON)'}
+            style={{
+              background: soundEnabled ? '#FEF3C7' : '#F4EFEA',
+              color: soundEnabled ? '#92400E' : '#78716C',
+              borderColor: soundEnabled ? '#F59E0B' : '#E5DFD7',
+              fontWeight: 700,
+            }}
           >
-            {soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
+            {soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF'}
           </button>
-
-          {recentServed.length > 0 && (
-            <button
-              onClick={() => setIsRecentServedOpen(true)}
-              className="btn-kds-header"
-              title="View & Reprint Recent Served Orders"
-              style={{ background: '#F4EFEA', color: '#1A1410', fontWeight: 700 }}
-            >
-              📋 Served History ({recentServed.length})
-            </button>
-          )}
 
           <button
             onClick={toggleFullScreen}
@@ -874,7 +904,7 @@ export default function KitchenDashboard() {
         </div>
       </header>
 
-      {/* ── KITCHEN TOP VIEW NAVIGATION (Live KDS Board, Bill Settlement, 15-Day History) ── */}
+      {/* ── KITCHEN TOP VIEW NAVIGATION (Live KDS Board with All 4 Columns & 15-Day History) ── */}
       <nav className="kds-view-nav" aria-label="Kitchen Display Sections">
         <button
           type="button"
@@ -886,24 +916,10 @@ export default function KitchenDashboard() {
             <span className="kds-view-badge" style={{ background: '#DC2626', color: '#FFF', fontWeight: 800 }}>
               {receivedOrders.length} NEW
             </span>
+          ) : unsettledOrdersCount > 0 ? (
+            <span className="kds-view-badge unsettled">{unsettledOrdersCount} Bills</span>
           ) : (
             <span className="kds-view-badge">{orders.length}</span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setKitchenViewMode('settlement');
-            fetchHistoryOrders();
-          }}
-          className={`kds-view-btn ${kitchenViewMode === 'settlement' ? 'active' : ''}`}
-        >
-          <span>💰 Bill Settlement</span>
-          {unsettledOrdersCount > 0 ? (
-            <span className="kds-view-badge unsettled">{unsettledOrdersCount} Pending</span>
-          ) : (
-            <span className="kds-view-badge">0</span>
           )}
         </button>
 
@@ -973,31 +989,35 @@ export default function KitchenDashboard() {
       {/* ── VIEW 1: LIVE KANBAN BOARD ── */}
       {kitchenViewMode === 'board' && (
         <>
-          {/* MOBILE COLUMN TABS (Under 768px) */}
+          {/* MOBILE COLUMN TABS (Under 768px) — All 4 Sections */}
           <nav className="kds-mobile-nav" aria-label="Kitchen Display Columns">
             <button
               type="button"
               onClick={() => setActiveMobileTab('received')}
               className={`kds-mobile-tab-btn tab-received ${activeMobileTab === 'received' ? 'active' : ''}`}
             >
-              <span>🔴 New Orders</span>
-              <span className="col-count-badge">{receivedOrders.length}</span>
+              <span>🔴 New ({receivedOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveMobileTab('preparing')}
               className={`kds-mobile-tab-btn tab-prep ${activeMobileTab === 'preparing' ? 'active' : ''}`}
             >
-              <span>🟡 In Prep</span>
-              <span className="col-count-badge">{preparingOrders.length}</span>
+              <span>🟡 Prep ({preparingOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveMobileTab('ready')}
               className={`kds-mobile-tab-btn tab-ready ${activeMobileTab === 'ready' ? 'active' : ''}`}
             >
-              <span>🟢 Ready</span>
-              <span className="col-count-badge">{readyOrders.length}</span>
+              <span>🟢 Ready ({readyOrders.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMobileTab('settlement')}
+              className={`kds-mobile-tab-btn tab-settlement ${activeMobileTab === 'settlement' ? 'active' : ''}`}
+            >
+              <span>💰 Settle ({unsettledOrders.length})</span>
             </button>
           </nav>
 
@@ -1331,177 +1351,135 @@ export default function KitchenDashboard() {
                 )}
               </div>
             </section>
+
+            {/* COLUMN 4: BILL SETTLEMENT (Directly on Live KDS Board) */}
+            <section className={`kds-column col-type-settlement ${activeMobileTab === 'settlement' ? 'mobile-active' : 'mobile-hidden'}`}>
+              <div className="column-header col-settlement">
+                <div className="col-header-left">
+                  <span className="col-dot"></span>
+                  <h2>BILL SETTLEMENT</h2>
+                </div>
+                <span className="col-count-badge">{unsettledOrders.length}</span>
+              </div>
+
+              <div className="kds-cards-container">
+                {unsettledOrders.length === 0 ? (
+                  <div className="empty-kds-state">
+                    <span className="empty-icon">✓</span>
+                    <p>All bills settled</p>
+                    <span style={{ fontSize: 11, color: '#A8A29E', marginTop: 4 }}>Unsettled bills will appear here until payment is marked collected.</span>
+                  </div>
+                ) : (
+                  unsettledOrders.map((order) => {
+                    const elapsed = getElapsedMinutes(order.createdAt);
+                    return (
+                      <div key={order.id} className="kds-order-card" style={{ borderLeft: '4px solid #C59A6F' }}>
+                        <div className="card-top-bar">
+                          <div className="table-badge" style={{ background: '#FDF4E7', color: '#7C4A1E', border: '1px solid #F5DEB3' }}>
+                            {order.tableNumber === 0 || String(order.tableNumber).toLowerCase() === 'takeaway' ? (
+                              <span>🥡 TAKEAWAY & IN-FLAT</span>
+                            ) : (
+                              <span>🍽️ TABLE {order.tableNumber}</span>
+                            )}
+                          </div>
+                          <div className="order-timer">
+                            <span>⏱️ {elapsed}m ago</span>
+                          </div>
+                        </div>
+
+                        <div className="card-customer-row">
+                          <span className="card-cust-name">👤 {order.customerName || 'Walk-in Guest'}</span>
+                          {order.customerPhone && (
+                            <span className="card-cust-phone">{order.customerPhone}</span>
+                          )}
+                        </div>
+
+                        {order.customerFlat && (
+                          <div className="card-flat-row">
+                            <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 800, color: '#5C381E' }}>#{order.orderNumber}</span>
+                          <span>•</span>
+                          <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+
+                        <div className="card-items-list">
+                          {order.items.map((it, idx) => (
+                            <div key={idx} className="kds-item-row">
+                              <span className="item-qty">{it.quantity}x</span>
+                              <span className="item-name">
+                                {it.name}
+                                {it.selectedSize && it.selectedSize !== 'Regular' ? ` (${it.selectedSize})` : ''}
+                              </span>
+                              <span style={{ fontSize: 11, color: '#78716C', fontWeight: 600, marginLeft: 'auto' }}>
+                                ₹{((Number(it.price) || 0) * (Number(it.quantity) || 1)).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Bill Total Highlight */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F5EBE1', padding: '6px 10px', borderRadius: 6, margin: '6px 0 8px' }}>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#5C381E' }}>Total Payable:</span>
+                          <strong style={{ fontSize: 14.5, fontWeight: 900, color: '#5C381E' }}>₹{(order.total || 0).toFixed(2)}</strong>
+                        </div>
+
+                        {/* Card Actions */}
+                        <div className="kds-card-actions" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            disabled={isSettlingId === order.id}
+                            onClick={() => handleSettleBill(order.id)}
+                            className="kds-action-btn"
+                            style={{
+                              flex: 1,
+                              height: 36,
+                              background: '#15803D',
+                              color: '#FFF',
+                              border: 'none',
+                              borderRadius: 8,
+                              fontWeight: 800,
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 4,
+                            }}
+                            title="Mark order paid and settled"
+                          >
+                            {isSettlingId === order.id ? 'Settling...' : '💳 Mark Settled'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-kds-view-receipt"
+                            title="View / Print Bill"
+                            onClick={() => setPrintOrder(order)}
+                            style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            🧾 Bill
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-kds-edit-receipt"
+                            title="Edit Order / Bill"
+                            onClick={() => handleOpenEditReceipt(order)}
+                            style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            ✏️ Edit
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
           </main>
         </>
-      )}
-
-      {/* ── VIEW 2: BILL SETTLEMENT SECTION ── */}
-      {kitchenViewMode === 'settlement' && (
-        <div className="kds-section-view">
-          <div className="kds-section-header">
-            <div className="kds-section-title-wrap">
-              <h2>💰 Bill Settlement & Payment Verification</h2>
-              <p>Review customer orders, access bills, mark payments settled, or edit receipts if any mistakes occurred.</p>
-            </div>
-
-            <div className="kds-section-controls">
-              <input
-                type="text"
-                placeholder="Search order #, guest, phone or flat..."
-                value={settleSearch}
-                onChange={(e) => setSettleSearch(e.target.value)}
-                className="kds-search-input"
-              />
-
-              <div className="kds-filter-pills">
-                <button
-                  type="button"
-                  onClick={() => setSettleFilter('unsettled')}
-                  className={`kds-filter-pill-btn ${settleFilter === 'unsettled' ? 'active' : ''}`}
-                >
-                  ⏳ Unsettled ({unsettledOrdersCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSettleFilter('all')}
-                  className={`kds-filter-pill-btn ${settleFilter === 'all' ? 'active' : ''}`}
-                >
-                  All Orders ({allCombinedOrders.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSettleFilter('settled')}
-                  className={`kds-filter-pill-btn ${settleFilter === 'settled' ? 'active' : ''}`}
-                >
-                  ✓ Settled
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {filteredSettlementOrders.length === 0 ? (
-            <div className="empty-kds-state" style={{ background: '#FFF', borderRadius: 14, border: '1px solid #E5DFD7' }}>
-              <span className="empty-icon">💳</span>
-              <p>{settleFilter === 'unsettled' ? 'All active orders are settled & paid!' : 'No matching orders found'}</p>
-              <span className="empty-sub">Orders waiting for guest bill settlement and payment confirmation will appear here.</span>
-            </div>
-          ) : (
-            <div className="kds-settlement-grid">
-              {filteredSettlementOrders.map((ord) => {
-                const sub = ord.subtotal || ord.items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-                const tax = ord.taxAmount !== undefined ? ord.taxAmount : Number((sub * 0.05).toFixed(2));
-                const tot = ord.total || Number((sub + tax).toFixed(2));
-
-                return (
-                  <div key={ord.id} className={`kds-settlement-card ${ord.isPaid ? 'settled' : ''}`}>
-                    <div className="card-top-bar">
-                      <div className="table-badge">
-                        {ord.tableNumber === 'Takeaway' || ord.tableNumber === 0 ? (
-                          <span>🥡 TAKEAWAY & IN-FLAT</span>
-                        ) : (
-                          <span>🍽️ TABLE {ord.tableNumber}</span>
-                        )}
-                      </div>
-                      <div className="order-timer">
-                        <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </div>
-
-                    <div className="card-customer-row">
-                      <span className="card-cust-name">👤 {ord.customerName}</span>
-                      <span className="card-cust-phone">{ord.customerPhone}</span>
-                    </div>
-
-                    {ord.customerFlat && (
-                      <div className="card-flat-row">
-                        <span>🏢 Flat: <strong>{ord.customerFlat}</strong></span>
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="card-order-num">{ord.orderNumber}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '3px 8px', borderRadius: 6, background: ord.status === 'served' ? '#E0F2FE' : '#FEF3C7', color: ord.status === 'served' ? '#0369A1' : '#92400E' }}>
-                        {ord.status}
-                      </span>
-                    </div>
-
-                    {/* ITEMS LIST */}
-                    <div className="card-items-list" style={{ maxHeight: 130, overflowY: 'auto' }}>
-                      {ord.items.map((it, idx) => (
-                        <div key={idx} className="kds-item-row">
-                          <span className="item-qty">{it.quantity}x</span>
-                          <span className="item-name">{it.name} {it.selectedSize && it.selectedSize !== 'Regular' ? `(${it.selectedSize})` : ''}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#57534E' }}>₹{((Number(it.price) || 0) * (Number(it.quantity) || 1)).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* BILL BREAKDOWN */}
-                    <div style={{ background: '#F8F6F2', border: '1px solid #EBE5DF', borderRadius: 8, padding: '8px 12px', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#78716C' }}>
-                        <span>Subtotal:</span>
-                        <span>₹{sub.toFixed(2)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#78716C' }}>
-                        <span>GST (5%):</span>
-                        <span>₹{tax.toFixed(2)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 14, color: '#1A1410', borderTop: '1px solid #DED6CB', paddingTop: 4, marginTop: 2 }}>
-                        <span>TOTAL BILL:</span>
-                        <span>₹{tot.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {/* SETTLEMENT STATUS */}
-                    <div>
-                      {ord.isPaid ? (
-                        <div className="settle-badge-paid">
-                          ✓ PAID & SETTLED {ord.settledBy ? `· Verified by ${ord.settledBy}` : ''}
-                        </div>
-                      ) : (
-                        <div className="settle-badge-unpaid">
-                          ⏳ UNSETTLED · Customer Payment Pending
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ACTION BUTTONS */}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 'auto', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => setPrintOrder(ord)}
-                        className="btn-kds-view-receipt"
-                        style={{ flex: 1, justifyContent: 'center' }}
-                      >
-                        🧾 View Bill
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditReceipt(ord)}
-                        className="btn-kds-edit-receipt"
-                        style={{ flex: 1, justifyContent: 'center' }}
-                      >
-                        ✏️ Edit Receipt
-                      </button>
-                    </div>
-
-                    {!ord.isPaid && (
-                      <button
-                        type="button"
-                        disabled={isSettlingId === ord.id}
-                        onClick={() => handleSettleBill(ord.id)}
-                        className="btn-settle-pay"
-                      >
-                        {isSettlingId === ord.id ? 'Processing...' : '💳 Mark Settled (Customer Paid)'}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       )}
 
       {/* ── VIEW 3: 15-DAY ORDER HISTORY SECTION ── */}
@@ -1659,52 +1637,6 @@ export default function KitchenDashboard() {
         </div>
       )}
 
-      {/* ── RECENT SERVED ORDERS DRAWER ── */}
-      {isRecentServedOpen && (
-        <div className="admin-modal-overlay" onClick={() => setIsRecentServedOpen(false)}>
-          <div
-            className="admin-modal-box"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              maxWidth: 440,
-              padding: 20,
-              background: '#FFFFFF',
-              backgroundColor: '#FFFFFF',
-              borderRadius: 16,
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)',
-              border: '1px solid #E5DFD7',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Recent Served Orders</h3>
-              <button onClick={() => setIsRecentServedOpen(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
-              {recentServed.map((s) => (
-                <div key={s.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #E5DFD7', background: '#FAF9F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong style={{ fontSize: 14 }}>{s.orderNumber}</strong> ({s.tableNumber === 0 ? 'Takeaway' : `Table ${s.tableNumber}`})
-                    <div style={{ fontSize: 12, color: '#685E54' }}>{s.customerName} · ₹{s.total}</div>
-                    <div style={{ fontSize: 11, color: '#8C827A', marginTop: 2 }}>
-                      📅 {new Date(s.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ⏰ {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setPrintOrder(s);
-                      setIsRecentServedOpen(false);
-                    }}
-                    style={{ padding: '6px 12px', borderRadius: 8, background: '#5C381E', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
-                  >
-                    🖨️ Receipt
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── FINAL ORDER RECEIPT MODAL (PRINTED AT THE END AFTER ORDER IS SERVED) ── */}
       {printOrder && (() => {
         const orderSubtotal = printOrder.subtotal && printOrder.subtotal > 0
@@ -1754,8 +1686,15 @@ export default function KitchenDashboard() {
               >
                 {/* STORE & ORDER ID */}
                 <div style={{ textAlign: 'center', borderBottom: '1.5px dashed #78716C', paddingBottom: 10, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                    <img
+                      src="/images/ozkafe_logo.jpeg"
+                      alt="OZKAFE"
+                      style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
+                    />
+                  </div>
                   <h2 style={{ fontSize: 18, margin: '0 0 2px', fontWeight: 900 }}>OZKAFE · ANASSA</h2>
-                  <div style={{ fontSize: 13, fontWeight: 800, marginTop: 6, color: '#1C1917' }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4, color: '#1C1917' }}>
                     Order ID: {printOrder.orderNumber}
                   </div>
                   <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
@@ -1817,13 +1756,6 @@ export default function KitchenDashboard() {
                     <span>TOTAL</span>
                     <span>₹{orderTotal.toFixed(2)}</span>
                   </div>
-                </div>
-
-                {/* SETTLEMENT STATUS IN RECEIPT */}
-                <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 4, background: printOrder.isPaid ? '#DCFCE7' : '#FEF3C7', color: printOrder.isPaid ? '#15803D' : '#92400E', fontWeight: 800, fontSize: 11, textAlign: 'center', border: `1px solid ${printOrder.isPaid ? '#86EFAC' : '#FDE68A'}` }}>
-                  {printOrder.isPaid
-                    ? `✓ PAID & SETTLED ${printOrder.settledBy ? `· Verified by ${printOrder.settledBy}` : ''}`
-                    : '⏳ PAYMENT PENDING · UNSETTLED'}
                 </div>
 
                 {/* THANK YOU MSG */}

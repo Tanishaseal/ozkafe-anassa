@@ -140,9 +140,9 @@
 /* ── KANBAN BOARD ── */
 .kds-board {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  padding: 20px 24px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 16px 20px;
   flex: 1;
   height: calc(100vh - 74px);
   overflow: hidden;
@@ -185,6 +185,11 @@
 .kds-column.col-type-ready::before,
 .column-header.col-ready::before {
   background: #16A34A;
+}
+
+.kds-column.col-type-settlement::before,
+.column-header.col-settlement::before {
+  background: #C59A6F;
 }
 
 /* ── COLUMN HEADERS (Fixed styling!) ── */
@@ -237,6 +242,11 @@
   box-shadow: 0 0 8px rgba(22, 163, 74, 0.4);
 }
 
+.col-settlement .col-dot {
+  background: #C59A6F;
+  box-shadow: 0 0 8px rgba(197, 154, 111, 0.4);
+}
+
 .col-count-badge {
   padding: 4px 12px;
   border-radius: 999px;
@@ -262,6 +272,12 @@
   background: #DCFCE7;
   color: #15803D;
   border: 1px solid #BBF7D0;
+}
+
+.col-settlement .col-count-badge {
+  background: #FDF4E7;
+  color: #7C4A1E;
+  border: 1px solid #F5DEB3;
 }
 
 /* ── CARDS CONTAINER & EMPTY STATES ── */
@@ -900,8 +916,8 @@
 /* ═══════════════════════════════════════════════════════
    RESPONSIVE DESIGN: TABLETS, IPADS & MOBILE
    ═══════════════════════════════════════════════════════ */
-/* Tablets & Small Laptops (768px to 1023px) */
-@media (min-width: 768px) and (max-width: 1023px) {
+/* Tablets & Small Laptops (768px to 1280px) */
+@media (min-width: 768px) and (max-width: 1280px) {
   .kds-mobile-nav {
     display: none;
   }
@@ -914,7 +930,7 @@
     -webkit-overflow-scrolling: touch;
   }
   .kds-column {
-    flex: 0 0 320px;
+    flex: 0 0 290px;
     height: 100%;
     display: flex !important;
   }
@@ -1005,6 +1021,12 @@
     background: #DCFCE7;
     color: #15803D;
     border-color: #BBF7D0;
+  }
+
+  .kds-mobile-tab-btn.active.tab-settlement {
+    background: #FDF4E7;
+    color: #7C4A1E;
+    border-color: #F5DEB3;
   }
 
   .kds-board {
