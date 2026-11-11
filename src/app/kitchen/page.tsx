@@ -731,8 +731,7 @@ export default function KitchenDashboard() {
       if (nextStatus === 'served' && targetOrder) {
         const servedOrder: Order = { ...targetOrder, status: 'served', updatedAt: Date.now() };
         setRecentServed((prev) => [servedOrder, ...prev.filter((o) => o.id !== orderId).slice(0, 19)]);
-        // Open the final bill receipt modal at the end!
-        setPrintOrder(servedOrder);
+        // Order moves directly to Bill Settlement column; no unwanted modal popup
       }
     } else {
       setOrders((prev) =>
@@ -1324,9 +1323,9 @@ export default function KitchenDashboard() {
                           <button
                             className="kds-action-btn btn-complete"
                             onClick={() => handleUpdateStatus(order.id, 'served')}
-                            title="Mark order served and print final receipt"
+                            title="Mark order served and move to Bill Settlement"
                           >
-                            ✓ Serve & Bill
+                            ✓ Served
                           </button>
                           <button
                             type="button"
