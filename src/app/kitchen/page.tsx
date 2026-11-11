@@ -1665,6 +1665,7 @@ export default function KitchenDashboard() {
               className="admin-modal-box"
               onClick={(e) => e.stopPropagation()}
               style={{
+                position: 'relative',
                 maxWidth: 420,
                 padding: '22px 24px',
                 background: '#FFFFFF',
@@ -1674,6 +1675,37 @@ export default function KitchenDashboard() {
                 border: '1px solid #E5DFD7',
               }}
             >
+              {/* TOP-RIGHT ACCESSIBLE CROSS BUTTON */}
+              <button
+                type="button"
+                onClick={() => setPrintOrder(null)}
+                aria-label="Close Receipt"
+                title="Close"
+                style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  border: '1px solid #D6D3D1',
+                  background: '#F5F5F4',
+                  color: '#44403C',
+                  fontSize: 18,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 20,
+                  padding: 0,
+                  lineHeight: 1,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+                }}
+              >
+                ✕
+              </button>
+
               <div
                 className="kot-print-area"
                 style={{
@@ -1797,14 +1829,6 @@ export default function KitchenDashboard() {
                     {isSettlingId === printOrder.id ? 'Processing...' : '💳 Mark Settled (Customer Paid)'}
                   </button>
                 )}
-
-                <button
-                  className="btn-outline"
-                  style={{ height: 36, borderRadius: 8, border: '1px solid #ccc', background: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}
-                  onClick={() => setPrintOrder(null)}
-                >
-                  Done / Close
-                </button>
               </div>
             </div>
           </div>
