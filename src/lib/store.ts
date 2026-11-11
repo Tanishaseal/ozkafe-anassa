@@ -649,6 +649,7 @@ export async function createOrder(data: {
   customerName: string;
   customerPhone: string;
   customerFlat?: string;
+  idempotencyKey?: string;
   items: MenuItem[] | { id: string; name: string; price: number; quantity: number; selectedSize?: string; category?: string; isAddon?: boolean }[];
   subtotal: number;
   taxAmount: number;
@@ -713,6 +714,7 @@ export async function createOrder(data: {
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerFlat: data.customerFlat,
+    idempotencyKey: data.idempotencyKey,
     items: data.items.map((it) => ({
       id: it.id,
       name: it.name,
@@ -854,7 +856,7 @@ export async function getOrders(filter?: {
           query = query.eq('table_number', tblStr);
         }
       }
-      if (filter?.sessionId) {
+      if (filter?.sessionId && !filter?.phone && (!filter?.knownIds || filter.knownIds.length === 0)) {
         query = query.eq('session_id', filter.sessionId);
       }
       if (filter?.limit) {
@@ -911,10 +913,11 @@ export async function getOrders(filter?: {
         }
 
         if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+          const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
           filtered = filtered.filter((o) => {
-            if (filter.sessionId && o.sessionId === filter.sessionId) return true;
             if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
-            if (filter.phone && o.customerPhone && (o.customerPhone === filter.phone || o.customerPhone.slice(-10) === filter.phone.slice(-10))) return true;
+            if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
+            if (filter.sessionId && o.sessionId === filter.sessionId) return true;
             return false;
           });
         }
@@ -939,16 +942,16 @@ export async function getOrders(filter?: {
   } else if (filter?.status) {
     list = list.filter((o) => o.status === filter.status);
   }
-  if (filter?.tableNumber !== undefined) {
-    list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
-  }
   if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+    const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
     list = list.filter((o) => {
-      if (filter.sessionId && o.sessionId === filter.sessionId) return true;
       if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
-      if (filter.phone && o.customerPhone && (o.customerPhone === filter.phone || o.customerPhone.slice(-10) === filter.phone.slice(-10))) return true;
+      if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
+      if (filter.sessionId && o.sessionId === filter.sessionId) return true;
       return false;
     });
+  } else if (filter?.tableNumber !== undefined) {
+    list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
   }
   if (filter?.limit) {
     list = list.slice(0, filter.limit);

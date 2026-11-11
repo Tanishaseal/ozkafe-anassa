@@ -69,6 +69,7 @@ export default function CustomerMenu({
   const [customerPhone, setCustomerPhone] = useState('');
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [hasLocalOrders, setHasLocalOrders] = useState(false);
   const [cartBadgePop, setCartBadgePop] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
@@ -249,6 +250,16 @@ export default function CustomerMenu({
       }
 
       // 2. Recover saved cart for this table if any
+      const savedOrdersStr = localStorage.getItem('anassa_orders');
+      if (savedOrdersStr) {
+        try {
+          const ords = JSON.parse(savedOrdersStr);
+          if (Array.isArray(ords) && ords.length > 0) {
+            setHasLocalOrders(true);
+          }
+        } catch {}
+      }
+
       const savedCartStr = localStorage.getItem(`anassa_cart_${initialTable}`);
       if (savedCartStr) {
         try {
@@ -344,13 +355,24 @@ export default function CustomerMenu({
         } catch {}
       }
 
+      let effPhone = customerPhone?.trim() || '';
+      if (!effPhone && typeof window !== 'undefined') {
+        try {
+          const profStr = localStorage.getItem('anassa_guest_profile');
+          if (profStr) {
+            const prof = JSON.parse(profStr);
+            if (prof.phone) effPhone = prof.phone;
+          }
+        } catch {}
+      }
+
       const qParams = new URLSearchParams({
         table: String(tbl),
         _t: String(Date.now()),
       });
       if (sessId) qParams.set('session', sessId);
       if (knownIds) qParams.set('knownIds', knownIds);
-      if (customerPhone) qParams.set('phone', customerPhone);
+      if (effPhone) qParams.set('phone', effPhone);
 
       const res = await fetch(`/api/orders?${qParams.toString()}`);
       if (res.ok) {
@@ -418,11 +440,11 @@ export default function CustomerMenu({
     return () => clearInterval(interval);
   }, []);
 
-  // Adaptive poller: 4s when active orders exist, 12s when idle
+  // Adaptive poller: 3s when active orders exist, 8s when idle
   useEffect(() => {
     if (!initialTable || !tableSessionId) return;
 
-    const pollInterval = activeOrders.length > 0 ? 4000 : 12000;
+    const pollInterval = activeOrders.length > 0 ? 3000 : 8000;
     const interval = setInterval(() => {
       fetchSessionOrders(initialTable, tableSessionId);
     }, pollInterval);
@@ -823,10 +845,13 @@ export default function CustomerMenu({
         }
       }
 
+      const idempotencyKey = `idem_${cleanedPhone}_${cartGrandTotal.toFixed(2)}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
       const orderPayload = {
         tableNumber: initialTable,
         tableKey: initialKey,
         sessionId: tableSessionId,
+        idempotencyKey,
         customerName: customerName.trim(),
         customerPhone: cleanedPhone,
         customerFlat: customerFlat.trim(),
@@ -847,55 +872,109 @@ export default function CustomerMenu({
         specialInstructions: '',
       };
 
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload),
-      });
+      const completeOrderSuccess = (placedOrder: Order, serverSessionId?: string) => {
+        // Ensure session ID is synchronized with server response
+        const effSession = serverSessionId || placedOrder.sessionId;
+        if (effSession) {
+          setTableSessionId(effSession);
+          try {
+            localStorage.setItem(`anassa_session_${initialTable}`, effSession);
+          } catch {}
+        }
+
+        // Save to localStorage for persistent state recovery
+        try {
+          const savedOrdersStr = localStorage.getItem('anassa_orders');
+          const savedOrders: string[] = savedOrdersStr ? JSON.parse(savedOrdersStr) : [];
+          if (!savedOrders.includes(placedOrder.id)) {
+            savedOrders.unshift(placedOrder.id);
+          }
+          localStorage.setItem('anassa_orders', JSON.stringify(savedOrders.slice(0, 30)));
+        } catch {}
+
+        // Save guest profile for 1-tap ordering on next visit
+        try {
+          localStorage.setItem('anassa_guest_profile', JSON.stringify({
+            name: customerName.trim() || placedOrder.customerName,
+            phone: cleanedPhone || placedOrder.customerPhone,
+            flat: customerFlat.trim() || placedOrder.customerFlat || '',
+          }));
+        } catch {}
+        setIsGuestProfileSaved(true);
+        setIsEditingGuestProfile(false);
+
+        setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id)]);
+        setHasLocalOrders(true);
+
+        // Clear cart in both state & persistent localStorage
+        setCart({});
+        try {
+          localStorage.removeItem(`anassa_cart_${initialTable}`);
+        } catch {}
+        setIsCartOpen(false);
+
+        // Trigger celebration confetti
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 5000);
+
+        // Open Tracker
+        setIsTrackerOpen(true);
+      };
+
+      let res: Response;
+      try {
+        res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload),
+          signal: AbortSignal.timeout(12000), // 12-second safe timeout
+        });
+      } catch (networkErr) {
+        console.warn('Network issue during POST /api/orders, executing instant order reconciliation check:', networkErr);
+
+        // ── INSTANT RECONCILIATION GUARD ──
+        // If connection dropped on the return path, check if the server already created the order!
+        try {
+          const checkParams = new URLSearchParams({
+            table: String(initialTable),
+            phone: cleanedPhone,
+            session: tableSessionId,
+            _t: String(Date.now()),
+          });
+          const checkRes = await fetch(`/api/orders?${checkParams.toString()}`);
+          if (checkRes.ok) {
+            const recentOrders: Order[] = await checkRes.json();
+            const matched = recentOrders.find((o) =>
+              Date.now() - o.createdAt < 120_000 &&
+              (o.customerPhone?.replace(/\D/g, '').slice(-10) === cleanedPhone.slice(-10))
+            );
+            if (matched) {
+              console.log('Order successfully reconciled from kitchen:', matched.orderNumber);
+              completeOrderSuccess(matched, matched.sessionId);
+              return;
+            }
+          }
+        } catch (reconErr) {
+          console.warn('Reconciliation check failed:', reconErr);
+        }
+
+        throw new Error('Connection issue with the kitchen. Please verify your Wi-Fi or mobile data and tap Send Order again.');
+      }
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to place order');
+        let errMessage = 'Failed to place order';
+        try {
+          const err = await res.json();
+          errMessage = err.error || errMessage;
+        } catch {
+          // not JSON
+        }
+        throw new Error(errMessage);
       }
 
       const data = await res.json();
       const placedOrder: Order = data.order;
-
-      // Ensure session ID is synchronized with server response
-      if (data.sessionId) {
-        setTableSessionId(data.sessionId);
-        localStorage.setItem(`anassa_session_${initialTable}`, data.sessionId);
-      }
-
-      // Save to localStorage for persistent state recovery
-      const savedOrdersStr = localStorage.getItem('anassa_orders');
-      const savedOrders: string[] = savedOrdersStr ? JSON.parse(savedOrdersStr) : [];
-      if (!savedOrders.includes(placedOrder.id)) {
-        savedOrders.unshift(placedOrder.id);
-      }
-      localStorage.setItem('anassa_orders', JSON.stringify(savedOrders.slice(0, 30)));
-
-      // Save guest profile for 1-tap ordering on next visit
-      localStorage.setItem('anassa_guest_profile', JSON.stringify({
-        name: customerName.trim(),
-        phone: cleanedPhone,
-        flat: customerFlat.trim(),
-      }));
-      setIsGuestProfileSaved(true);
-      setIsEditingGuestProfile(false);
-
-      setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id)]);
-
-      // Clear cart
-      setCart({});
-      setIsCartOpen(false);
-
-      // Trigger celebration confetti
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 5000);
-
-      // Open Tracker
-      setIsTrackerOpen(true);
+      completeOrderSuccess(placedOrder, data.sessionId);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Order submission failed.');
     } finally {
@@ -996,10 +1075,15 @@ export default function CustomerMenu({
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {activeOrders.length > 0 && (
+          {(activeOrders.length > 0 || hasLocalOrders) && (
             <button
               className="icon-btn"
-              onClick={() => setIsTrackerOpen(true)}
+              onClick={() => {
+                setIsTrackerOpen(true);
+                if (activeOrders.length === 0) {
+                  fetchSessionOrders(initialTable, tableSessionId);
+                }
+              }}
               aria-label="Track Order"
               title="Track Order"
               style={{ borderColor: 'var(--brand-gold)' }}
@@ -1015,8 +1099,8 @@ export default function CustomerMenu({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                backgroundColor: 'var(--veg-green)',
-                boxShadow: '0 0 6px var(--veg-green)',
+                backgroundColor: activeOrders.length > 0 ? 'var(--veg-green)' : 'var(--brand-gold)',
+                boxShadow: activeOrders.length > 0 ? '0 0 6px var(--veg-green)' : '0 0 6px var(--brand-gold)',
               }} />
             </button>
           )}
@@ -2051,8 +2135,25 @@ export default function CustomerMenu({
 
             <div className="sheet-content">
               {activeOrders.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-grey)' }}>
-                  <p>No active orders in progress right now.</p>
+                <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-grey)' }}>
+                  <p style={{ margin: '0 0 16px', fontSize: 14 }}>No active orders in progress right now.</p>
+                  <button
+                    onClick={() => {
+                      fetchSessionOrders(initialTable, tableSessionId);
+                    }}
+                    style={{
+                      padding: '8px 18px',
+                      borderRadius: 10,
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card-elevated)',
+                      color: 'var(--brand-gold)',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                    }}
+                  >
+                    🔄 Refresh Orders
+                  </button>
                 </div>
               ) : (
                 activeOrders.map((ord) => {
@@ -2121,10 +2222,16 @@ export default function CustomerMenu({
                         )}
                       </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-strong)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-strong)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                         <div><strong>Items:</strong> {ord.items.map((i) => `${i.name} (x${i.quantity})`).join(', ')}</div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 13 }}>₹{ord.total.toFixed(2)}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: ord.isPaid ? '#DCFCE7' : '#FEF3C7', color: ord.isPaid ? '#166534' : '#92400E' }}>
+                            {ord.isPaid ? '✓ Paid' : '⏳ Unsettled'}
+                          </span>
+                        </div>
                         {ord.customerFlat && (
-                          <div style={{ fontWeight: 700, color: 'var(--brand-accent)' }}>
+                          <div style={{ width: '100%', fontWeight: 700, color: 'var(--brand-accent)', marginTop: 2 }}>
                             🏢 Flat: {ord.customerFlat}
                           </div>
                         )}

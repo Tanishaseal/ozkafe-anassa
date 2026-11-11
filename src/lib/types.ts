@@ -68,6 +68,7 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   customerFlat?: string;
+  idempotencyKey?: string;
   items: OrderItem[];
   subtotal: number;
   taxAmount: number;

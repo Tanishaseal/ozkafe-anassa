@@ -412,6 +412,49 @@ export async function POST(request: Request) {
     // Generate or preserve session ID
     const effectiveSessionId = sessionId || `sess_${targetTable}_${Date.now()}`;
 
+    // ── IDEMPOTENCY & DUPLICATE ORDER SHIELD ──
+    const idempotencyKey = body.idempotencyKey ? String(body.idempotencyKey).trim() : undefined;
+
+    // Check for identical recent order placed within the last 60 seconds
+    // to prevent duplicate orders from network retries, double-clicks, or "failed to fetch" re-submissions
+    const recentCandidateOrders = await getOrders({
+      tableNumber: targetTable,
+      phone: cleanPhone,
+      limit: 10,
+    });
+
+    const now = Date.now();
+    const existingDuplicate = recentCandidateOrders.find((cand) => {
+      // Must be recent (placed within last 60 seconds)
+      if (now - cand.createdAt > 60_000) return false;
+      // Must not be cancelled
+      if (cand.status === 'cancelled') return false;
+      // If idempotency key matches, instant match
+      if (idempotencyKey && cand.idempotencyKey && cand.idempotencyKey === idempotencyKey) return true;
+      // Same customer phone (last 10 digits)
+      const candPhone = (cand.customerPhone || '').replace(/\D/g, '').slice(-10);
+      if (candPhone && cleanPhone && candPhone !== cleanPhone.slice(-10)) return false;
+      // Same total (within 0.10 rupees)
+      if (Math.abs(cand.total - serverTotal) > 0.10) return false;
+      // Same item count
+      if (cand.items.length !== validatedItems.length) return false;
+      // Same item IDs and quantities
+      const candItemMap = new Map(cand.items.map((i) => [i.id, i.quantity]));
+      const allItemsMatch = validatedItems.every((it) => candItemMap.get(it.id) === it.quantity);
+      return allItemsMatch;
+    });
+
+    if (existingDuplicate) {
+      console.log(`[POST /api/orders] Duplicate order suppressed: Order #${existingDuplicate.orderNumber} already exists for phone ${cleanPhone}`);
+      return NextResponse.json({
+        success: true,
+        order: existingDuplicate,
+        sessionId: existingDuplicate.sessionId || effectiveSessionId,
+        distanceMeters,
+        isDuplicateSuppressed: true,
+      });
+    }
+
     // Spam prevention cooldown check
     const cooldownSec = settings.orderCooldownSeconds ?? 10;
     if (cooldownSec > 0) {
@@ -435,6 +478,7 @@ export async function POST(request: Request) {
       customerName,
       customerPhone: cleanPhone,
       customerFlat,
+      idempotencyKey,
       customerLat,
       customerLng,
       distanceMeters,
