@@ -839,11 +839,7 @@ export async function getOrders(filter?: {
     try {
       let query = supabaseServer.from('orders').select('*').order('created_at', { ascending: false });
       if (filter?.status === 'active') {
-        if (filter.tableNumber !== undefined) {
-          query = query.in('status', ['received', 'preparing', 'ready', 'served']);
-        } else {
-          query = query.in('status', ['received', 'preparing', 'ready']);
-        }
+        query = query.in('status', ['received', 'preparing', 'ready', 'served']);
       } else if (filter?.status) {
         query = query.eq('status', filter.status);
       }
@@ -934,6 +930,7 @@ export async function getOrders(filter?: {
     const recentServedCutoff = Date.now() - 45 * 60 * 1000;
     list = list.filter((o) => {
       if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+      if (o.status === 'served' && !o.isPaid) return true;
       if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
         return true;
       }

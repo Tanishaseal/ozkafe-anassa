@@ -268,7 +268,7 @@ export default function KitchenDashboard() {
   }, [orders, historyOrders, recentServed]);
 
   const unsettledOrders = useMemo(() => {
-    return allCombinedOrders.filter((o) => !o.isPaid && o.status !== 'cancelled');
+    return allCombinedOrders.filter((o) => o.status === 'served' && !o.isPaid);
   }, [allCombinedOrders]);
 
   const unsettledOrdersCount = unsettledOrders.length;
@@ -1366,8 +1366,8 @@ export default function KitchenDashboard() {
                 {unsettledOrders.length === 0 ? (
                   <div className="empty-kds-state">
                     <span className="empty-icon">✓</span>
-                    <p>All bills settled</p>
-                    <span style={{ fontSize: 11, color: '#A8A29E', marginTop: 4 }}>Unsettled bills will appear here until payment is marked collected.</span>
+                    <p>No bills awaiting settlement</p>
+                    <span style={{ fontSize: 11, color: '#A8A29E', marginTop: 4 }}>Orders pop here after passing Ready for Pickup & Served until payment is collected.</span>
                   </div>
                 ) : (
                   unsettledOrders.map((order) => {
