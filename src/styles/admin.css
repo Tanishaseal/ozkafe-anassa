@@ -868,9 +868,15 @@
 
 .admin-kanban-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+@media (max-width: 1380px) {
+  .admin-kanban-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .admin-kanban-column {
@@ -1069,6 +1075,61 @@
 .admin-btn-action.receipt:hover {
   background: var(--adm-surface-dim);
   color: var(--adm-text-main);
+}
+
+.admin-btn-action.settle {
+  background: #15803D;
+  color: #FFFFFF;
+}
+
+.admin-btn-action.settle:hover {
+  background: #166534;
+}
+
+.admin-kanban-column-settlement {
+  border-color: rgba(197, 154, 111, 0.45);
+  background: linear-gradient(180deg, rgba(253, 244, 231, 0.35) 0%, var(--adm-surface-dim) 100%);
+}
+
+.admin-order-card-settlement {
+  border-left: 4px solid #C59A6F;
+}
+
+.admin-nav-badge.amber {
+  background: #D97706;
+  color: #FFFFFF;
+}
+
+/* ── BILL SETTLEMENT DEDICATED VIEW ── */
+.admin-settlement-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-settlement-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.admin-settlement-order-card {
+  background: var(--adm-card-bg);
+  border: 1px solid var(--adm-border);
+  border-left: 5px solid #C59A6F;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--adm-shadow-sm);
+  transition: all 0.15s ease;
+}
+
+.admin-settlement-order-card:hover {
+  box-shadow: var(--adm-shadow-md);
+  border-color: #C59A6F;
 }
 
 /* ── DATA TABLES & CARDS ── */

@@ -34,9 +34,9 @@ export default function AdminPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   // ── NAVIGATION & LAYOUT STATES ──
-  // Sections: Dashboard (Home), Live Orders, Menu Management (with Food Inventories), Staff Schedule, Analytics + Settings, Tables, Logs
+  // Sections: Dashboard (Home), Live Orders, Bill Settlement, Menu Management (with Food Inventories), Staff Schedule, Analytics + Settings, Tables, Logs
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'live-orders' | 'menu' | 'staff' | 'analytics' | 'settings' | 'tables' | 'logs'
+    'dashboard' | 'live-orders' | 'bill-settlement' | 'menu' | 'staff' | 'analytics' | 'settings' | 'tables' | 'logs'
   >('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -124,6 +124,8 @@ export default function AdminPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [orderMonthFilter, setOrderMonthFilter] = useState('all');
   const [auditActorFilter, setAuditActorFilter] = useState('all');
+  const [settlementSearch, setSettlementSearch] = useState('');
+  const [settlementTableFilter, setSettlementTableFilter] = useState<'all' | 'table' | 'takeaway'>('all');
 
   // Edit Menu Item Form
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -266,8 +268,32 @@ export default function AdminPage() {
 
   useEffect(() => {
     fetchAdminData();
-    const interval = setInterval(fetchAdminData, 12000);
-    return () => clearInterval(interval);
+
+    // 1. Server-Sent Events (SSE) Stream for real-time live sync between Admin and Kitchen
+    let eventSource: EventSource | null = null;
+    try {
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('oz_admin_token') || localStorage.getItem('oz_kitchen_token') || '')
+        : '';
+      const streamUrl = token ? `/api/orders/stream?token=${encodeURIComponent(token)}` : '/api/orders/stream';
+      eventSource = new EventSource(streamUrl);
+      eventSource.addEventListener('order', () => {
+        fetchAdminData();
+      });
+      eventSource.onerror = () => {
+        // Fallback gracefully to smart polling
+      };
+    } catch (err) {
+      console.warn('Admin SSE connection failed, falling back to smart polling:', err);
+    }
+
+    // 2. Responsive fallback polling (every 4s for instant bi-directional consistency)
+    const interval = setInterval(fetchAdminData, 4000);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
+    };
   }, [fetchAdminData]);
 
   useEffect(() => {
@@ -1069,9 +1095,32 @@ export default function AdminPage() {
   }, [staff, globalSearch]);
 
   // Kanban buckets
-  const receivedOrders = useMemo(() => orders.filter((o) => o.status === 'received'), [orders]);
-  const preparingOrders = useMemo(() => orders.filter((o) => o.status === 'preparing'), [orders]);
-  const readyOrders = useMemo(() => orders.filter((o) => o.status === 'ready'), [orders]);
+  const receivedOrders = useMemo(() => orders.filter((o) => o.status === 'received' && !o.isDeleted), [orders]);
+  const preparingOrders = useMemo(() => orders.filter((o) => o.status === 'preparing' && !o.isDeleted), [orders]);
+  const readyOrders = useMemo(() => orders.filter((o) => o.status === 'ready' && !o.isDeleted), [orders]);
+  const unsettledOrders = useMemo(() => orders.filter((o) => o.status === 'served' && !o.isPaid && !o.isDeleted), [orders]);
+
+  const filteredSettlementOrders = useMemo(() => {
+    return unsettledOrders.filter((ord) => {
+      if (settlementTableFilter === 'table') {
+        const isTakeaway = ord.tableNumber === 0 || String(ord.tableNumber).toLowerCase() === 'takeaway';
+        if (isTakeaway) return false;
+      } else if (settlementTableFilter === 'takeaway') {
+        const isTakeaway = ord.tableNumber === 0 || String(ord.tableNumber).toLowerCase() === 'takeaway';
+        if (!isTakeaway) return false;
+      }
+
+      if (settlementSearch.trim()) {
+        const q = settlementSearch.toLowerCase().trim();
+        const num = (ord.orderNumber || '').toLowerCase();
+        const name = (ord.customerName || '').toLowerCase();
+        const phone = (ord.customerPhone || '').toLowerCase();
+        const flat = (ord.customerFlat || '').toLowerCase();
+        return num.includes(q) || name.includes(q) || phone.includes(q) || flat.includes(q);
+      }
+      return true;
+    });
+  }, [unsettledOrders, settlementTableFilter, settlementSearch]);
 
   // ── PIN AUTHENTICATION GATE ──
   if (!isAuthenticated) {
@@ -1160,6 +1209,26 @@ export default function AdminPage() {
             <span className="admin-nav-label">Live Orders</span>
             {(receivedOrders.length + preparingOrders.length) > 0 && (
               <span className="admin-nav-badge">{receivedOrders.length + preparingOrders.length}</span>
+            )}
+          </button>
+
+          {/* 2b. Bill Settlement */}
+          <button
+            onClick={() => { setActiveTab('bill-settlement'); setIsMobileSidebarOpen(false); }}
+            className={`admin-nav-item ${activeTab === 'bill-settlement' ? 'active' : ''}`}
+            title="Bill Settlement & Floor Collections"
+          >
+            <div className="admin-nav-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <line x1="2" y1="10" x2="22" y2="10" />
+                <line x1="6" y1="14" x2="8" y2="14" />
+                <line x1="12" y1="14" x2="16" y2="14" />
+              </svg>
+            </div>
+            <span className="admin-nav-label">Bill Settlement</span>
+            {unsettledOrders.length > 0 && (
+              <span className="admin-nav-badge amber">{unsettledOrders.length}</span>
             )}
           </button>
 
@@ -1304,6 +1373,7 @@ export default function AdminPage() {
               <h1 className="admin-header-title">
                 {activeTab === 'dashboard' && <><span className="title-full">Dashboard Overview</span><span className="title-short">Dashboard</span></>}
                 {activeTab === 'live-orders' && <><span className="title-full">Live Orders Feed & KDS</span><span className="title-short">Live Orders</span></>}
+                {activeTab === 'bill-settlement' && <><span className="title-full">Bill Settlement & Floor Collections</span><span className="title-short">Bill Settlement</span></>}
                 {activeTab === 'menu' && <><span className="title-full">Menu & Stock Control</span><span className="title-short">Menu</span></>}
                 {activeTab === 'staff' && <><span className="title-full">Floor & Kitchen Staff</span><span className="title-short">Staff</span></>}
                 {activeTab === 'analytics' && <><span className="title-full">Financial Records & Analytics</span><span className="title-short">Analytics</span></>}
@@ -1571,7 +1641,12 @@ export default function AdminPage() {
                 </div>
 
                 {/* Metric 2: Active Orders */}
-                <div className="admin-metric-card">
+                <div
+                  className="admin-metric-card"
+                  onClick={() => unsettledOrders.length > 0 ? setActiveTab('bill-settlement') : setActiveTab('live-orders')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to view live orders / bill settlements"
+                >
                   <div className="admin-metric-top">
                     <span className="admin-metric-label">Active Orders</span>
                     <div className="admin-metric-icon-wrap terracotta">
@@ -1581,12 +1656,17 @@ export default function AdminPage() {
                       </svg>
                     </div>
                   </div>
-                  <div className="admin-metric-value">
-                    {stats.activeOrderCount}
+                  <div className="admin-metric-value" style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span>{receivedOrders.length + preparingOrders.length + readyOrders.length}</span>
+                    {unsettledOrders.length > 0 && (
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#B45309', background: '#FDF4E7', padding: '2px 8px', borderRadius: 12, border: '1px solid #F5DEB3' }}>
+                        +{unsettledOrders.length} to settle
+                      </span>
+                    )}
                   </div>
                   <div className="admin-metric-bottom">
                     <span className="admin-metric-subtext">
-                      {preparingOrders.length} preparing · {readyOrders.length} ready
+                      {preparingOrders.length} preparing · {readyOrders.length} ready {unsettledOrders.length > 0 ? `· ${unsettledOrders.length} pending bill` : ''}
                     </span>
                   </div>
                 </div>
@@ -1872,7 +1952,7 @@ export default function AdminPage() {
                               <button
                                 onClick={() => handleUpdateOrderStatus(ord.id, 'served')}
                                 className="admin-btn-action complete"
-                                title="Mark served and close order"
+                                title="Mark served and move to Bill Settlement"
                               >
                                 Complete / Served
                               </button>
@@ -1882,6 +1962,100 @@ export default function AdminPage() {
                                 title="Print thermal receipt"
                               >
                                 🖨
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 4: Bill Settlement */}
+                <div className="admin-kanban-column admin-kanban-column-settlement">
+                  <div className="admin-column-header">
+                    <span className="admin-column-title">
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C59A6F', display: 'inline-block' }} />
+                      Bill Settlement
+                    </span>
+                    <span className="admin-column-pill" style={{ background: '#FDF4E7', color: '#7C4A1E', borderColor: '#F5DEB3' }}>
+                      {unsettledOrders.length}
+                    </span>
+                  </div>
+
+                  <div className="admin-order-cards-list">
+                    {unsettledOrders.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--adm-text-muted)', fontSize: 13 }}>
+                        <div style={{ fontSize: 24, marginBottom: 8 }}>💳</div>
+                        <div style={{ fontWeight: 600 }}>No bills awaiting settlement</div>
+                        <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>
+                          Orders move here after being served until payment is confirmed.
+                        </div>
+                      </div>
+                    ) : (
+                      unsettledOrders.map((ord) => {
+                        const elapsed = getElapsedMinutes(ord.createdAt);
+                        return (
+                          <div key={ord.id} className="admin-order-card admin-order-card-settlement">
+                            <div className="admin-order-top">
+                              <span className="admin-order-num">{ord.orderNumber}</span>
+                              <span className="admin-order-table-badge" style={{ background: '#FDF4E7', color: '#7C4A1E', border: '1px solid #F5DEB3' }}>
+                                {ord.tableNumber === 0 || String(ord.tableNumber).toLowerCase() === 'takeaway'
+                                  ? 'Takeaway'
+                                  : `Table ${ord.tableNumber}`}
+                              </span>
+                              <span className="admin-order-timer">⏱ {elapsed}m</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
+                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span>•</span>
+                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+
+                            <div className="admin-order-customer">
+                              <strong>{ord.customerName}</strong> ({ord.customerPhone})
+                              {ord.customerFlat && ` · Flat ${ord.customerFlat}`}
+                            </div>
+
+                            <div className="admin-order-items-preview">
+                              {ord.items.map((it, idx) => (
+                                <div key={idx} className="admin-order-item-row">
+                                  <span>{it.quantity}x {it.name}</span>
+                                  <strong>₹{(Number(it.price) * Number(it.quantity)).toFixed(2)}</strong>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px dashed var(--adm-border)', marginTop: 4, fontWeight: 700, fontSize: 13 }}>
+                              <span style={{ color: 'var(--adm-text-secondary)' }}>Total Payable:</span>
+                              <span style={{ color: 'var(--adm-terracotta)', fontSize: 15, fontWeight: 800 }}>₹{ord.total.toFixed(2)}</span>
+                            </div>
+
+                            <div className="admin-order-card-actions" style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                              <button
+                                onClick={() => handleSettleOrderBill(ord.id)}
+                                className="admin-btn-action settle"
+                                style={{ flex: 1.8 }}
+                                title="Confirm payment collected and settle bill"
+                              >
+                                💳 Mark Settled
+                              </button>
+                              <button
+                                onClick={() => setSelectedReceiptOrder(ord)}
+                                className="admin-btn-action receipt"
+                                title="Print thermal receipt"
+                                style={{ flex: 1 }}
+                              >
+                                🧾 Bill
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditReceipt(ord)}
+                                className="admin-btn-action"
+                                title="Edit receipt items and rates"
+                                style={{ flex: 1, background: 'var(--adm-surface-dim)', color: 'var(--adm-text-main)', border: '1px solid var(--adm-border)' }}
+                              >
+                                ✏️ Edit
                               </button>
                             </div>
                           </div>
@@ -2215,6 +2389,197 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════
+              TAB 2B: DEDICATED BILL SETTLEMENT
+              ══════════════════════════════════════════ */}
+          {activeTab === 'bill-settlement' && (
+            <div>
+              {/* Top Overview Cards */}
+              <div className="admin-settlement-stats-grid">
+                <div className="admin-metric-card">
+                  <div className="admin-metric-top">
+                    <span className="admin-metric-label">Unsettled Bills</span>
+                    <div className="admin-metric-icon-wrap" style={{ background: '#FDF4E7', color: '#B45309' }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <line x1="2" y1="10" x2="22" y2="10" />
+                        <line x1="6" y1="14" x2="8" y2="14" />
+                        <line x1="12" y1="14" x2="16" y2="14" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="admin-metric-value">{unsettledOrders.length}</div>
+                  <div className="admin-metric-bottom">
+                    <span className="admin-metric-subtext">Awaiting payment collection</span>
+                  </div>
+                </div>
+
+                <div className="admin-metric-card">
+                  <div className="admin-metric-top">
+                    <span className="admin-metric-label">Total Amount Pending</span>
+                    <div className="admin-metric-icon-wrap terracotta">
+                      <span style={{ fontSize: 16, fontWeight: 800 }}>₹</span>
+                    </div>
+                  </div>
+                  <div className="admin-metric-value">
+                    ₹{unsettledOrders.reduce((sum, o) => sum + (o.total || 0), 0).toFixed(2)}
+                  </div>
+                  <div className="admin-metric-bottom">
+                    <span className="admin-metric-subtext">Across {unsettledOrders.length} orders</span>
+                  </div>
+                </div>
+
+                <div className="admin-metric-card">
+                  <div className="admin-metric-top">
+                    <span className="admin-metric-label">Settled Today</span>
+                    <div className="admin-metric-icon-wrap matcha">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="admin-metric-value">
+                    {orders.filter((o) => {
+                      if (!o.isPaid || !o.paidAt) return false;
+                      const d = new Date(o.paidAt);
+                      const today = new Date();
+                      return d.toDateString() === today.toDateString();
+                    }).length}
+                  </div>
+                  <div className="admin-metric-bottom">
+                    <span className="admin-metric-subtext">Completed transactions</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Toolbar & Filter */}
+              <div className="admin-card" style={{ marginBottom: 20 }}>
+                <div className="admin-table-toolbar">
+                  <div className="admin-table-filters" style={{ flexWrap: 'wrap', gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="Search bill by order #, guest name, phone, flat..."
+                      value={settlementSearch}
+                      onChange={(e) => setSettlementSearch(e.target.value)}
+                      className="admin-form-input"
+                      style={{ minWidth: 260 }}
+                    />
+                    <select
+                      value={settlementTableFilter}
+                      onChange={(e) => setSettlementTableFilter(e.target.value as any)}
+                      className="admin-form-select"
+                    >
+                      <option value="all">All Order Types</option>
+                      <option value="table">Dine-in / Tables</option>
+                      <option value="takeaway">Takeaway & In-Flat</option>
+                    </select>
+                  </div>
+                  <div className="admin-table-actions">
+                    <button
+                      onClick={fetchAdminData}
+                      className="admin-btn-gps-calibrate"
+                      title="Refresh bill settlement list"
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Unsettled Bills List / Grid */}
+              {filteredSettlementOrders.length === 0 ? (
+                <div className="admin-card" style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--adm-text-muted)' }}>
+                  <div style={{ fontSize: 42, marginBottom: 12 }}>🎉</div>
+                  <h3 style={{ margin: '0 0 6px', color: 'var(--adm-text-main)', fontSize: 18, fontWeight: 700 }}>
+                    {unsettledOrders.length === 0 ? 'All Bills are Settled!' : 'No matching unsettled bills'}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--adm-text-secondary)', maxWidth: 440, marginLeft: 'auto', marginRight: 'auto' }}>
+                    {unsettledOrders.length === 0
+                      ? 'All served orders have collected payments. When floor or kitchen staff marks an order served, it will automatically appear here until marked settled.'
+                      : 'Try clearing your search query or type filter.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="admin-settlement-cards-grid">
+                  {filteredSettlementOrders.map((ord) => {
+                    const elapsed = getElapsedMinutes(ord.createdAt);
+                    return (
+                      <div key={ord.id} className="admin-settlement-order-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--adm-text-main)' }}>
+                            {ord.orderNumber}
+                          </span>
+                          <span className="admin-order-table-badge" style={{ background: '#FDF4E7', color: '#7C4A1E', border: '1px solid #F5DEB3', fontWeight: 700 }}>
+                            {ord.tableNumber === 0 || String(ord.tableNumber).toLowerCase() === 'takeaway'
+                              ? 'Takeaway & In-Flat'
+                              : `Table ${ord.tableNumber}`}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)' }}>
+                          <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span>•</span>
+                          <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>•</span>
+                          <span>⏱ {elapsed}m ago</span>
+                        </div>
+
+                        <div style={{ fontSize: 13, color: 'var(--adm-text-main)', borderTop: '1px solid var(--adm-border)', paddingTop: 8 }}>
+                          <strong>{ord.customerName}</strong>
+                          {ord.customerPhone && <span style={{ color: 'var(--adm-text-secondary)' }}> ({ord.customerPhone})</span>}
+                          {ord.customerFlat && <span style={{ color: 'var(--adm-terracotta)', fontWeight: 600 }}> · Flat {ord.customerFlat}</span>}
+                        </div>
+
+                        <div className="admin-order-items-preview">
+                          {ord.items.map((it, idx) => (
+                            <div key={idx} className="admin-order-item-row">
+                              <span>{it.quantity}x {it.name} {it.selectedSize && it.selectedSize !== 'Regular' ? `(${it.selectedSize})` : ''}</span>
+                              <strong>₹{(Number(it.price) * Number(it.quantity)).toFixed(2)}</strong>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px dashed var(--adm-border)', fontWeight: 700 }}>
+                          <span style={{ color: 'var(--adm-text-secondary)', fontSize: 13 }}>Total Payable:</span>
+                          <span style={{ color: 'var(--adm-terracotta)', fontSize: 18, fontWeight: 900 }}>
+                            ₹{ord.total.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                          <button
+                            onClick={() => handleSettleOrderBill(ord.id)}
+                            className="admin-btn-action settle"
+                            style={{ flex: 2, height: 42, fontSize: 13.5, fontWeight: 700 }}
+                            title="Confirm payment collected and mark paid"
+                          >
+                            💳 Mark Settled
+                          </button>
+                          <button
+                            onClick={() => setSelectedReceiptOrder(ord)}
+                            className="admin-btn-action receipt"
+                            style={{ flex: 1, height: 42, fontSize: 13 }}
+                            title="View & Print thermal receipt"
+                          >
+                            🧾 Bill
+                          </button>
+                          <button
+                            onClick={() => handleOpenEditReceipt(ord)}
+                            className="admin-btn-action"
+                            style={{ flex: 1, height: 42, fontSize: 13, background: 'var(--adm-surface-dim)', color: 'var(--adm-text-main)', border: '1px solid var(--adm-border)' }}
+                            title="Edit receipt items and customer details"
+                          >
+                            ✏️ Edit
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

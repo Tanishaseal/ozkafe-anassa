@@ -1122,6 +1122,7 @@ export async function deleteOrder(
     if (idx !== -1) {
       const deleted = existing.splice(idx, 1)[0];
       saveStoreToDisk();
+      broadcastOrder({ ...deleted, status: 'cancelled', isDeleted: true });
       addAuditLog({
         actor: actor as any,
         action: 'ORDER_PURGED',
@@ -1159,6 +1160,7 @@ export async function deleteOrder(
     }
 
     saveStoreToDisk();
+    broadcastOrder(target);
     addAuditLog({
       actor: actor as any,
       action: 'ORDER_DELETED',
