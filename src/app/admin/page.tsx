@@ -729,8 +729,12 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteOrder = async (ord: Order) => {
-    if (!confirm(`Are you sure you want to permanently delete order "${ord.orderNumber}" (₹${ord.total})? This action cannot be undone.`)) {
+  const handleDeleteOrder = async (ord: Order, permanent: boolean = false) => {
+    const confirmMsg = permanent
+      ? `Permanently purge order "${ord.orderNumber}" (₹${ord.total}) from database? This action cannot be undone.`
+      : `Delete order "${ord.orderNumber}" (₹${ord.total})? This will cancel and delete the order from active queues everywhere, marking it Deleted by Admin.`;
+
+    if (!confirm(confirmMsg)) {
       return;
     }
     try {
@@ -740,14 +744,14 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
-        body: JSON.stringify({ orderId: ord.id }),
+        body: JSON.stringify({ orderId: ord.id, permanent }),
       });
       if (res.ok) {
         if (selectedReceiptOrder?.id === ord.id) {
           setSelectedReceiptOrder(null);
         }
         fetchAdminData();
-        setSaveSuccessMsg(`✓ Order ${ord.orderNumber} deleted successfully.`);
+        setSaveSuccessMsg(permanent ? `✓ Order ${ord.orderNumber} permanently purged.` : `✓ Order ${ord.orderNumber} deleted by Admin.`);
         setTimeout(() => setSaveSuccessMsg(''), 4000);
       } else {
         alert('Failed to delete order.');
@@ -1039,7 +1043,9 @@ export default function AdminPage() {
     const sortedKeys = Array.from(map.keys()).sort().reverse();
     sortedKeys.forEach((k) => {
       const ords = map.get(k)!;
-      const rev = ords.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+      const rev = ords
+        .filter((o) => !o.isDeleted && o.status !== 'cancelled')
+        .reduce((sum, item) => sum + (Number(item.total) || 0), 0);
       groups.push({
         monthKey: k,
         monthLabel: formatMonthKey(k),
@@ -2098,15 +2104,25 @@ export default function AdminPage() {
                                 <td><strong>₹{ord.total}</strong></td>
                                 <td>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                                    <span className={`admin-status-badge ${
-                                      ord.status === 'served' ? 'green' :
-                                      ord.status === 'preparing' ? 'amber' :
-                                      ord.status === 'ready' ? 'green' :
-                                      ord.status === 'cancelled' ? 'red' : 'amber'
-                                    }`}>
-                                      {ord.status.toUpperCase()}
-                                    </span>
-                                    {ord.isPaid ? (
+                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
+                                      <span className="admin-status-badge red" style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                        ❌ DELETED BY ADMIN
+                                      </span>
+                                    ) : (
+                                      <span className={`admin-status-badge ${
+                                        ord.status === 'served' ? 'green' :
+                                        ord.status === 'preparing' ? 'amber' :
+                                        ord.status === 'ready' ? 'green' :
+                                        ord.status === 'cancelled' ? 'red' : 'amber'
+                                      }`}>
+                                        {ord.status.toUpperCase()}
+                                      </span>
+                                    )}
+                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
+                                      <span style={{ fontSize: 10, color: '#991B1B', fontWeight: 600 }}>
+                                        Cancelled & Deleted
+                                      </span>
+                                    ) : ord.isPaid ? (
                                       <span style={{ fontSize: 10, fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
                                         ✓ PAID
                                       </span>
@@ -2119,57 +2135,75 @@ export default function AdminPage() {
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    {ord.status === 'received' && (
-                                      <button
-                                        onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
-                                        className="admin-btn-action accept"
-                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
-                                      >
-                                        Accept
-                                      </button>
+                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
+                                      <>
+                                        <span style={{ fontSize: 11.5, color: '#991B1B', fontWeight: 700, paddingRight: 4 }}>
+                                          Deleted by Admin
+                                        </span>
+                                        <button
+                                          onClick={() => handleDeleteOrder(ord, true)}
+                                          className="admin-wipe-btn"
+                                          title="Purge order permanently from database"
+                                          style={{ height: 28, padding: '0 8px', fontSize: 11, fontWeight: 700 }}
+                                        >
+                                          🗑️ Purge
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {ord.status === 'received' && (
+                                          <button
+                                            onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
+                                            className="admin-btn-action accept"
+                                            style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                          >
+                                            Accept
+                                          </button>
+                                        )}
+                                        {ord.status === 'preparing' && (
+                                          <button
+                                            onClick={() => handleUpdateOrderStatus(ord.id, 'ready')}
+                                            className="admin-btn-action ready"
+                                            style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                          >
+                                            Ready
+                                          </button>
+                                        )}
+                                        {ord.status === 'ready' && (
+                                          <button
+                                            onClick={() => handleUpdateOrderStatus(ord.id, 'served')}
+                                            className="admin-btn-action complete"
+                                            style={{ height: 30, padding: '0 8px', fontSize: 11 }}
+                                          >
+                                            Served
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => setSelectedReceiptOrder(ord)}
+                                          className="admin-alert-action-btn"
+                                          title="View / Print Receipt"
+                                          style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
+                                        >
+                                          Receipt
+                                        </button>
+                                        <button
+                                          onClick={() => handleOpenEditReceipt(ord)}
+                                          className="admin-alert-action-btn"
+                                          title="Edit Order and Receipt"
+                                          style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600, color: 'var(--adm-terracotta)' }}
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteOrder(ord, false)}
+                                          className="admin-wipe-btn"
+                                          title="Delete Order by Admin"
+                                          style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
+                                        >
+                                          Delete
+                                        </button>
+                                      </>
                                     )}
-                                    {ord.status === 'preparing' && (
-                                      <button
-                                        onClick={() => handleUpdateOrderStatus(ord.id, 'ready')}
-                                        className="admin-btn-action ready"
-                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
-                                      >
-                                        Ready
-                                      </button>
-                                    )}
-                                    {ord.status === 'ready' && (
-                                      <button
-                                        onClick={() => handleUpdateOrderStatus(ord.id, 'served')}
-                                        className="admin-btn-action complete"
-                                        style={{ height: 30, padding: '0 8px', fontSize: 11 }}
-                                      >
-                                        Served
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => setSelectedReceiptOrder(ord)}
-                                      className="admin-alert-action-btn"
-                                      title="View / Print Receipt"
-                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
-                                    >
-                                      Receipt
-                                    </button>
-                                    <button
-                                      onClick={() => handleOpenEditReceipt(ord)}
-                                      className="admin-alert-action-btn"
-                                      title="Edit Order and Receipt"
-                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600, color: 'var(--adm-terracotta)' }}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteOrder(ord)}
-                                      className="admin-wipe-btn"
-                                      title="Delete Order Permanently"
-                                      style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
-                                    >
-                                      Delete
-                                    </button>
                                   </div>
                                 </td>
                               </tr>

@@ -37,14 +37,14 @@ export async function GET(request: Request) {
     today.setHours(0, 0, 0, 0);
     const startOfToday = today.getTime();
 
-    const todayOrders = orders.filter((o) => o.createdAt >= startOfToday && o.status !== 'cancelled');
+    const todayOrders = orders.filter((o) => o.createdAt >= startOfToday && o.status !== 'cancelled' && !o.isDeleted);
     const todayRevenue = todayOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
-    const activeOrders = orders.filter((o) => ['received', 'preparing', 'ready'].includes(o.status));
+    const activeOrders = orders.filter((o) => ['received', 'preparing', 'ready'].includes(o.status) && !o.isDeleted);
 
     // Item popularity calculation
     const itemSales: Record<string, { name: string; count: number; revenue: number }> = {};
     orders.forEach((o) => {
-      if (o.status !== 'cancelled' && Array.isArray(o.items)) {
+      if (o.status !== 'cancelled' && !o.isDeleted && Array.isArray(o.items)) {
         o.items.forEach((it) => {
           if (!it || !it.id) return;
           const qty = Number(it.quantity) || 1;
@@ -177,11 +177,12 @@ export async function POST(request: Request) {
     // Action 6: Delete specific order
     if (action === 'delete_order' || body.action === 'delete_order') {
       const orderId = body.orderId || searchParams.get('id');
+      const permanent = body.permanent === true || searchParams.get('permanent') === 'true';
       if (!orderId) {
         return NextResponse.json({ error: 'Order ID is required to delete' }, { status: 400 });
       }
-      const success = await deleteOrder(orderId);
-      return NextResponse.json({ success, message: 'Order successfully deleted' });
+      const success = await deleteOrder(orderId, 'admin', permanent);
+      return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order successfully deleted by admin' });
     }
 
     // Action 7: Edit order receipt
@@ -250,8 +251,9 @@ export async function DELETE(request: Request) {
 
     if (action === 'delete_order' || (action !== 'purge_database' && orderId)) {
       if (orderId) {
-        const success = await deleteOrder(orderId);
-        return NextResponse.json({ success, message: 'Order deleted successfully' });
+        const permanent = searchParams.get('permanent') === 'true';
+        const success = await deleteOrder(orderId, 'admin', permanent);
+        return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order deleted by admin' });
       }
     }
 

@@ -869,7 +869,14 @@ export async function getOrders(filter?: {
             ? new Date(o.paid_at).getTime()
             : (settledMatch ? Number(settledMatch[1]) : (o as any).paidAt);
           const settledBy = o.settled_by || (settledMatch ? settledMatch[2] : (o as any).settledBy);
-          const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+          const cleanInstructions = rawInstructions
+            .replace(/\[SETTLED:[^\]]+\]/g, '')
+            .replace(/\[DELETED_BY_[^\]]+\]/g, '')
+            .trim();
+
+          const isDeletedMatch = rawInstructions.match(/\[DELETED_BY_([^\]]+)\]/);
+          const isDeleted = Boolean((o as any).is_deleted || isDeletedMatch !== null || (o.status === 'cancelled' && (o as any).deletedBy));
+          const deletedBy = (o as any).deleted_by || (isDeletedMatch ? isDeletedMatch[1].toLowerCase() : (o as any).deletedBy);
 
           return {
             id: o.id,
@@ -889,6 +896,8 @@ export async function getOrders(filter?: {
             isPaid,
             paidAt,
             settledBy,
+            isDeleted,
+            deletedBy,
             customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
             customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
             distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
@@ -900,7 +909,9 @@ export async function getOrders(filter?: {
         let filtered = rawOrders;
         if (filter?.status === 'active') {
           filtered = filtered.filter((o) => {
+            if (o.isDeleted || o.status === 'cancelled') return false;
             if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+            if (o.status === 'served' && !o.isPaid) return true;
             if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
               return true;
             }
@@ -929,6 +940,7 @@ export async function getOrders(filter?: {
   if (filter?.status === 'active') {
     const recentServedCutoff = Date.now() - 45 * 60 * 1000;
     list = list.filter((o) => {
+      if (o.isDeleted || o.status === 'cancelled') return false;
       if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
       if (o.status === 'served' && !o.isPaid) return true;
       if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
@@ -1090,24 +1102,67 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
   return null;
 }
 
-export async function deleteOrder(orderId: string): Promise<boolean> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      await supabaseServer.from('orders').delete().eq('id', orderId);
-    } catch (err) {
-      console.warn('Supabase deleteOrder error:', err);
-    }
-  }
-
+export async function deleteOrder(
+  orderId: string,
+  actor: 'admin' | 'kitchen' = 'admin',
+  permanent: boolean = false
+): Promise<boolean> {
+  loadStoreFromDisk();
   const existing = globalStore.__anassa_orders || [];
   const idx = existing.findIndex((o) => o.id === orderId);
+
+  if (permanent) {
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        await supabaseServer.from('orders').delete().eq('id', orderId);
+      } catch (err) {
+        console.warn('Supabase deleteOrder permanent error:', err);
+      }
+    }
+    if (idx !== -1) {
+      const deleted = existing.splice(idx, 1)[0];
+      saveStoreToDisk();
+      addAuditLog({
+        actor: actor as any,
+        action: 'ORDER_PURGED',
+        details: `Order #${deleted.orderNumber} permanently purged by ${actor}`,
+      });
+      return true;
+    }
+    return true;
+  }
+
+  // Standard deletion: mark order cancelled & deleted by admin so it is purged from active boards everywhere
+  // while remaining verifiable in audit history and explicitly informing the customer tracker
   if (idx !== -1) {
-    const deleted = existing.splice(idx, 1)[0];
+    const target = existing[idx];
+    target.status = 'cancelled';
+    target.isDeleted = true;
+    target.deletedBy = actor;
+    target.deletedAt = Date.now();
+    target.deletionReason = `Deleted by ${actor === 'admin' ? 'Admin' : 'Kitchen'}`;
+    target.updatedAt = Date.now();
+
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        await supabaseServer
+          .from('orders')
+          .update({
+            status: 'cancelled',
+            special_instructions: `${target.specialInstructions || ''} [DELETED_BY_${actor.toUpperCase()}]`.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
+      } catch (err) {
+        console.warn('Supabase deleteOrder soft-delete error:', err);
+      }
+    }
+
     saveStoreToDisk();
     addAuditLog({
-      actor: 'admin',
+      actor: actor as any,
       action: 'ORDER_DELETED',
-      details: `Order #${deleted.orderNumber} deleted by admin`,
+      details: `Order #${target.orderNumber} (₹${target.total}) deleted by ${actor}`,
     });
     return true;
   }

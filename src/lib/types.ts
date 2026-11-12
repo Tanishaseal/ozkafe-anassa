@@ -78,6 +78,10 @@ export interface Order {
   isPaid?: boolean; // When true: bill has been settled / customer paid
   paidAt?: number; // Unix timestamp ms when bill settled
   settledBy?: string; // Name and title of staff member who settled the bill
+  isDeleted?: boolean; // When true: order was deleted from active boards
+  deletedBy?: 'admin' | 'kitchen' | string; // Actor who deleted the order
+  deletedAt?: number; // Unix timestamp ms when deleted
+  deletionReason?: string; // e.g. "Deleted by Admin"
   customerLat?: number;
   customerLng?: number;
   distanceMeters?: number;
@@ -169,6 +173,7 @@ export type AuditAction =
   | 'ORDER_STATUS_CHANGED'
   | 'ORDER_REJECTED'
   | 'ORDER_DELETED'
+  | 'ORDER_PURGED'
   | 'BILL_SETTLED'
   | 'RECEIPT_EDITED'
   | 'GEOFENCE_FAILED'

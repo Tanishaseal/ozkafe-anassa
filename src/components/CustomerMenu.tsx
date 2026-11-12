@@ -69,6 +69,7 @@ export default function CustomerMenu({
   const [customerPhone, setCustomerPhone] = useState('');
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [deletedOrdersNotice, setDeletedOrdersNotice] = useState<Order[]>([]);
   const [hasLocalOrders, setHasLocalOrders] = useState(false);
   const [cartBadgePop, setCartBadgePop] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -378,12 +379,19 @@ export default function CustomerMenu({
       if (res.ok) {
         const data: Order[] = await res.json();
         if (Array.isArray(data)) {
-          if (data.length > 0) {
-            setActiveOrders(data);
+          const liveActive = data.filter((o) => !o.isDeleted && o.status !== 'cancelled');
+          const deletedByAdmin = data.filter((o) => o.isDeleted || (o.status === 'cancelled' && o.deletedBy === 'admin'));
+
+          if (deletedByAdmin.length > 0) {
+            setDeletedOrdersNotice(deletedByAdmin);
+          }
+
+          if (liveActive.length > 0) {
+            setActiveOrders(liveActive);
           } else {
-            // Guard: Retain active orders placed within the last 10 minutes so tracker never flashes empty
+            // Guard: Retain active orders placed within the last 10 minutes (strictly non-deleted and non-cancelled)
             setActiveOrders((prev) => {
-              const recent = prev.filter((o) => Date.now() - o.createdAt < 10 * 60 * 1000);
+              const recent = prev.filter((o) => !o.isDeleted && o.status !== 'cancelled' && Date.now() - o.createdAt < 10 * 60 * 1000);
               return recent.length > 0 ? recent : [];
             });
           }
@@ -2134,6 +2142,60 @@ export default function CustomerMenu({
             </div>
 
             <div className="sheet-content">
+              {/* Notifications for Orders Deleted by Admin */}
+              {deletedOrdersNotice.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  {deletedOrdersNotice.map((del) => (
+                    <div
+                      key={del.id}
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 12,
+                        background: '#FEE2E2',
+                        border: '1.5px solid #FCA5A5',
+                        color: '#991B1B',
+                        marginBottom: 10,
+                        animation: 'fadeIn 0.2s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 800, fontSize: 13.5 }}>
+                          ⚠️ Order #{del.orderNumber} Deleted by Admin
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeletedOrdersNotice((prev) => prev.filter((o) => o.id !== del.id));
+                            try {
+                              const saved = localStorage.getItem('anassa_my_order_ids');
+                              if (saved) {
+                                const ids = JSON.parse(saved).filter((id: string) => id !== del.id);
+                                localStorage.setItem('anassa_my_order_ids', JSON.stringify(ids));
+                              }
+                            } catch {}
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#991B1B',
+                            fontSize: 16,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            padding: '0 4px',
+                          }}
+                          title="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7F1D1D', lineHeight: 1.4 }}>
+                        This order has been cancelled and deleted by the cafe admin. Please visit the counter or place a fresh order.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {activeOrders.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-grey)' }}>
                   <p style={{ margin: '0 0 16px', fontSize: 14 }}>No active orders in progress right now.</p>

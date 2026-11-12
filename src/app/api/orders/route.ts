@@ -27,14 +27,18 @@ export async function GET(request: Request) {
       if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
         return NextResponse.json({ error: 'Unauthorized. Kitchen or Admin staff access required.' }, { status: 401 });
       }
-      const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+      fifteenDaysAgo.setHours(0, 0, 0, 0);
+      const cutoffTime = fifteenDaysAgo.getTime();
       const allOrders = await getOrders({ limit: 1000 });
-      // Filter orders from the past 15 days or custom recorded bills so kitchen staff can review past bills
+      // Filter orders from the past 15 calendar days or any custom/manual recorded bills
       const historyOrders = allOrders.filter(
         (o) =>
-          o.createdAt >= fifteenDaysAgo ||
+          o.createdAt >= cutoffTime ||
           o.specialInstructions?.toLowerCase().includes('custom') ||
-          o.specialInstructions?.toLowerCase().includes('manual')
+          o.specialInstructions?.toLowerCase().includes('manual') ||
+          o.specialInstructions?.toLowerCase().includes('kitchen')
       );
       return NextResponse.json(historyOrders);
     }
@@ -605,12 +609,13 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const permanent = searchParams.get('permanent') === 'true';
     if (!id) {
       return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
     }
 
-    const success = await deleteOrder(id);
-    return NextResponse.json({ success, message: 'Order deleted successfully' });
+    const success = await deleteOrder(id, 'admin', permanent);
+    return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order deleted by admin' });
   } catch (error) {
     console.error('API DELETE /api/orders error:', error);
     return NextResponse.json({ error: 'Failed to delete order' }, { status: 500 });

@@ -57,6 +57,7 @@ export default function KitchenDashboard() {
   const [customBillPaymentMethod, setCustomBillPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [isSubmittingCustomBill, setIsSubmittingCustomBill] = useState(false);
   const [customBillSuccessMsg, setCustomBillSuccessMsg] = useState('');
+  const [adminDeleteAlert, setAdminDeleteAlert] = useState('');
 
   const getNowLocalDateTimeString = () => {
     const d = new Date();
@@ -154,6 +155,7 @@ export default function KitchenDashboard() {
             setCurrentUser(data.staff);
             setStaffName(data.staff.name);
             fetchOrders();
+            fetchHistoryOrders();
           }
         }
       })
@@ -204,7 +206,7 @@ export default function KitchenDashboard() {
       if (res.ok) {
         const data: Order[] = await res.json();
         
-        // Detect newly arrived orders
+        // Detect newly arrived orders and admin-deleted orders
         const currentIds = new Set(data.map((o) => o.id));
         let hasNew = false;
         data.forEach((o) => {
@@ -217,13 +219,26 @@ export default function KitchenDashboard() {
           playChime();
         }
 
+        // Alert kitchen if an active order was deleted by admin
+        if (previousOrderIdsRef.current.size > 0) {
+          previousOrderIdsRef.current.forEach((prevId) => {
+            if (!currentIds.has(prevId)) {
+              const deletedOrd = orders.find((o) => o.id === prevId);
+              if (deletedOrd && deletedOrd.status !== 'served') {
+                setAdminDeleteAlert(`⚠️ Order #${deletedOrd.orderNumber || prevId.slice(0, 8)} was deleted by Admin.`);
+                setTimeout(() => setAdminDeleteAlert(''), 6000);
+              }
+            }
+          });
+        }
+
         previousOrderIdsRef.current = currentIds;
         setOrders(data);
       }
     } catch (err) {
       console.warn('KDS fetch error:', err);
     }
-  }, [soundEnabled]);
+  }, [soundEnabled, orders]);
 
   // Fetch 15-day kitchen order history
   const fetchHistoryOrders = useCallback(async () => {
@@ -261,23 +276,39 @@ export default function KitchenDashboard() {
   // Combined list for bill settlement and history
   const allCombinedOrders = useMemo(() => {
     const map = new Map<string, Order>();
-    orders.forEach((o) => map.set(o.id, o));
+    // Exclude deleted/cancelled orders from active queue map
+    orders.forEach((o) => {
+      if (!o.isDeleted && o.status !== 'cancelled') map.set(o.id, o);
+    });
+    // History orders may contain completed and cancelled/deleted records for historical review
     historyOrders.forEach((o) => map.set(o.id, o));
-    recentServed.forEach((o) => map.set(o.id, o));
+    recentServed.forEach((o) => {
+      if (!o.isDeleted && o.status !== 'cancelled') map.set(o.id, o);
+    });
     return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, [orders, historyOrders, recentServed]);
 
   const unsettledOrders = useMemo(() => {
-    return allCombinedOrders.filter((o) => o.status === 'served' && !o.isPaid);
+    return allCombinedOrders.filter((o) => o.status === 'served' && !o.isPaid && !o.isDeleted);
   }, [allCombinedOrders]);
 
   const unsettledOrdersCount = unsettledOrders.length;
 
   // 15-day history filter (strictly orders from the last 15 days; older kept hidden)
   const filteredHistoryOrders = useMemo(() => {
-    const fifteenDaysAgo = Date.now() - 15 * 24 * 60 * 60 * 1000;
+    const fifteenDaysAgo = new Date();
+    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+    fifteenDaysAgo.setHours(0, 0, 0, 0);
+    const cutoffTimestamp = fifteenDaysAgo.getTime();
+
     return allCombinedOrders.filter((o) => {
-      if (o.createdAt < fifteenDaysAgo) return false;
+      const isWithin15Days = o.createdAt >= cutoffTimestamp;
+      const isCustomBill = Boolean(
+        o.specialInstructions?.toLowerCase().includes('custom') ||
+        o.specialInstructions?.toLowerCase().includes('manual') ||
+        o.specialInstructions?.toLowerCase().includes('kitchen')
+      );
+      if (!isWithin15Days && !isCustomBill) return false;
 
       if (historyStatusFilter !== 'all' && o.status !== historyStatusFilter) return false;
 
@@ -709,9 +740,14 @@ export default function KitchenDashboard() {
       console.warn('SSE connection failed, using smart poll:', err);
     }
 
-    // 2. Fallback Polling every 4 seconds
+    // 2. Smart Polling: active orders every 4s, history orders every 8s
+    let pollTick = 0;
     const interval = setInterval(() => {
       fetchOrders();
+      pollTick++;
+      if (pollTick % 2 === 0) {
+        fetchHistoryOrders();
+      }
     }, 4000);
 
     return () => {
@@ -807,6 +843,7 @@ export default function KitchenDashboard() {
           setIsAuthenticated(true);
           setStaffName(user.name);
           fetchOrders();
+          fetchHistoryOrders();
         }}
       />
     );
@@ -971,13 +1008,49 @@ export default function KitchenDashboard() {
             type="button"
             onClick={() => setCustomBillSuccessMsg('')}
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: '#15803D',
+              fontSize: 16,
               cursor: 'pointer',
               fontWeight: 800,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Admin Order Deleted Notification Toast */}
+      {adminDeleteAlert && (
+        <div
+          style={{
+            background: '#FEE2E2',
+            color: '#991B1B',
+            borderBottom: '1px solid #FCA5A5',
+            padding: '10px 24px',
+            fontWeight: 700,
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <span>{adminDeleteAlert}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdminDeleteAlert('')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#991B1B',
               fontSize: 16,
-              padding: '0 4px',
+              cursor: 'pointer',
+              fontWeight: 800,
             }}
           >
             ✕
@@ -1515,11 +1588,25 @@ export default function KitchenDashboard() {
 
               <button
                 type="button"
-                onClick={openCustomBillModal}
-                className="kds-action-btn-custom-bill"
-                title="Add custom bill for previous orders directly to history & admin"
+                onClick={fetchHistoryOrders}
+                className="kds-action-btn-refresh"
+                style={{
+                  height: 38,
+                  padding: '0 14px',
+                  borderRadius: 10,
+                  border: '1px solid #D6D3D1',
+                  background: '#FFFFFF',
+                  color: '#44403C',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+                title="Refresh order history from server"
               >
-                <span>🧾 + Add Custom Bill</span>
+                <span>{isLoadingHistory ? '⏳ Refreshing...' : '🔄 Refresh History'}</span>
               </button>
             </div>
           </div>
@@ -1584,7 +1671,23 @@ export default function KitchenDashboard() {
                         <strong style={{ fontSize: 14 }}>₹{ord.total}</strong>
                       </td>
                       <td>
-                        {ord.isPaid ? (
+                        {ord.isDeleted || ord.status === 'cancelled' || ord.deletedBy === 'admin' ? (
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              background: '#FEE2E2',
+                              color: '#991B1B',
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            ❌ DELETED BY ADMIN
+                          </span>
+                        ) : ord.isPaid ? (
                           <span className="settle-badge-paid" style={{ fontSize: 11 }}>
                             ✓ PAID
                           </span>
@@ -1595,37 +1698,43 @@ export default function KitchenDashboard() {
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => setPrintOrder(ord)}
-                            className="btn-kds-view-receipt"
-                            style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
-                            title="Check Bill / Receipt"
-                          >
-                            🧾 View Bill
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditReceipt(ord)}
-                            className="btn-kds-edit-receipt"
-                            style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
-                            title="Edit Receipt"
-                          >
-                            ✏️ Edit
-                          </button>
-                          {!ord.isPaid && (
+                        {ord.isDeleted || ord.status === 'cancelled' || ord.deletedBy === 'admin' ? (
+                          <span style={{ fontSize: 11.5, color: '#991B1B', fontWeight: 700, paddingRight: 6 }}>
+                            Deleted by Admin
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button
                               type="button"
-                              disabled={isSettlingId === ord.id}
-                              onClick={() => handleSettleBill(ord.id)}
-                              style={{ height: 32, padding: '0 10px', fontSize: 11.5, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}
-                              title="Mark Settled"
+                              onClick={() => setPrintOrder(ord)}
+                              className="btn-kds-view-receipt"
+                              style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
+                              title="Check Bill / Receipt"
                             >
-                              ✓ Settle
+                              🧾 View Bill
                             </button>
-                          )}
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditReceipt(ord)}
+                              className="btn-kds-edit-receipt"
+                              style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
+                              title="Edit Receipt"
+                            >
+                              ✏️ Edit
+                            </button>
+                            {!ord.isPaid && (
+                              <button
+                                type="button"
+                                disabled={isSettlingId === ord.id}
+                                onClick={() => handleSettleBill(ord.id)}
+                                style={{ height: 32, padding: '0 10px', fontSize: 11.5, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}
+                                title="Mark Settled"
+                              >
+                                ✓ Settle
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
