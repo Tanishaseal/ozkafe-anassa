@@ -1,6 +1,7 @@
 import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction, InventoryItem, StaffShift } from './types';
 import { initialCategories, initialMenuItems, initialAddons, initialSettings, initialInventory, initialStaff } from './initialData';
 import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
+import { fetchWithCache, invalidateCache } from './cache';
 import fs from 'fs';
 import path from 'path';
 
@@ -135,50 +136,52 @@ export function broadcastOrder(order: Order) {
 // CATEGORIES
 // ──────────────────────────────────────────
 export async function getCategories(): Promise<Category[]> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer
-        .from('categories')
-        .select('*')
-        .order('sort_order', { ascending: true });
-      if (!error && data && data.length >= initialCategories.length) {
-        // Count items per category
-        const items = await getMenuItems();
-        const counts: Record<string, number> = {};
-        items.forEach((it) => {
-          counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
-        });
+  return fetchWithCache('categories_all', async () => {
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        const { data, error } = await supabaseServer
+          .from('categories')
+          .select('*')
+          .order('sort_order', { ascending: true });
+        if (!error && data && data.length >= initialCategories.length) {
+          // Count items per category
+          const items = await getMenuItems();
+          const counts: Record<string, number> = {};
+          items.forEach((it) => {
+            counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
+          });
 
-        return data.map((c) => ({
-          id: c.id,
-          title: c.title,
-          subtitle: c.subtitle,
-          emoji: c.emoji,
-          heroLabel: c.hero_label || '',
-          iconSvg: c.icon_svg,
-          sortOrder: c.sort_order,
-          itemsCount: counts[c.id] || 0,
-        }));
-      } else {
-        // Auto-sync categories if Supabase table has fewer categories
-        syncMenuToDatabase().catch((e) => console.warn('Auto-sync categories error:', e));
+          return data.map((c) => ({
+            id: c.id,
+            title: c.title,
+            subtitle: c.subtitle,
+            emoji: c.emoji,
+            heroLabel: c.hero_label || '',
+            iconSvg: c.icon_svg,
+            sortOrder: c.sort_order,
+            itemsCount: counts[c.id] || 0,
+          }));
+        } else {
+          // Auto-sync categories if Supabase table has fewer categories
+          syncMenuToDatabase().catch((e) => console.warn('Auto-sync categories error:', e));
+        }
+      } catch (err) {
+        console.warn('Supabase getCategories error, falling back to memory store:', err);
       }
-    } catch (err) {
-      console.warn('Supabase getCategories error, falling back to memory store:', err);
     }
-  }
 
-  // Count items per category
-  const items = await getMenuItems();
-  const counts: Record<string, number> = {};
-  items.forEach((it) => {
-    counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
-  });
+    // Count items per category
+    const items = await getMenuItems();
+    const counts: Record<string, number> = {};
+    items.forEach((it) => {
+      counts[it.categoryId] = (counts[it.categoryId] || 0) + 1;
+    });
 
-  return (globalStore.__anassa_categories || initialCategories).map((cat) => ({
-    ...cat,
-    itemsCount: counts[cat.id] || 0,
-  }));
+    return (globalStore.__anassa_categories || initialCategories).map((cat) => ({
+      ...cat,
+      itemsCount: counts[cat.id] || 0,
+    }));
+  }, 30, ['categories', 'menu']);
 }
 
 const categoryOrderMap: Record<string, number> = {
@@ -204,29 +207,33 @@ if (!globalStockStore.__anassa_stock_map) {
 }
 
 export async function getStockMap(): Promise<Record<string, number>> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer
-        .from('cafe_settings')
-        .select('value')
-        .eq('key', 'menu_stock_inventory')
-        .single();
-      if (!error && data?.value && typeof data.value === 'object') {
-        globalStockStore.__anassa_stock_map = {
-          ...globalStockStore.__anassa_stock_map,
-          ...(data.value as Record<string, number>),
-        };
-        return globalStockStore.__anassa_stock_map;
+  return fetchWithCache('stock_map', async () => {
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        const { data, error } = await supabaseServer
+          .from('cafe_settings')
+          .select('value')
+          .eq('key', 'menu_stock_inventory')
+          .single();
+        if (!error && data?.value && typeof data.value === 'object') {
+          globalStockStore.__anassa_stock_map = {
+            ...globalStockStore.__anassa_stock_map,
+            ...(data.value as Record<string, number>),
+          };
+          return globalStockStore.__anassa_stock_map;
+        }
+      } catch {
+        // fallback to memory
       }
-    } catch {
-      // fallback to memory
     }
-  }
-  return globalStockStore.__anassa_stock_map || {};
+    return globalStockStore.__anassa_stock_map || {};
+  }, 10, ['stock', 'menu']);
 }
 
 export async function saveStockMap(stockMap: Record<string, number>): Promise<void> {
   globalStockStore.__anassa_stock_map = { ...stockMap };
+  invalidateCache('stock');
+  invalidateCache('menu');
   if (isSupabaseConfigured && supabaseServer) {
     try {
       await supabaseServer.from('cafe_settings').upsert({
@@ -244,82 +251,87 @@ export async function saveStockMap(stockMap: Record<string, number>): Promise<vo
 // MENU ITEMS
 // ──────────────────────────────────────────
 export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
-  const stockMap = await getStockMap();
+  const cacheKey = categoryId ? `menu_items_${categoryId}` : 'menu_items_all';
+  return fetchWithCache(cacheKey, async () => {
+    const stockMap = await getStockMap();
 
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      let query = supabaseServer.from('menu_items').select('*').order('sort_order', { ascending: true });
-      if (categoryId) {
-        query = query.eq('category_id', categoryId);
+    if (isSupabaseConfigured && supabaseServer) {
+      try {
+        let query = supabaseServer.from('menu_items').select('*').order('sort_order', { ascending: true });
+        if (categoryId) {
+          query = query.eq('category_id', categoryId);
+        }
+        const { data, error } = await query;
+        if (!error && data && data.length >= (categoryId ? 1 : initialMenuItems.length)) {
+          const mapped = data.map((i) => {
+            const itemStock = typeof stockMap[i.id] === 'number'
+              ? stockMap[i.id]
+              : (typeof i.stock === 'number' ? i.stock : 10);
+            const isAvail = itemStock > 0 ? (i.is_available ?? true) : false;
+
+            return {
+              id: i.id,
+              name: i.name,
+              subheading: i.subheading,
+              desc: i.desc || '',
+              price: Number(i.price),
+              img: i.name.toLowerCase().includes('hot chocolate') ? '/images/hot_chocolate.png' : (i.image_url || '/images/americano.png'),
+              category: i.category_name,
+              categoryId: i.category_id,
+              isVeg: i.is_veg ?? true,
+              isAvailable: isAvail,
+              stock: itemStock,
+              sizes: Array.isArray(i.sizes) ? i.sizes : ['Regular'],
+              sizePriceMultiplier: i.size_price_multiplier || null,
+              sortOrder: i.sort_order,
+            };
+          });
+
+          // Sort items by category order first so newly added dishes are grouped inside their category
+          mapped.sort((a, b) => {
+            const catA = categoryOrderMap[a.categoryId] ?? 99;
+            const catB = categoryOrderMap[b.categoryId] ?? 99;
+            if (catA !== catB) return catA - catB;
+            return (a.sortOrder || 0) - (b.sortOrder || 0);
+          });
+
+          return mapped;
+        } else if (!categoryId && (!data || data.length < initialMenuItems.length)) {
+          // Auto-sync full 76 PDF items to Supabase if Supabase has fewer items
+          syncMenuToDatabase().catch((e) => console.warn('Auto-sync menu items error:', e));
+        }
+      } catch (err) {
+        console.warn('Supabase getMenuItems error, falling back to memory store:', err);
       }
-      const { data, error } = await query;
-      if (!error && data && data.length >= (categoryId ? 1 : initialMenuItems.length)) {
-        const mapped = data.map((i) => {
-          const itemStock = typeof stockMap[i.id] === 'number'
-            ? stockMap[i.id]
-            : (typeof i.stock === 'number' ? i.stock : 10);
-          const isAvail = itemStock > 0 ? (i.is_available ?? true) : false;
-
-          return {
-            id: i.id,
-            name: i.name,
-            subheading: i.subheading,
-            desc: i.desc || '',
-            price: Number(i.price),
-            img: i.name.toLowerCase().includes('hot chocolate') ? '/images/hot_chocolate.png' : (i.image_url || '/images/americano.png'),
-            category: i.category_name,
-            categoryId: i.category_id,
-            isVeg: i.is_veg ?? true,
-            isAvailable: isAvail,
-            stock: itemStock,
-            sizes: Array.isArray(i.sizes) ? i.sizes : ['Regular'],
-            sizePriceMultiplier: i.size_price_multiplier || null,
-            sortOrder: i.sort_order,
-          };
-        });
-
-        // Sort items by category order first so newly added dishes are grouped inside their category
-        mapped.sort((a, b) => {
-          const catA = categoryOrderMap[a.categoryId] ?? 99;
-          const catB = categoryOrderMap[b.categoryId] ?? 99;
-          if (catA !== catB) return catA - catB;
-          return (a.sortOrder || 0) - (b.sortOrder || 0);
-        });
-
-        return mapped;
-      } else if (!categoryId && (!data || data.length < initialMenuItems.length)) {
-        // Auto-sync full 76 PDF items to Supabase if Supabase has fewer items
-        syncMenuToDatabase().catch((e) => console.warn('Auto-sync menu items error:', e));
-      }
-    } catch (err) {
-      console.warn('Supabase getMenuItems error, falling back to memory store:', err);
     }
-  }
 
-  const items = (globalStore.__anassa_items || initialMenuItems).map((it) => {
-    const s = typeof stockMap[it.id] === 'number'
-      ? stockMap[it.id]
-      : (typeof it.stock === 'number' ? it.stock : 10);
-    return {
-      ...it,
-      stock: s,
-      isAvailable: s > 0 ? it.isAvailable : false,
-    };
-  });
-  items.sort((a, b) => {
-    const catA = categoryOrderMap[a.categoryId] ?? 99;
-    const catB = categoryOrderMap[b.categoryId] ?? 99;
-    if (catA !== catB) return catA - catB;
-    return (a.sortOrder || 0) - (b.sortOrder || 0);
-  });
+    const items = (globalStore.__anassa_items || initialMenuItems).map((it) => {
+      const s = typeof stockMap[it.id] === 'number'
+        ? stockMap[it.id]
+        : (typeof it.stock === 'number' ? it.stock : 10);
+      return {
+        ...it,
+        stock: s,
+        isAvailable: s > 0 ? it.isAvailable : false,
+      };
+    });
+    items.sort((a, b) => {
+      const catA = categoryOrderMap[a.categoryId] ?? 99;
+      const catB = categoryOrderMap[b.categoryId] ?? 99;
+      if (catA !== catB) return catA - catB;
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
 
-  if (categoryId) {
-    return items.filter((it) => it.categoryId === categoryId);
-  }
-  return items;
+    if (categoryId) {
+      return items.filter((it) => it.categoryId === categoryId);
+    }
+    return items;
+  }, 20, ['menu']);
 }
 
 export async function toggleItemAvailability(itemId: string, isAvailable: boolean): Promise<boolean> {
+  invalidateCache('menu');
+  invalidateCache('stock');
   const stockMap = await getStockMap();
   const item = globalStore.__anassa_items?.find((i) => i.id === itemId);
   let currentStock = typeof stockMap[itemId] === 'number' ? stockMap[itemId] : (item?.stock ?? 10);
@@ -471,6 +483,7 @@ export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuIt
   }
 
   globalStore.__anassa_items?.unshift(created);
+  invalidateCache('menu');
   addAuditLog({
     actor: 'admin',
     action: 'MENU_ITEM_ADDED',
@@ -513,6 +526,8 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
       ...globalStore.__anassa_items[itemIndex],
       ...updates,
     };
+    invalidateCache('menu');
+    invalidateCache('stock');
     addAuditLog({
       actor: 'admin',
       action: 'MENU_ITEM_UPDATED',
@@ -524,6 +539,8 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
 }
 
 export async function deleteMenuItem(id: string): Promise<boolean> {
+  invalidateCache('menu');
+  invalidateCache('stock');
   if (isSupabaseConfigured && supabaseServer) {
     try {
       await supabaseServer.from('menu_items').delete().eq('id', id);
@@ -816,6 +833,9 @@ export async function createOrder(data: {
 
   globalStore.__anassa_orders?.unshift(newOrder);
   saveStoreToDisk();
+  invalidateCache('orders');
+  invalidateCache('menu');
+  invalidateCache('stock');
   broadcastOrder(newOrder);
   addAuditLog({
     actor: 'customer',
@@ -833,191 +853,208 @@ export async function getOrders(filter?: {
   phone?: string;
   limit?: number;
 }): Promise<Order[]> {
-  loadStoreFromDisk();
+  const filterKey = filter ? JSON.stringify(filter) : 'all';
+  const cacheKey = `orders_${filterKey}`;
 
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      let query = supabaseServer.from('orders').select('*').order('created_at', { ascending: false });
-      if (filter?.status === 'active') {
-        query = query.in('status', ['received', 'preparing', 'ready', 'served']);
-      } else if (filter?.status) {
-        query = query.eq('status', filter.status);
-      }
-      if (filter?.tableNumber !== undefined) {
-        const tblStr = String(filter.tableNumber);
-        const isTakeaway = tblStr === '0' || tblStr.toLowerCase() === 'takeaway';
-        if (isTakeaway) {
-          query = query.in('table_number', ['0', 'Takeaway', 'takeaway']);
-        } else {
-          query = query.eq('table_number', tblStr);
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      loadStoreFromDisk();
+
+      if (isSupabaseConfigured && supabaseServer) {
+        try {
+          let query = supabaseServer.from('orders').select('*').order('created_at', { ascending: false });
+          if (filter?.status === 'active') {
+            query = query.in('status', ['received', 'preparing', 'ready', 'served']);
+          } else if (filter?.status) {
+            query = query.eq('status', filter.status);
+          }
+          if (filter?.tableNumber !== undefined) {
+            const tblStr = String(filter.tableNumber);
+            const isTakeaway = tblStr === '0' || tblStr.toLowerCase() === 'takeaway';
+            if (isTakeaway) {
+              query = query.in('table_number', ['0', 'Takeaway', 'takeaway']);
+            } else {
+              query = query.eq('table_number', tblStr);
+            }
+          }
+          if (filter?.sessionId && !filter?.phone && (!filter?.knownIds || filter.knownIds.length === 0)) {
+            query = query.eq('session_id', filter.sessionId);
+          }
+          if (filter?.limit) {
+            query = query.limit(filter.limit);
+          }
+          const { data, error } = await query;
+          if (!error && data) {
+            const recentServedCutoff = Date.now() - 45 * 60 * 1000;
+            const rawOrders: Order[] = data.map((o) => {
+              const rawInstructions = o.special_instructions || '';
+              const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
+              const isPaid = Boolean(o.is_paid ?? (settledMatch !== null));
+              const paidAt = o.paid_at
+                ? new Date(o.paid_at).getTime()
+                : (settledMatch ? Number(settledMatch[1]) : (o as any).paidAt);
+              const settledBy = o.settled_by || (settledMatch ? settledMatch[2] : (o as any).settledBy);
+              const cleanInstructions = rawInstructions
+                .replace(/\[SETTLED:[^\]]+\]/g, '')
+                .replace(/\[DELETED_BY_[^\]]+\]/g, '')
+                .trim();
+
+              const isDeletedMatch = rawInstructions.match(/\[DELETED_BY_([^\]]+)\]/);
+              const isDeleted = Boolean((o as any).is_deleted || isDeletedMatch !== null || (o.status === 'cancelled' && (o as any).deletedBy));
+              const deletedBy = (o as any).deleted_by || (isDeletedMatch ? isDeletedMatch[1].toLowerCase() : (o as any).deletedBy);
+
+              return {
+                id: o.id,
+                orderNumber: o.order_number || '',
+                tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
+                tableKey: o.table_key,
+                sessionId: o.session_id,
+                customerName: o.customer_name,
+                customerPhone: o.customer_phone,
+                customerFlat: o.customer_flat,
+                items: o.items || [],
+                subtotal: Number(o.subtotal || o.total),
+                taxAmount: Number(o.tax_amount || 0),
+                total: Number(o.total),
+                specialInstructions: cleanInstructions || undefined,
+                status: o.status as OrderStatus,
+                isPaid,
+                paidAt,
+                settledBy,
+                isDeleted,
+                deletedBy,
+                customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
+                customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
+                distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
+                createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
+                updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
+              };
+            });
+
+            let filtered = rawOrders;
+            if (filter?.status === 'active') {
+              filtered = filtered.filter((o) => {
+                if (o.isDeleted || o.status === 'cancelled') return false;
+                if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+                if (o.status === 'served' && !o.isPaid) return true;
+                if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
+                  return true;
+                }
+                return false;
+              });
+            }
+
+            if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+              const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
+              filtered = filtered.filter((o) => {
+                if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
+                if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
+                if (filter.sessionId && o.sessionId === filter.sessionId) return true;
+                return false;
+              });
+            }
+
+            return normalizeAndSyncOrders(filtered);
+          }
+        } catch (err) {
+          console.warn('Supabase getOrders error, falling back to memory store:', err);
         }
       }
-      if (filter?.sessionId && !filter?.phone && (!filter?.knownIds || filter.knownIds.length === 0)) {
-        query = query.eq('session_id', filter.sessionId);
+
+      let list = normalizeAndSyncOrders(globalStore.__anassa_orders || []);
+      if (filter?.status === 'active') {
+        const recentServedCutoff = Date.now() - 45 * 60 * 1000;
+        list = list.filter((o) => {
+          if (o.isDeleted || o.status === 'cancelled') return false;
+          if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
+          if (o.status === 'served' && !o.isPaid) return true;
+          if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
+            return true;
+          }
+          return false;
+        });
+      } else if (filter?.status) {
+        list = list.filter((o) => o.status === filter.status);
+      }
+      if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
+        const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
+        list = list.filter((o) => {
+          if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
+          if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
+          if (filter.sessionId && o.sessionId === filter.sessionId) return true;
+          return false;
+        });
+      } else if (filter?.tableNumber !== undefined) {
+        list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
       }
       if (filter?.limit) {
-        query = query.limit(filter.limit);
+        list = list.slice(0, filter.limit);
       }
-      const { data, error } = await query;
-      if (!error && data) {
-        const recentServedCutoff = Date.now() - 45 * 60 * 1000;
-        const rawOrders: Order[] = data.map((o) => {
-          const rawInstructions = o.special_instructions || '';
-          const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
-          const isPaid = Boolean(o.is_paid ?? (settledMatch !== null));
-          const paidAt = o.paid_at
-            ? new Date(o.paid_at).getTime()
-            : (settledMatch ? Number(settledMatch[1]) : (o as any).paidAt);
-          const settledBy = o.settled_by || (settledMatch ? settledMatch[2] : (o as any).settledBy);
-          const cleanInstructions = rawInstructions
-            .replace(/\[SETTLED:[^\]]+\]/g, '')
-            .replace(/\[DELETED_BY_[^\]]+\]/g, '')
-            .trim();
-
-          const isDeletedMatch = rawInstructions.match(/\[DELETED_BY_([^\]]+)\]/);
-          const isDeleted = Boolean((o as any).is_deleted || isDeletedMatch !== null || (o.status === 'cancelled' && (o as any).deletedBy));
-          const deletedBy = (o as any).deleted_by || (isDeletedMatch ? isDeletedMatch[1].toLowerCase() : (o as any).deletedBy);
-
-          return {
-            id: o.id,
-            orderNumber: o.order_number || '',
-            tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
-            tableKey: o.table_key,
-            sessionId: o.session_id,
-            customerName: o.customer_name,
-            customerPhone: o.customer_phone,
-            customerFlat: o.customer_flat,
-            items: o.items || [],
-            subtotal: Number(o.subtotal || o.total),
-            taxAmount: Number(o.tax_amount || 0),
-            total: Number(o.total),
-            specialInstructions: cleanInstructions || undefined,
-            status: o.status as OrderStatus,
-            isPaid,
-            paidAt,
-            settledBy,
-            isDeleted,
-            deletedBy,
-            customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
-            customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
-            distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
-            createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
-            updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
-          };
-        });
-
-        let filtered = rawOrders;
-        if (filter?.status === 'active') {
-          filtered = filtered.filter((o) => {
-            if (o.isDeleted || o.status === 'cancelled') return false;
-            if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
-            if (o.status === 'served' && !o.isPaid) return true;
-            if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
-              return true;
-            }
-            return false;
-          });
-        }
-
-        if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
-          const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
-          filtered = filtered.filter((o) => {
-            if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
-            if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
-            if (filter.sessionId && o.sessionId === filter.sessionId) return true;
-            return false;
-          });
-        }
-
-        return normalizeAndSyncOrders(filtered);
-      }
-    } catch (err) {
-      console.warn('Supabase getOrders error, falling back to memory store:', err);
-    }
-  }
-
-  let list = normalizeAndSyncOrders(globalStore.__anassa_orders || []);
-  if (filter?.status === 'active') {
-    const recentServedCutoff = Date.now() - 45 * 60 * 1000;
-    list = list.filter((o) => {
-      if (o.isDeleted || o.status === 'cancelled') return false;
-      if (o.status === 'received' || o.status === 'preparing' || o.status === 'ready') return true;
-      if (o.status === 'served' && !o.isPaid) return true;
-      if (filter.tableNumber !== undefined && o.status === 'served' && (o.updatedAt || o.createdAt) >= recentServedCutoff) {
-        return true;
-      }
-      return false;
-    });
-  } else if (filter?.status) {
-    list = list.filter((o) => o.status === filter.status);
-  }
-  if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
-    const fPhone = filter.phone ? filter.phone.replace(/\D/g, '').slice(-10) : '';
-    list = list.filter((o) => {
-      if (filter.knownIds && filter.knownIds.includes(o.id)) return true;
-      if (fPhone && o.customerPhone && (o.customerPhone.replace(/\D/g, '').slice(-10) === fPhone)) return true;
-      if (filter.sessionId && o.sessionId === filter.sessionId) return true;
-      return false;
-    });
-  } else if (filter?.tableNumber !== undefined) {
-    list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
-  }
-  if (filter?.limit) {
-    list = list.slice(0, filter.limit);
-  }
-  return list;
+      return list;
+    },
+    2.5,
+    ['orders']
+  );
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).single();
-      if (!error && data) {
-        const rawNumber = (data.order_number || '').trim();
-        const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
-        const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
+  return fetchWithCache(
+    `order_by_id_${orderId}`,
+    async () => {
+      if (isSupabaseConfigured && supabaseServer) {
+        try {
+          const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).single();
+          if (!error && data) {
+            const rawNumber = (data.order_number || '').trim();
+            const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
+            const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
 
-        const rawInstructions = data.special_instructions || '';
-        const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
-        const isPaid = Boolean(data.is_paid ?? (settledMatch !== null));
-        const paidAt = data.paid_at
-          ? new Date(data.paid_at).getTime()
-          : (settledMatch ? Number(settledMatch[1]) : (data as any).paidAt);
-        const settledBy = data.settled_by || (settledMatch ? settledMatch[2] : (data as any).settledBy);
-        const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+            const rawInstructions = data.special_instructions || '';
+            const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
+            const isPaid = Boolean(data.is_paid ?? (settledMatch !== null));
+            const paidAt = data.paid_at
+              ? new Date(data.paid_at).getTime()
+              : (settledMatch ? Number(settledMatch[1]) : (data as any).paidAt);
+            const settledBy = data.settled_by || (settledMatch ? settledMatch[2] : (data as any).settledBy);
+            const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
 
-        return {
-          id: data.id,
-          orderNumber,
-          tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
-          tableKey: data.table_key,
-          sessionId: data.session_id,
-          customerName: data.customer_name,
-          customerPhone: data.customer_phone,
-          customerFlat: data.customer_flat,
-          items: data.items || [],
-          subtotal: Number(data.subtotal || data.total),
-          taxAmount: Number(data.tax_amount || 0),
-          total: Number(data.total),
-          specialInstructions: cleanInstructions || undefined,
-          status: data.status as OrderStatus,
-          isPaid,
-          paidAt,
-          settledBy,
-          customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
-          customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
-          distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
-          createdAt: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
-          updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now(),
-        };
+            return {
+              id: data.id,
+              orderNumber,
+              tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
+              tableKey: data.table_key,
+              sessionId: data.session_id,
+              customerName: data.customer_name,
+              customerPhone: data.customer_phone,
+              customerFlat: data.customer_flat,
+              items: data.items || [],
+              subtotal: Number(data.subtotal || data.total),
+              taxAmount: Number(data.tax_amount || 0),
+              total: Number(data.total),
+              specialInstructions: cleanInstructions || undefined,
+              status: data.status as OrderStatus,
+              isPaid,
+              paidAt,
+              settledBy,
+              customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
+              customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
+              distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
+              createdAt: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
+              updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now(),
+            };
+          }
+        } catch (err) {
+          console.warn('Supabase getOrderById error:', err);
+        }
       }
-    } catch (err) {
-      console.warn('Supabase getOrderById error:', err);
-    }
-  }
 
-  const all = globalStore.__anassa_orders || [];
-  return all.find((o) => o.id === orderId) || null;
+      const all = globalStore.__anassa_orders || [];
+      return all.find((o) => o.id === orderId) || null;
+    },
+    2.5,
+    ['orders']
+  );
 }
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
@@ -1069,6 +1106,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
         }
 
         broadcastOrder(updatedOrder);
+        invalidateCache('orders');
         addAuditLog({
           actor: 'kitchen',
           action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
@@ -1088,6 +1126,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
   if (order) {
     order.status = status;
     order.updatedAt = now;
+    invalidateCache('orders');
     broadcastOrder(order);
     saveStoreToDisk();
     addAuditLog({
@@ -1122,6 +1161,7 @@ export async function deleteOrder(
     if (idx !== -1) {
       const deleted = existing.splice(idx, 1)[0];
       saveStoreToDisk();
+      invalidateCache('orders');
       broadcastOrder({ ...deleted, status: 'cancelled', isDeleted: true });
       addAuditLog({
         actor: actor as any,
@@ -1160,6 +1200,7 @@ export async function deleteOrder(
     }
 
     saveStoreToDisk();
+    invalidateCache('orders');
     broadcastOrder(target);
     addAuditLog({
       actor: actor as any,
@@ -1257,6 +1298,7 @@ export async function updateOrderDetails(
       settledBy: updates.settledBy !== undefined ? updates.settledBy : existing[idx].settledBy,
       updatedAt: now,
     };
+    invalidateCache('orders');
     broadcastOrder(existing[idx]);
 
     const isSettlement = updates.isPaid === true && (updates.paidAt || true);
@@ -1285,37 +1327,45 @@ export async function updateOrderDetails(
 // TABLES & QR VALIDATION
 // ──────────────────────────────────────────
 export async function getTables(includeSecrets: boolean = false): Promise<TableSession[]> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer
-        .from('tables')
-        .select('*')
-        .order('table_number', { ascending: true });
-      if (!error && data && data.length > 0) {
-        const loaded: TableSession[] = data.map((t) => ({
-          tableNumber: t.table_number,
-          label: t.label,
-          secretKey: t.secret_key,
-          isActive: t.is_active ?? true,
-        }));
-        globalStore.__anassa_tables = loaded;
+  const cacheKey = includeSecrets ? 'tables_with_secrets' : 'tables_public';
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      if (isSupabaseConfigured && supabaseServer) {
+        try {
+          const { data, error } = await supabaseServer
+            .from('tables')
+            .select('*')
+            .order('table_number', { ascending: true });
+          if (!error && data && data.length > 0) {
+            const loaded: TableSession[] = data.map((t) => ({
+              tableNumber: t.table_number,
+              label: t.label,
+              secretKey: t.secret_key,
+              isActive: t.is_active ?? true,
+            }));
+            globalStore.__anassa_tables = loaded;
+          }
+        } catch (err) {
+          console.warn('Supabase getTables error, falling back to memory store:', err);
+        }
       }
-    } catch (err) {
-      console.warn('Supabase getTables error, falling back to memory store:', err);
-    }
-  }
 
-  const tables = globalStore.__anassa_tables || [];
-  if (includeSecrets) {
-    return tables;
-  }
-  // Strip secretKey for public security
-  return tables.map((t) => ({
-    tableNumber: t.tableNumber,
-    label: t.label,
-    secretKey: '', // Masked for public
-    isActive: t.isActive,
-  }));
+      const tables = globalStore.__anassa_tables || [];
+      if (includeSecrets) {
+        return tables;
+      }
+      // Strip secretKey for public security
+      return tables.map((t) => ({
+        tableNumber: t.tableNumber,
+        label: t.label,
+        secretKey: '', // Masked for public
+        isActive: t.isActive,
+      }));
+    },
+    30,
+    ['tables']
+  );
 }
 
 export async function getTableByNumber(tableNumber: number | string): Promise<TableSession | null> {
@@ -1387,6 +1437,7 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
     action: 'TABLES_CONFIGURED',
     details: `Configured table capacity to ${numTables} tables`,
   });
+  invalidateCache('tables');
   return updatedTables;
 }
 
@@ -1394,27 +1445,34 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
 // CAFE SETTINGS
 // ──────────────────────────────────────────
 export async function getCafeSettings(): Promise<CafeSettings> {
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer
-        .from('cafe_settings')
-        .select('value')
-        .eq('key', 'main_config')
-        .single();
+  return fetchWithCache(
+    'cafe_settings_main',
+    async () => {
+      if (isSupabaseConfigured && supabaseServer) {
+        try {
+          const { data, error } = await supabaseServer
+            .from('cafe_settings')
+            .select('value')
+            .eq('key', 'main_config')
+            .single();
 
-      if (!error && data?.value) {
-        const loaded: CafeSettings = {
-          ...initialSettings,
-          ...data.value,
-        };
-        globalStore.__anassa_settings = loaded;
-        return loaded;
+          if (!error && data?.value) {
+            const loaded: CafeSettings = {
+              ...initialSettings,
+              ...data.value,
+            };
+            globalStore.__anassa_settings = loaded;
+            return loaded;
+          }
+        } catch (err) {
+          console.warn('Supabase getCafeSettings error, falling back to memory store:', err);
+        }
       }
-    } catch (err) {
-      console.warn('Supabase getCafeSettings error, falling back to memory store:', err);
-    }
-  }
-  return globalStore.__anassa_settings || initialSettings;
+      return globalStore.__anassa_settings || initialSettings;
+    },
+    30,
+    ['settings']
+  );
 }
 
 export async function updateCafeSettings(updates: Partial<CafeSettings>): Promise<CafeSettings> {
@@ -1424,6 +1482,7 @@ export async function updateCafeSettings(updates: Partial<CafeSettings>): Promis
     ...updates,
   };
   globalStore.__anassa_settings = merged;
+  invalidateCache('settings');
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
@@ -1587,6 +1646,8 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
   globalStore.__anassa_audit_logs = [];
   globalStore.__anassa_inventory = [...initialInventory];
   globalStore.__anassa_staff = [...initialStaff];
+  invalidateCache('orders');
+  invalidateCache('audit');
 
   // Log clean start audit entry
   addAuditLog({

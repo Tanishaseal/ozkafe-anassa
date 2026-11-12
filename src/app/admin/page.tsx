@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { MenuItem, Category, Order, CafeSettings, AuditLog, StaffShift, OrderStatus, StaffUser } from '@/lib/types';
@@ -117,6 +117,31 @@ export default function AdminPage() {
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
+  // ── RATE LIMITING & ANTI-SPAM STATES ──
+  const isFetchingAdminRef = useRef(false);
+  const isFetchingLogsRef = useRef(false);
+  const isFetchingTablesRef = useRef(false);
+  const sseDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isManualRefreshingAdmin, setIsManualRefreshingAdmin] = useState(false);
+  const [adminRefreshCooldown, setAdminRefreshCooldown] = useState(0);
+  const [adminRefreshSuccess, setAdminRefreshSuccess] = useState(false);
+
+  // Cooldown countdown effect for manual refresh button
+  useEffect(() => {
+    if (adminRefreshCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setAdminRefreshCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setAdminRefreshSuccess(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [adminRefreshCooldown]);
+
   // ── FILTER STATES ──
   const [menuSearch, setMenuSearch] = useState('');
   const [menuCatFilter, setMenuCatFilter] = useState('all');
@@ -202,8 +227,14 @@ export default function AdminPage() {
     localStorage.setItem('ozkafe_admin_sidebar_collapsed', String(nextState));
   };
 
-  // ── DATA FETCHING ──
-  const fetchAdminData = useCallback(async () => {
+  // ── DATA FETCHING (CONCURRENCY-LOCKED & RATE-PROTECTED) ──
+  const fetchAdminData = useCallback(async (isManual = false) => {
+    if (isFetchingAdminRef.current) return;
+    isFetchingAdminRef.current = true;
+    if (isManual) {
+      setIsManualRefreshingAdmin(true);
+      setAdminRefreshSuccess(false);
+    }
     try {
       const [adminRes, menuRes, ordersRes] = await Promise.all([
         fetch('/api/admin', { headers: getAdminAuthHeaders() }),
@@ -237,12 +268,24 @@ export default function AdminPage() {
           setOrders(ordersData);
         }
       }
+
+      if (isManual) {
+        setAdminRefreshSuccess(true);
+        setAdminRefreshCooldown(3);
+      }
     } catch (err) {
       console.warn('Failed to fetch admin data:', err);
+    } finally {
+      isFetchingAdminRef.current = false;
+      if (isManual) {
+        setIsManualRefreshingAdmin(false);
+      }
     }
   }, []);
 
   const fetchAuditLogs = async () => {
+    if (isFetchingLogsRef.current) return;
+    isFetchingLogsRef.current = true;
     try {
       const res = await fetch('/api/audit-logs', { headers: getAdminAuthHeaders() });
       if (res.ok) {
@@ -251,10 +294,14 @@ export default function AdminPage() {
       }
     } catch (err) {
       console.warn('Failed to fetch audit logs:', err);
+    } finally {
+      isFetchingLogsRef.current = false;
     }
   };
 
   const fetchTables = async () => {
+    if (isFetchingTablesRef.current) return;
+    isFetchingTablesRef.current = true;
     try {
       const res = await fetch('/api/tables', { headers: getAdminAuthHeaders() });
       if (res.ok) {
@@ -263,6 +310,8 @@ export default function AdminPage() {
       }
     } catch (err) {
       console.warn('Failed to fetch tables:', err);
+    } finally {
+      isFetchingTablesRef.current = false;
     }
   };
 
@@ -278,7 +327,11 @@ export default function AdminPage() {
       const streamUrl = token ? `/api/orders/stream?token=${encodeURIComponent(token)}` : '/api/orders/stream';
       eventSource = new EventSource(streamUrl);
       eventSource.addEventListener('order', () => {
-        fetchAdminData();
+        // Debounce SSE updates (350ms) to coalesce bursts of simultaneous events
+        if (sseDebounceTimerRef.current) clearTimeout(sseDebounceTimerRef.current);
+        sseDebounceTimerRef.current = setTimeout(() => {
+          fetchAdminData();
+        }, 350);
       });
       eventSource.onerror = () => {
         // Fallback gracefully to smart polling
@@ -287,11 +340,14 @@ export default function AdminPage() {
       console.warn('Admin SSE connection failed, falling back to smart polling:', err);
     }
 
-    // 2. Responsive fallback polling (every 4s for instant bi-directional consistency)
-    const interval = setInterval(fetchAdminData, 4000);
+    // 2. Responsive fallback polling (every 7s to prevent connection spamming while SSE handles real-time updates)
+    const interval = setInterval(() => {
+      fetchAdminData();
+    }, 7000);
 
     return () => {
       clearInterval(interval);
+      if (sseDebounceTimerRef.current) clearTimeout(sseDebounceTimerRef.current);
       if (eventSource) eventSource.close();
     };
   }, [fetchAdminData]);
@@ -2479,11 +2535,16 @@ export default function AdminPage() {
                   </div>
                   <div className="admin-table-actions">
                     <button
-                      onClick={fetchAdminData}
+                      onClick={() => fetchAdminData(true)}
+                      disabled={isManualRefreshingAdmin || adminRefreshCooldown > 0}
                       className="admin-btn-gps-calibrate"
-                      title="Refresh bill settlement list"
+                      title={adminRefreshCooldown > 0 ? `Please wait ${adminRefreshCooldown}s before refreshing again` : "Refresh bill settlement list"}
+                      style={{
+                        opacity: (isManualRefreshingAdmin || adminRefreshCooldown > 0) ? 0.7 : 1,
+                        cursor: (isManualRefreshingAdmin || adminRefreshCooldown > 0) ? 'not-allowed' : 'pointer'
+                      }}
                     >
-                      🔄 Refresh
+                      {isManualRefreshingAdmin ? '⏳ Refreshing...' : adminRefreshSuccess ? '✓ Updated' : '🔄 Refresh'}
                     </button>
                   </div>
                 </div>

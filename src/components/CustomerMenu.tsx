@@ -64,6 +64,11 @@ export default function CustomerMenu({
 
   // Cart & Orders
   const [cart, setCart] = useState<Record<string, CartItem>>({});
+  const cartRef = useRef(cart);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+  const isFetchingOrdersRef = useRef(false);
   const [customerFlat, setCustomerFlat] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -342,8 +347,10 @@ export default function CustomerMenu({
     }
   }, [customerFlat, customerName, customerPhone]);
 
-  // Fetch orders strictly bound to this dining session + recover local placed orders
+  // Fetch orders strictly bound to this dining session + recover local placed orders (concurrency-locked)
   const fetchSessionOrders = async (tbl: string, sessId: string) => {
+    if (isFetchingOrdersRef.current) return;
+    isFetchingOrdersRef.current = true;
     try {
       const savedOrdersStr = typeof window !== 'undefined' ? localStorage.getItem('anassa_orders') : null;
       let knownIds = '';
@@ -399,10 +406,12 @@ export default function CustomerMenu({
       }
     } catch (err) {
       console.warn('Fetch session orders error:', err);
+    } finally {
+      isFetchingOrdersRef.current = false;
     }
   };
 
-  // Re-sync menu updates (e.g. stock availability changes in real-time)
+  // Re-sync menu updates (e.g. stock availability changes in real-time, relaxed to 40s to prevent spamming)
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -412,7 +421,8 @@ export default function CustomerMenu({
           if (data.items) {
             setItems(data.items);
             // Check if any cart item was 86'd (marked out of stock)
-            Object.values(cart).forEach((cartIt) => {
+            const currentCart = cartRef.current;
+            Object.values(currentCart).forEach((cartIt) => {
               const liveDish = data.items.find((i: MenuItem) => i.id === cartIt.id);
               if (liveDish && (!liveDish.isAvailable || (typeof liveDish.stock === 'number' && liveDish.stock <= 0))) {
                 updateCartItemQuantity(cartIt.cartKey, -cartIt.quantity);
@@ -424,11 +434,11 @@ export default function CustomerMenu({
       } catch {
         // silent fail
       }
-    }, 10000);
+    }, 40000);
     return () => clearInterval(interval);
-  }, [cart]);
+  }, []);
 
-  // Real-time synchronization of Cafe Settings from server
+  // Real-time synchronization of Cafe Settings from server (relaxed to 60s)
   useEffect(() => {
     const syncSettings = async () => {
       try {
@@ -444,15 +454,15 @@ export default function CustomerMenu({
       }
     };
 
-    const interval = setInterval(syncSettings, 10000);
+    const interval = setInterval(syncSettings, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Adaptive poller: 3s when active orders exist, 8s when idle
+  // Adaptive poller: 5s when active orders exist, 25s when idle
   useEffect(() => {
     if (!initialTable || !tableSessionId) return;
 
-    const pollInterval = activeOrders.length > 0 ? 3000 : 8000;
+    const pollInterval = activeOrders.length > 0 ? 5000 : 25000;
     const interval = setInterval(() => {
       fetchSessionOrders(initialTable, tableSessionId);
     }, pollInterval);

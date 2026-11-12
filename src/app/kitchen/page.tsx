@@ -26,8 +26,17 @@ export default function KitchenDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isManualRefreshingHistory, setIsManualRefreshingHistory] = useState(false);
+  const [historyRefreshCooldown, setHistoryRefreshCooldown] = useState(false);
+  const [historyRefreshSuccess, setHistoryRefreshSuccess] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
+
+  // Concurrency & in-flight locks to prevent data fetch spam
+  const isFetchingOrdersRef = useRef(false);
+  const isFetchingHistoryRef = useRef(false);
+  const kitchenViewModeRef = useRef(kitchenViewMode);
+  kitchenViewModeRef.current = kitchenViewMode;
 
   // Bill Settlement State
   const [isSettlingId, setIsSettlingId] = useState<string | null>(null);
@@ -193,8 +202,11 @@ export default function KitchenDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch active orders
+  // Fetch active orders (with in-flight concurrency lock to prevent data spam)
   const fetchOrders = useCallback(async () => {
+    if (isFetchingOrdersRef.current) return;
+    isFetchingOrdersRef.current = true;
+
     try {
       const res = await fetch(`/api/orders?status=active&_t=${Date.now()}`, {
         headers: getKitchenAuthHeaders(),
@@ -237,12 +249,22 @@ export default function KitchenDashboard() {
       }
     } catch (err) {
       console.warn('KDS fetch error:', err);
+    } finally {
+      isFetchingOrdersRef.current = false;
     }
   }, [soundEnabled, orders]);
 
-  // Fetch 15-day kitchen order history
-  const fetchHistoryOrders = useCallback(async () => {
-    setIsLoadingHistory(true);
+  // Fetch 15-day kitchen order history (with anti-spam concurrency lock & manual refresh feedback)
+  const fetchHistoryOrders = useCallback(async (isManual: boolean = false) => {
+    if (isFetchingHistoryRef.current) return;
+    if (isManual && historyRefreshCooldown) return;
+
+    isFetchingHistoryRef.current = true;
+    if (isManual) {
+      setIsManualRefreshingHistory(true);
+      setHistoryRefreshCooldown(true);
+    }
+
     try {
       const res = await fetch(`/api/orders?history=true&_t=${Date.now()}`, {
         headers: getKitchenAuthHeaders(),
@@ -250,13 +272,21 @@ export default function KitchenDashboard() {
       if (res.ok) {
         const data: Order[] = await res.json();
         setHistoryOrders(data);
+        if (isManual) {
+          setHistoryRefreshSuccess(true);
+          setTimeout(() => setHistoryRefreshSuccess(false), 2000);
+        }
       }
     } catch (err) {
       console.warn('KDS history fetch error:', err);
     } finally {
-      setIsLoadingHistory(false);
+      isFetchingHistoryRef.current = false;
+      if (isManual) {
+        setIsManualRefreshingHistory(false);
+        setTimeout(() => setHistoryRefreshCooldown(false), 3000);
+      }
     }
-  }, []);
+  }, [historyRefreshCooldown]);
 
   // Fetch available menu items for receipt editing
   const fetchMenuItems = useCallback(async () => {
@@ -721,11 +751,11 @@ export default function KitchenDashboard() {
     if (!isAuthenticated) return;
 
     fetchOrders();
-    fetchHistoryOrders();
     fetchMenuItems();
 
-    // 1. Server-Sent Events (SSE) Stream with token fallback for strict cross-browser support
+    // 1. Server-Sent Events (SSE) Stream with debouncing to prevent event spam
     let eventSource: EventSource | null = null;
+    let sseDebounceTimer: NodeJS.Timeout | null = null;
     try {
       const token = typeof window !== 'undefined'
         ? (localStorage.getItem('oz_kitchen_token') || localStorage.getItem('oz_admin_token') || '')
@@ -733,25 +763,31 @@ export default function KitchenDashboard() {
       const streamUrl = token ? `/api/orders/stream?token=${encodeURIComponent(token)}` : '/api/orders/stream';
       eventSource = new EventSource(streamUrl);
       eventSource.addEventListener('order', () => {
-        fetchOrders();
-        fetchHistoryOrders();
+        if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
+        sseDebounceTimer = setTimeout(() => {
+          fetchOrders();
+          if (kitchenViewModeRef.current === 'history') {
+            fetchHistoryOrders(false);
+          }
+        }, 350);
       });
     } catch (err) {
       console.warn('SSE connection failed, using smart poll:', err);
     }
 
-    // 2. Smart Polling: active orders every 4s, history orders every 8s
+    // 2. Smart Polling: active orders every 5s; history polled only when on History tab (every 12s)
     let pollTick = 0;
     const interval = setInterval(() => {
       fetchOrders();
       pollTick++;
-      if (pollTick % 2 === 0) {
-        fetchHistoryOrders();
+      if (kitchenViewModeRef.current === 'history' && pollTick % 2 === 0) {
+        fetchHistoryOrders(false);
       }
-    }, 4000);
+    }, 5000);
 
     return () => {
       clearInterval(interval);
+      if (sseDebounceTimer) clearTimeout(sseDebounceTimer);
       if (eventSource) eventSource.close();
     };
   }, [isAuthenticated, fetchOrders, fetchHistoryOrders, fetchMenuItems]);
@@ -1588,25 +1624,34 @@ export default function KitchenDashboard() {
 
               <button
                 type="button"
-                onClick={fetchHistoryOrders}
+                onClick={() => fetchHistoryOrders(true)}
+                disabled={isManualRefreshingHistory || historyRefreshCooldown}
                 className="kds-action-btn-refresh"
                 style={{
                   height: 38,
                   padding: '0 14px',
                   borderRadius: 10,
-                  border: '1px solid #D6D3D1',
-                  background: '#FFFFFF',
-                  color: '#44403C',
+                  border: `1px solid ${historyRefreshSuccess ? '#86EFAC' : '#D6D3D1'}`,
+                  background: historyRefreshSuccess ? '#F0FDF4' : '#FFFFFF',
+                  color: historyRefreshSuccess ? '#15803D' : '#44403C',
                   fontSize: 12.5,
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: (isManualRefreshingHistory || historyRefreshCooldown) ? 'not-allowed' : 'pointer',
+                  opacity: (isManualRefreshingHistory || historyRefreshCooldown) && !historyRefreshSuccess ? 0.7 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
+                  transition: 'all 0.2s ease',
                 }}
-                title="Refresh order history from server"
+                title={historyRefreshCooldown ? 'Cooldown active - please wait a moment before refreshing again' : 'Refresh order history from server'}
               >
-                <span>{isLoadingHistory ? '⏳ Refreshing...' : '🔄 Refresh History'}</span>
+                <span>
+                  {isManualRefreshingHistory
+                    ? '⏳ Refreshing...'
+                    : historyRefreshSuccess
+                    ? '✓ History Updated'
+                    : '🔄 Refresh History'}
+                </span>
               </button>
             </div>
           </div>

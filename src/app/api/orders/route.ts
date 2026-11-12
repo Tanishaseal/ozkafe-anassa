@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createOrder, getOrders, getOrderById, updateOrderStatus, updateOrderDetails, deleteOrder, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
 import { OrderStatus } from '@/lib/types';
 import { verifyAuthHeaderOrCookie, getTableSessionFromRequest } from '@/lib/auth';
+import { checkRateLimit, getClientIdentifier, rateLimitProfiles } from '@/lib/rateLimit';
 
 export async function GET(request: Request) {
   try {
@@ -12,6 +13,17 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
     const all = searchParams.get('all');
     const history = searchParams.get('history');
+
+    // Rate Limiting Protection (prevents database connection exhaustion and spamming)
+    const clientKey = getClientIdentifier(request, history === 'true' ? 'orders_history' : 'orders_get');
+    const profile = history === 'true' ? rateLimitProfiles.historyQueries : rateLimitProfiles.ordersPolling;
+    const rate = checkRateLimit(clientKey, profile.maxRequests, profile.windowMs);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Too many data requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(rate.resetInMs / 1000)) } }
+      );
+    }
 
     // 1. Admin order ledger query: MUST have admin auth
     if (all === 'true') {
@@ -121,6 +133,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const clientKey = getClientIdentifier(request, 'orders_post');
+    const rate = checkRateLimit(clientKey, rateLimitProfiles.ordersCreate.maxRequests, rateLimitProfiles.ordersCreate.windowMs);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Order submission rate limit reached. Please wait a few seconds before trying again.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(rate.resetInMs / 1000)) } }
+      );
+    }
+
     const body = await request.json();
 
     // ── KITCHEN / STAFF / ADMIN CUSTOM BILL (PREVIOUS ORDERS) ──

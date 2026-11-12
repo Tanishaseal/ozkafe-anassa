@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getCategories, getMenuItems, getAddons, getCafeSettings, addMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
+import { checkRateLimit, getClientIdentifier, rateLimitProfiles } from '@/lib/rateLimit';
 
 export async function GET(request: Request) {
   try {
+    const clientKey = getClientIdentifier(request, 'menu_get');
+    const rate = checkRateLimit(clientKey, rateLimitProfiles.menuPolling.maxRequests, rateLimitProfiles.menuPolling.windowMs);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Too many menu requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(rate.resetInMs / 1000)) } }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get('category') || undefined;
 

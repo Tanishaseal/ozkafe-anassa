@@ -1,11 +1,21 @@
 import { NextResponse } from 'next/server';
 import { getCafeSettings, updateCafeSettings } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
+import { checkRateLimit, getClientIdentifier, rateLimitProfiles } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const clientKey = getClientIdentifier(request, 'settings_get');
+    const rate = checkRateLimit(clientKey, rateLimitProfiles.settingsPolling.maxRequests, rateLimitProfiles.settingsPolling.windowMs);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Too many settings requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(rate.resetInMs / 1000)) } }
+      );
+    }
+
     const full = await getCafeSettings();
 
     // Sanitize sensitive credentials from public response
