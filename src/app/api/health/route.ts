@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer, isSupabaseConfigured } from '@/lib/supabaseServer';
+import { testSupabaseConnectivity } from '@/lib/supabaseProxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,10 @@ export async function GET() {
     }
   }
 
+  // Proxy diagnostics — raw connectivity test
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const connectivity = await testSupabaseConnectivity(supabaseUrl);
+
   return NextResponse.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -37,6 +42,15 @@ export async function GET() {
           ? 'Connected to Supabase PostgreSQL database successfully!'
           : `Supabase credentials detected, but query returned: ${supabaseError}`
         : 'Running in zero-config in-memory fallback. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to your Vercel Environment Variables to connect Supabase.',
+    },
+    proxy: {
+      enabled: true,
+      mode: 'custom-fetch-with-retry',
+      retries: 3,
+      timeoutMs: 15000,
+      vercelRegion: process.env.VERCEL_REGION || 'local',
+      rewritesConfigured: Boolean(supabaseUrl && !supabaseUrl.includes('placeholder')),
+      directConnectivity: connectivity,
     },
   });
 }
