@@ -7,6 +7,7 @@ import { MenuItem, Category, Order, CafeSettings, AuditLog, StaffShift, OrderSta
 import StaffAuthModal from '@/components/StaffAuthModal';
 import AccountPanel from '@/components/AccountPanel';
 import SearchableDishPicker from '@/components/SearchableDishPicker';
+import { logActionError, logOptimisticSuccess, logActionSuccess } from '@/lib/clientLog';
 
 // ── CURRENCY FORMATTER ──
 const formatCurrency = (val: number): string => {
@@ -400,18 +401,23 @@ export default function AdminPage() {
     }
   };
 
-  // ── STOCK TOGGLES & MENU CRUD ──
+  // ── STOCK TOGGLES & MENU CRUD (OPTIMISTIC UI + BACKGROUND DB SYNC) ──
   const handleToggleStock = async (itemId: string, currentAvailable: boolean) => {
+    const previousMenuItems = [...menuItems];
     const nextAvailable = !currentAvailable;
     const currentItem = menuItems.find((i) => i.id === itemId);
     const nextStock = nextAvailable && (currentItem?.stock ?? 0) <= 0 ? 10 : (currentItem?.stock ?? 10);
 
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setMenuItems((prev) =>
       prev.map((it) => (it.id === itemId ? { ...it, isAvailable: nextAvailable, stock: nextStock } : it))
     );
+    logOptimisticSuccess('Admin Menu Stock Availability Toggled', { itemId, nextAvailable, nextStock });
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/menu', {
+      res = await fetch('/api/menu', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -421,23 +427,45 @@ export default function AdminPage() {
       });
       if (res.status === 401) {
         setIsAuthenticated(false);
+        return;
       }
-    } catch {
-      fetchAdminData();
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+      }
+      logActionSuccess('Admin Menu Stock Toggle Persisted to Database', { itemId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setMenuItems(previousMenuItems);
+      logActionError({
+        action: 'Toggle Menu Item Availability',
+        endpoint: '/api/menu',
+        method: 'PATCH',
+        payload: { id: itemId, isAvailable: nextAvailable, stock: nextStock },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredItem: currentItem },
+      });
     }
   };
 
   const handleAdjustStock = async (itemId: string, newStock: number) => {
+    const previousMenuItems = [...menuItems];
     const finalStock = Math.max(0, Math.floor(newStock));
     const isAvailable = finalStock > 0;
+    const currentItem = menuItems.find((i) => i.id === itemId);
 
-    // Optimistically update item in state
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setMenuItems((prev) =>
       prev.map((it) => (it.id === itemId ? { ...it, stock: finalStock, isAvailable } : it))
     );
+    logOptimisticSuccess('Admin Menu Stock Count Adjusted', { itemId, finalStock, isAvailable });
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/menu', {
+      res = await fetch('/api/menu', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -446,81 +474,166 @@ export default function AdminPage() {
         body: JSON.stringify({ id: itemId, stock: finalStock, isAvailable }),
       });
       if (!res.ok) {
-        fetchAdminData();
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      fetchAdminData();
+      logActionSuccess('Admin Menu Stock Count Persisted to Database', { itemId, finalStock });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setMenuItems(previousMenuItems);
+      logActionError({
+        action: 'Adjust Menu Item Stock',
+        endpoint: '/api/menu',
+        method: 'PATCH',
+        payload: { id: itemId, stock: finalStock, isAvailable },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredStock: currentItem?.stock },
+      });
     }
   };
 
   const handleDeleteItem = async (itemId: string) => {
     if (!confirm('Are you sure you want to delete this menu dish?')) return;
+    const previousMenuItems = [...menuItems];
+    const deletedItem = menuItems.find((i) => i.id === itemId);
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setMenuItems((prev) => prev.filter((it) => it.id !== itemId));
+    logOptimisticSuccess('Admin Menu Item Deleted Instantly', { itemId });
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      await fetch(`/api/menu?id=${itemId}`, {
+      res = await fetch(`/api/menu?id=${itemId}`, {
         method: 'DELETE',
         headers: getAdminAuthHeaders(),
       });
-    } catch {
-      fetchAdminData();
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+      }
+      logActionSuccess('Admin Menu Item Deletion Persisted to Database', { itemId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setMenuItems(previousMenuItems);
+      logActionError({
+        action: 'Delete Menu Item',
+        endpoint: `/api/menu?id=${itemId}`,
+        method: 'DELETE',
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredItem: deletedItem },
+      });
     }
   };
 
   const handleSaveNewItem = async (e: React.FormEvent) => {
     e.preventDefault();
+    const previousMenuItems = [...menuItems];
+    const sizesArray = formSizes.split(',').map((s) => s.trim()).filter(Boolean);
+
+    const tempItemId = `opt-item-${Date.now()}`;
+    const optimisticItem: MenuItem = {
+      id: tempItemId,
+      name: formName,
+      category: formCategory,
+      categoryId: formCategoryId,
+      subheading: formSubheading,
+      price: Number(formPrice) || 0,
+      desc: formDesc,
+      img: formImg,
+      isVeg: formIsVeg,
+      stock: formStock,
+      sizes: sizesArray.length > 0 ? sizesArray : ['Regular'],
+      isAvailable: formStock > 0,
+    };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setMenuItems((prev) => [optimisticItem, ...prev]);
+    setQuickAddModalType(null);
+    setFormName('');
+    setFormPrice('');
+    setFormDesc('');
+    setFormSubheading('');
+    setFormStock(10);
+    setSaveSuccessMsg('✓ New menu item created and published live!');
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('New Menu Item Created Instantly', optimisticItem);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
+    const payload = {
+      name: optimisticItem.name,
+      category: formCategory,
+      categoryId: formCategoryId,
+      subheading: formSubheading,
+      price: Number(formPrice),
+      desc: formDesc,
+      img: formImg,
+      isVeg: formIsVeg,
+      stock: formStock,
+      sizes: sizesArray.length > 0 ? sizesArray : ['Regular'],
+    };
+
     try {
-      const sizesArray = formSizes.split(',').map((s) => s.trim()).filter(Boolean);
-      const res = await fetch('/api/menu', {
+      res = await fetch('/api/menu', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
-        body: JSON.stringify({
-          name: formName,
-          category: formCategory,
-          categoryId: formCategoryId,
-          subheading: formSubheading,
-          price: Number(formPrice),
-          desc: formDesc,
-          img: formImg,
-          isVeg: formIsVeg,
-          stock: formStock,
-          sizes: sizesArray.length > 0 ? sizesArray : ['Regular'],
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setQuickAddModalType(null);
-        setFormName('');
-        setFormPrice('');
-        setFormDesc('');
-        setFormSubheading('');
-        setFormStock(10);
-        fetchAdminData();
-        setSaveSuccessMsg('✓ New menu item created and published live!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to save menu dish');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while saving dish');
+
+      const data = await res.json();
+      if (data.item) {
+        setMenuItems((prev) => prev.map((it) => (it.id === tempItemId ? data.item : it)));
+      }
+      logActionSuccess('New Menu Item Persisted to Database', data.item || optimisticItem);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setMenuItems(previousMenuItems);
+      logActionError({
+        action: 'Create New Menu Item',
+        endpoint: '/api/menu',
+        method: 'POST',
+        payload,
+        status: res?.status,
+        error: err,
+        rollbackState: { removedOptimisticItemId: tempItemId },
+      });
     }
   };
 
   const handleSaveEditItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
+    const previousMenuItems = [...menuItems];
+    const previousItem = menuItems.find((i) => i.id === editingItem.id);
     const updatedDish = { ...editingItem };
 
-    // Optimistically update item in local UI state immediately
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setMenuItems((prev) =>
       prev.map((it) => (it.id === updatedDish.id ? updatedDish : it))
     );
+    setEditingItem(null);
+    setSaveSuccessMsg('✓ Menu dish updated successfully!');
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('Menu Item Edited Instantly', updatedDish);
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/menu', {
+      res = await fetch('/api/menu', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -529,30 +642,41 @@ export default function AdminPage() {
         body: JSON.stringify(updatedDish),
       });
 
-      if (res.ok) {
-        setEditingItem(null);
-        fetchAdminData();
-        setSaveSuccessMsg('✓ Menu dish updated successfully!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to update dish');
-        fetchAdminData();
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while updating dish');
-      fetchAdminData();
+      logActionSuccess('Menu Item Edit Persisted to Database', updatedDish);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setMenuItems(previousMenuItems);
+      logActionError({
+        action: 'Edit Menu Item',
+        endpoint: '/api/menu',
+        method: 'PATCH',
+        payload: updatedDish,
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredItem: previousItem },
+      });
     }
   };
 
   // ── ORDER STATUS TRANSITIONS (KITCHEN & FLOOR) ──
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    const previousOrders = [...orders];
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus, updatedAt: Date.now() } : o))
     );
+    logOptimisticSuccess(`Admin Order Status Updated -> ${nextStatus}`, { orderId });
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/orders', {
+      res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -560,18 +684,51 @@ export default function AdminPage() {
         },
         body: JSON.stringify({ id: orderId, status: nextStatus }),
       });
-      if (res.ok) {
-        fetchAdminData();
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      fetchAdminData();
+      logActionSuccess(`Admin Order Status Persisted to Database -> ${nextStatus}`, { orderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      logActionError({
+        action: `Admin Order Status Update -> ${nextStatus}`,
+        endpoint: '/api/orders',
+        method: 'PATCH',
+        payload: { id: orderId, status: nextStatus },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrdersCount: previousOrders.length },
+      });
     }
   };
 
   // ── SETTLE BILL (PAYMENT CONFIRMATION) ──
   const handleSettleOrderBill = async (orderId: string) => {
+    const previousOrders = [...orders];
+    const previousReceipt = selectedReceiptOrder;
+    const settledUpdates = {
+      isPaid: true,
+      settlementStatus: 'paid' as const,
+      paidAt: Date.now(),
+      settledBy: currentUser?.name || 'Admin',
+    };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...settledUpdates } : o)));
+    if (selectedReceiptOrder?.id === orderId) {
+      setSelectedReceiptOrder((prev) => (prev ? { ...prev, ...settledUpdates } : null));
+    }
+    setSaveSuccessMsg('✓ Bill marked as settled and payment verified!');
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('Admin Bill Marked Settled Instantly', { orderId });
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/orders', {
+      res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -583,31 +740,45 @@ export default function AdminPage() {
           staffName: currentUser?.name || 'Admin',
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        const updated = data.order || { id: orderId, isPaid: true, paidAt: Date.now(), settledBy: currentUser?.name || 'Admin' };
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
-        if (selectedReceiptOrder?.id === orderId) {
-          setSelectedReceiptOrder((prev) => (prev ? { ...prev, ...updated } : null));
-        }
-        setSaveSuccessMsg('✓ Bill marked as settled and payment verified!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        alert('Failed to settle bill');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while settling bill');
+      const data = await res.json();
+      const updated = data.order || { id: orderId, ...settledUpdates };
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
+      logActionSuccess('Admin Bill Settle Persisted to Database', { orderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setSelectedReceiptOrder(previousReceipt);
+      logActionError({
+        action: 'Admin Settle Bill',
+        endpoint: '/api/orders',
+        method: 'PATCH',
+        payload: { id: orderId, action: 'settle_bill' },
+        status: res?.status,
+        error: err,
+        rollbackState: { orderId, restoredStatus: 'unsettled' },
+      });
     }
   };
 
-  // ── STAFF SHIFT STATUS TOGGLE ──
+  // ── STAFF SHIFT STATUS TOGGLE (OPTIMISTIC UI + BACKGROUND DB SYNC) ──
   const handleStaffStatusToggle = async (staffId: string, newStatus: 'on_duty' | 'break' | 'off_duty') => {
+    const previousStaff = [...staff];
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setStaff((prev) =>
       prev.map((s) => (s.id === staffId ? { ...s, status: newStatus } : s))
     );
+    logOptimisticSuccess('Admin Staff Status Toggled Instantly', { staffId, newStatus });
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      await fetch('/api/admin?action=update_staff', {
+      res = await fetch('/api/admin?action=update_staff', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -615,12 +786,28 @@ export default function AdminPage() {
         },
         body: JSON.stringify({ id: staffId, status: newStatus }),
       });
-    } catch {
-      fetchAdminData();
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+      }
+      logActionSuccess('Staff Status Toggle Persisted to Database', { staffId, newStatus });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setStaff(previousStaff);
+      logActionError({
+        action: 'Update Staff Shift Status',
+        endpoint: '/api/admin?action=update_staff',
+        method: 'POST',
+        payload: { id: staffId, status: newStatus },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredStaffCount: previousStaff.length },
+      });
     }
   };
 
-  // ── CUSTOM / MANUAL COUNTER ORDER CREATION ──
+  // ── CUSTOM / MANUAL COUNTER ORDER CREATION (OPTIMISTIC UI + BACKGROUND DB SYNC) ──
   const handleManualOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const item = menuItems.find((m) => m.id === manualSelectedItemId);
@@ -638,56 +825,107 @@ export default function AdminPage() {
       }
     }
 
-    try {
-      const qty = Math.max(1, Number(manualQuantity) || 1);
-      const subtotal = item.price * qty;
-      const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
-      const taxAmount = Math.round((subtotal * gstRate) / 100);
-      const total = subtotal + taxAmount;
-      const customCreatedAt = manualDateTime ? new Date(manualDateTime).getTime() : Date.now();
+    const previousOrders = [...orders];
+    const qty = Math.max(1, Number(manualQuantity) || 1);
+    const subtotal = item.price * qty;
+    const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
+    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const total = subtotal + taxAmount;
+    const customCreatedAt = manualDateTime ? new Date(manualDateTime).getTime() : Date.now();
 
-      const res = await fetch('/api/admin?action=manual_order', {
+    const optId = `opt-manual-${Date.now()}`;
+    const optNum = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+    const optimisticOrder: Order = {
+      id: optId,
+      orderNumber: optNum,
+      tableNumber: manualTable,
+      customerName: manualGuest.trim() || 'Counter Guest',
+      customerPhone: manualPhone.trim() || '9830000000',
+      customerFlat: manualFlat.trim() || undefined,
+      items: [{
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: qty,
+        selectedSize: manualSelectedSize || item.sizes?.[0] || 'Regular',
+        category: item.category,
+      }],
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: manualInstructions.trim() || 'Custom Order placed from Admin Console',
+      createdAt: customCreatedAt,
+      updatedAt: Date.now(),
+      status: 'received',
+    };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setOrders((prev) => [optimisticOrder, ...prev]);
+    setQuickAddModalType(null);
+    setManualGuest('');
+    setManualPhone('');
+    setManualFlat('');
+    setManualQuantity(1);
+    setManualInstructions('');
+    setSaveSuccessMsg('✓ Custom order created and dispatched successfully!');
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('Admin Manual Order Created Instantly', optimisticOrder);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
+    const payload = {
+      tableNumber: manualTable,
+      customerName: manualGuest.trim() || 'Counter Guest',
+      customerPhone: manualPhone.trim() || '9830000000',
+      customerFlat: manualFlat.trim() || undefined,
+      items: [{ 
+        id: item.id, 
+        name: item.name, 
+        price: item.price, 
+        quantity: qty, 
+        selectedSize: manualSelectedSize || item.sizes?.[0] || 'Regular',
+        category: item.category 
+      }],
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: manualInstructions.trim() || 'Custom Order placed from Admin Console',
+      createdAt: customCreatedAt,
+    };
+
+    try {
+      res = await fetch('/api/admin?action=manual_order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
-        body: JSON.stringify({
-          tableNumber: manualTable,
-          customerName: manualGuest.trim() || 'Counter Guest',
-          customerPhone: manualPhone.trim() || '9830000000',
-          customerFlat: manualFlat.trim() || undefined,
-          items: [{ 
-            id: item.id, 
-            name: item.name, 
-            price: item.price, 
-            quantity: qty, 
-            selectedSize: manualSelectedSize || item.sizes?.[0] || 'Regular',
-            category: item.category 
-          }],
-          subtotal,
-          taxAmount,
-          total,
-          specialInstructions: manualInstructions.trim() || 'Custom Order placed from Admin Console',
-          createdAt: customCreatedAt,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setQuickAddModalType(null);
-        setManualGuest('');
-        setManualPhone('');
-        setManualFlat('');
-        setManualQuantity(1);
-        setManualInstructions('');
-        fetchAdminData();
-        setSaveSuccessMsg('✓ Custom order created and dispatched successfully!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        alert('Failed to dispatch order. Please check connection.');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Failed to create custom order');
+
+      const data = await res.json();
+      if (data.order) {
+        setOrders((prev) => prev.map((o) => (o.id === optId ? data.order : o)));
+      }
+      logActionSuccess('Admin Manual Order Persisted to Database', data.order || optimisticOrder);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      logActionError({
+        action: 'Create Manual Counter Order',
+        endpoint: '/api/admin?action=manual_order',
+        method: 'POST',
+        payload,
+        status: res?.status,
+        error: err,
+        rollbackState: { removedOptimisticOrderId: optId },
+      });
     }
   };
 
@@ -770,53 +1008,85 @@ export default function AdminPage() {
       }
     }
 
+    const previousOrders = [...orders];
+    const previousSelectedReceipt = selectedReceiptOrder;
+    const previousEditingReceipt = editingReceiptOrder;
+    const targetOrderId = editingReceiptOrder.id;
+
+    const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+    const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
+    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const total = subtotal + taxAmount;
+    const createdAt = editDateTime ? new Date(editDateTime).getTime() : editingReceiptOrder.createdAt;
+
+    const updates: Partial<Order> = {
+      orderNumber: editOrderNumber.trim() || editingReceiptOrder.orderNumber,
+      tableNumber: editTableNumber,
+      customerName: editCustomerName.trim() || 'Guest',
+      customerPhone: editCustomerPhone.trim() || '',
+      customerFlat: editCustomerFlat.trim() || undefined,
+      items: editItems,
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: editNotes.trim() || undefined,
+      createdAt,
+      updatedAt: Date.now(),
+    };
+
+    const optimisticUpdatedOrder: Order = { ...editingReceiptOrder, ...updates };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setOrders((prev) => prev.map((o) => (o.id === targetOrderId ? optimisticUpdatedOrder : o)));
+    if (selectedReceiptOrder?.id === targetOrderId) {
+      setSelectedReceiptOrder(optimisticUpdatedOrder);
+    }
+    setEditingReceiptOrder(null);
+    setSaveSuccessMsg(`✓ Receipt for ${editOrderNumber} updated successfully!`);
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('Admin Order Receipt Edited Instantly', optimisticUpdatedOrder);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-      const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
-      const taxAmount = Math.round((subtotal * gstRate) / 100);
-      const total = subtotal + taxAmount;
-      const createdAt = editDateTime ? new Date(editDateTime).getTime() : editingReceiptOrder.createdAt;
-
-      const updates: Partial<Order> = {
-        orderNumber: editOrderNumber.trim() || editingReceiptOrder.orderNumber,
-        tableNumber: editTableNumber,
-        customerName: editCustomerName.trim() || 'Guest',
-        customerPhone: editCustomerPhone.trim() || '',
-        customerFlat: editCustomerFlat.trim() || undefined,
-        items: editItems,
-        subtotal,
-        taxAmount,
-        total,
-        specialInstructions: editNotes.trim() || undefined,
-        createdAt,
-      };
-
-      const res = await fetch('/api/admin?action=edit_order', {
+      res = await fetch('/api/admin?action=edit_order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
         body: JSON.stringify({
-          orderId: editingReceiptOrder.id,
+          orderId: targetOrderId,
           updates,
         }),
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        setEditingReceiptOrder(null);
-        if (selectedReceiptOrder?.id === editingReceiptOrder.id) {
-          setSelectedReceiptOrder(json.order || { ...editingReceiptOrder, ...updates });
-        }
-        fetchAdminData();
-        setSaveSuccessMsg(`✓ Receipt for ${editOrderNumber} updated successfully!`);
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        alert('Failed to update receipt.');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Error updating receipt.');
+
+      const json = await res.json();
+      const serverOrder = json.order || optimisticUpdatedOrder;
+      setOrders((prev) => prev.map((o) => (o.id === targetOrderId ? serverOrder : o)));
+      if (selectedReceiptOrder?.id === targetOrderId) {
+        setSelectedReceiptOrder(serverOrder);
+      }
+      logActionSuccess('Admin Order Receipt Edit Persisted to Database', { orderId: targetOrderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setSelectedReceiptOrder(previousSelectedReceipt);
+      logActionError({
+        action: 'Edit Order Receipt',
+        endpoint: '/api/admin?action=edit_order',
+        method: 'POST',
+        payload: { orderId: targetOrderId, updates },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrder: previousEditingReceipt },
+      });
     }
   };
 
@@ -828,8 +1098,33 @@ export default function AdminPage() {
     if (!confirm(confirmMsg)) {
       return;
     }
+
+    const previousOrders = [...orders];
+    const previousSelectedReceipt = selectedReceiptOrder;
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    if (permanent) {
+      setOrders((prev) => prev.filter((o) => o.id !== ord.id));
+    } else {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === ord.id
+            ? { ...o, isDeleted: true, status: 'cancelled' as const, deletedBy: 'admin' as const, updatedAt: Date.now() }
+            : o
+        )
+      );
+    }
+    if (selectedReceiptOrder?.id === ord.id) {
+      setSelectedReceiptOrder(null);
+    }
+    setSaveSuccessMsg(permanent ? `✓ Order ${ord.orderNumber} permanently purged.` : `✓ Order ${ord.orderNumber} deleted by Admin.`);
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess(`Admin Order Deleted Instantly (${permanent ? 'Permanent' : 'Soft'})`, { orderId: ord.id });
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch(`/api/admin?action=delete_order`, {
+      res = await fetch(`/api/admin?action=delete_order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -837,28 +1132,44 @@ export default function AdminPage() {
         },
         body: JSON.stringify({ orderId: ord.id, permanent }),
       });
-      if (res.ok) {
-        if (selectedReceiptOrder?.id === ord.id) {
-          setSelectedReceiptOrder(null);
-        }
-        fetchAdminData();
-        setSaveSuccessMsg(permanent ? `✓ Order ${ord.orderNumber} permanently purged.` : `✓ Order ${ord.orderNumber} deleted by Admin.`);
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        alert('Failed to delete order.');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Error connecting to server to delete order.');
+      logActionSuccess('Admin Order Deletion Persisted to Database', { orderId: ord.id, permanent });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setSelectedReceiptOrder(previousSelectedReceipt);
+      logActionError({
+        action: 'Delete Order',
+        endpoint: '/api/admin?action=delete_order',
+        method: 'POST',
+        payload: { orderId: ord.id, permanent },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrder: ord },
+      });
     }
   };
 
-  // ── SETTINGS PERSISTENCE ──
+  // ── SETTINGS PERSISTENCE (OPTIMISTIC UI + BACKGROUND DB SYNC) ──
   const handleSaveSettings = async (e?: React.FormEvent, customSettings?: CafeSettings) => {
     if (e) e.preventDefault();
+    const previousSettings = { ...settings };
     const payload = customSettings || settings;
 
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setSettings(payload);
+    setSaveSuccessMsg('✓ Settings updated and synced across edge nodes!');
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
+    logOptimisticSuccess('Admin Cafe Settings Saved Instantly', payload);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/admin', {
+      res = await fetch('/api/admin', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -867,30 +1178,61 @@ export default function AdminPage() {
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.settings) setSettings(data.settings);
-        setSaveSuccessMsg('✓ Settings updated and synced across edge nodes!');
-        setTimeout(() => setSaveSuccessMsg(''), 4000);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to save settings');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while saving settings');
+
+      const data = await res.json();
+      if (data.settings) setSettings(data.settings);
+      logActionSuccess('Admin Cafe Settings Persisted to Database', data.settings || payload);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setSettings(previousSettings);
+      logActionError({
+        action: 'Save Cafe Settings',
+        endpoint: '/api/admin',
+        method: 'PATCH',
+        payload,
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredSettings: previousSettings },
+      });
     }
   };
 
-  // ── LIVE LAUNCH DATABASE PURGE (REQUESTED BY USER) ──
+  // ── LIVE LAUNCH DATABASE PURGE (OPTIMISTIC UI + BACKGROUND DB SYNC) ──
   const handlePurgeDatabase = async () => {
     if (wipePinConfirm !== (settings.adminPin || '1234')) {
       alert('Incorrect Admin Master PIN. Verification failed.');
       return;
     }
 
+    const previousOrders = [...orders];
+    const previousStats = { ...stats };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setIsWipeModalOpen(false);
+    setWipePinConfirm('');
+    setOrders([]);
+    setStats({
+      todayRevenue: 0,
+      todayOrderCount: 0,
+      totalOrders: 0,
+      activeOrderCount: 0,
+      todayCustomersCount: 0,
+      popularItems: [],
+    });
+    setSaveSuccessMsg('✓ All orders, sales stats, and audit records wiped! Ready for Live Launch.');
+    setTimeout(() => setSaveSuccessMsg(''), 6000);
+    logOptimisticSuccess('Admin Database Purge Applied Instantly');
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
     setIsWiping(true);
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/admin?action=purge_database', {
+      res = await fetch('/api/admin?action=purge_database', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -898,52 +1240,63 @@ export default function AdminPage() {
         },
       });
 
-      if (res.ok) {
-        setIsWipeModalOpen(false);
-        setWipePinConfirm('');
-        setOrders([]);
-        setStats({
-          todayRevenue: 0,
-          todayOrderCount: 0,
-          totalOrders: 0,
-          activeOrderCount: 0,
-          todayCustomersCount: 0,
-          popularItems: [],
-        });
-        fetchAdminData();
-        setSaveSuccessMsg('✓ All orders, sales stats, and audit records wiped! Ready for Live Launch.');
-        setTimeout(() => setSaveSuccessMsg(''), 6000);
-      } else {
-        alert('Failed to purge database');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while purging database');
+      logActionSuccess('Admin Database Purge Persisted to Database');
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setStats(previousStats);
+      logActionError({
+        action: 'Purge Database',
+        endpoint: '/api/admin?action=purge_database',
+        method: 'POST',
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrdersCount: previousOrders.length },
+      });
     } finally {
       setIsWiping(false);
     }
   };
 
-  // ── SYNC 76 PDF MENU ITEMS TO SUPABASE ──
+  // ── SYNC 76 PDF MENU ITEMS TO SUPABASE (BACKGROUND DB SYNC) ──
   const [isSyncingMenu, setIsSyncingMenu] = useState(false);
   const handleSyncMenu = async () => {
     setIsSyncingMenu(true);
+    setSaveSuccessMsg('✓ Synchronizing all 76 PDF menu items & categories to database...');
+    logOptimisticSuccess('Admin Sync PDF Menu Started');
+
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/admin?action=sync_menu', {
+      res = await fetch('/api/admin?action=sync_menu', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
       });
-      if (res.ok) {
-        await fetchAdminData();
-        setSaveSuccessMsg('✓ All 76 PDF menu items & categories synchronized to database!');
-        setTimeout(() => setSaveSuccessMsg(''), 5000);
-      } else {
-        alert('Failed to sync menu items to database');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while syncing menu to database');
+      await fetchAdminData();
+      setSaveSuccessMsg('✓ All 76 PDF menu items & categories synchronized to database!');
+      setTimeout(() => setSaveSuccessMsg(''), 5000);
+      logActionSuccess('PDF Menu Sync Complete');
+    } catch (err) {
+      setSaveSuccessMsg('');
+      logActionError({
+        action: 'Sync Menu with PDF',
+        endpoint: '/api/admin?action=sync_menu',
+        method: 'POST',
+        status: res?.status,
+        error: err,
+      });
     } finally {
       setIsSyncingMenu(false);
     }

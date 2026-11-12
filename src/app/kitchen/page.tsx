@@ -6,6 +6,7 @@ import { Order, OrderStatus, StaffUser, MenuItem } from '@/lib/types';
 import StaffAuthModal from '@/components/StaffAuthModal';
 import AccountPanel from '@/components/AccountPanel';
 import SearchableDishPicker from '@/components/SearchableDishPicker';
+import { logActionError, logOptimisticSuccess, logActionSuccess } from '@/lib/clientLog';
 
 // Helper to get kitchen authorization headers (supports Bearer token for seamless cross-device auth)
 const getKitchenAuthHeaders = (): Record<string, string> => {
@@ -354,11 +355,36 @@ export default function KitchenDashboard() {
     });
   }, [allCombinedOrders, historyStatusFilter, historySearch]);
 
-  // Settle bill action
+  // Settle bill action (Optimistic UI Update + Background DB Query + Console Debug Logging)
   const handleSettleBill = async (orderId: string) => {
     setIsSettlingId(orderId);
+
+    // Snapshot previous state for rollback
+    const previousOrders = [...orders];
+    const previousHistory = [...historyOrders];
+    const previousServed = [...recentServed];
+    const previousPrint = printOrder;
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    const settledUpdates = {
+      isPaid: true,
+      settlementStatus: 'paid' as const,
+      paidAt: Date.now(),
+      settledBy: currentUser?.name || staffName || 'Kitchen Staff',
+    };
+
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...settledUpdates } : o)));
+    setHistoryOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...settledUpdates } : o)));
+    setRecentServed((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...settledUpdates } : o)));
+    if (printOrder?.id === orderId) {
+      setPrintOrder((prev) => (prev ? { ...prev, ...settledUpdates } : null));
+    }
+    logOptimisticSuccess('Kitchen Bill Marked Settled Instantly', { orderId });
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/orders', {
+      res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -371,22 +397,34 @@ export default function KitchenDashboard() {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const updated = data.order || { id: orderId, isPaid: true, paidAt: Date.now(), settledBy: currentUser?.name || staffName };
-
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
-        setHistoryOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
-        setRecentServed((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
-        if (printOrder?.id === orderId) {
-          setPrintOrder((prev) => (prev ? { ...prev, ...updated } : null));
-        }
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to settle bill');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while settling bill');
+
+      const data = await res.json();
+      const updated = data.order || { id: orderId, ...settledUpdates };
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
+      setHistoryOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
+      setRecentServed((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updated } : o)));
+      logActionSuccess('Kitchen Bill Settle Persisted to Database', { orderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setHistoryOrders(previousHistory);
+      setRecentServed(previousServed);
+      setPrintOrder(previousPrint);
+
+      logActionError({
+        action: 'Kitchen Settle Bill',
+        endpoint: '/api/orders',
+        method: 'PATCH',
+        payload: { id: orderId, action: 'settle_bill' },
+        status: res?.status,
+        error: err,
+        rollbackState: { orderId, restoredStatus: 'unsettled' },
+      });
     } finally {
       setIsSettlingId(null);
     }
@@ -467,57 +505,89 @@ export default function KitchenDashboard() {
       }
     }
 
+    // Snapshot previous state for rollback
+    const previousOrders = [...orders];
+    const previousHistory = [...historyOrders];
+    const previousServed = [...recentServed];
+    const previousPrint = printOrder;
+    const targetOrderId = editingReceiptOrder.id;
+    const previousTargetOrder = { ...editingReceiptOrder };
+
+    const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+    const gstRate = 5;
+    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
+    const total = Number((subtotal + taxAmount).toFixed(2));
+
+    const updates: Partial<Order> = {
+      customerName: editCustomerName.trim() || 'Guest',
+      customerPhone: editCustomerPhone.trim(),
+      customerFlat: editCustomerFlat.trim() || undefined,
+      tableNumber: editTableNumber,
+      items: editItems,
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: editNotes.trim() || undefined,
+    };
+
+    const updatedOrder: Order = { ...editingReceiptOrder, ...updates, updatedAt: Date.now() };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setOrders((prev) => prev.map((o) => (o.id === targetOrderId ? updatedOrder : o)));
+    setHistoryOrders((prev) => prev.map((o) => (o.id === targetOrderId ? updatedOrder : o)));
+    setRecentServed((prev) => prev.map((o) => (o.id === targetOrderId ? updatedOrder : o)));
+    if (printOrder?.id === targetOrderId) {
+      setPrintOrder(updatedOrder);
+    }
+    setEditingReceiptOrder(null); // Instantly close modal!
+    logOptimisticSuccess('Kitchen Edit Receipt Applied Instantly', updatedOrder);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
     setIsSavingReceipt(true);
+    let res: Response | null = null;
     try {
-      const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-      const gstRate = 5;
-      const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
-      const total = Number((subtotal + taxAmount).toFixed(2));
-
-      const updates: Partial<Order> = {
-        customerName: editCustomerName.trim() || 'Guest',
-        customerPhone: editCustomerPhone.trim(),
-        customerFlat: editCustomerFlat.trim() || undefined,
-        tableNumber: editTableNumber,
-        items: editItems,
-        subtotal,
-        taxAmount,
-        total,
-        specialInstructions: editNotes.trim() || undefined,
-      };
-
-      const res = await fetch('/api/orders', {
+      res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...getKitchenAuthHeaders(),
         },
         body: JSON.stringify({
-          id: editingReceiptOrder.id,
+          id: targetOrderId,
           action: 'edit_receipt',
           updates,
           staffName: currentUser?.name || staffName || 'Kitchen Staff',
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const updated = data.order || { ...editingReceiptOrder, ...updates };
-
-        setOrders((prev) => prev.map((o) => (o.id === editingReceiptOrder.id ? updated : o)));
-        setHistoryOrders((prev) => prev.map((o) => (o.id === editingReceiptOrder.id ? updated : o)));
-        setRecentServed((prev) => prev.map((o) => (o.id === editingReceiptOrder.id ? updated : o)));
-
-        if (printOrder?.id === editingReceiptOrder.id) {
-          setPrintOrder(updated);
-        }
-        setEditingReceiptOrder(null);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to update receipt');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while updating receipt');
+
+      const data = await res.json();
+      const serverUpdated = data.order || updatedOrder;
+      setOrders((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
+      setHistoryOrders((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
+      setRecentServed((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
+      logActionSuccess('Kitchen Edit Receipt Persisted to Database', { orderId: targetOrderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setOrders(previousOrders);
+      setHistoryOrders(previousHistory);
+      setRecentServed(previousServed);
+      setPrintOrder(previousPrint);
+
+      logActionError({
+        action: 'Kitchen Edit Receipt',
+        endpoint: '/api/orders',
+        method: 'PATCH',
+        payload: { id: targetOrderId, updates },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrder: previousTargetOrder },
+      });
     } finally {
       setIsSavingReceipt(false);
     }
@@ -636,70 +706,110 @@ export default function KitchenDashboard() {
       }
     }
 
-    setIsSubmittingCustomBill(true);
-    try {
-      const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-      const gstRate = 5;
-      const taxAmount = Math.round((subtotal * gstRate) / 100);
-      const total = subtotal + taxAmount;
-      const customCreatedAt = customBillDateTime ? new Date(customBillDateTime).getTime() : Date.now();
+    const previousHistory = [...historyOrders];
+    const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+    const gstRate = 5;
+    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const total = subtotal + taxAmount;
+    const customCreatedAt = customBillDateTime ? new Date(customBillDateTime).getTime() : Date.now();
 
-      const res = await fetch('/api/orders', {
+    const optId = `opt-custom-${Date.now()}`;
+    const optNum = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+    const optimisticCustomOrder: Order = {
+      id: optId,
+      orderNumber: optNum,
+      tableNumber: customBillTable,
+      customerName: customBillGuest.trim() || 'Counter Walk-in',
+      customerPhone: customBillPhone.trim() || '9830000000',
+      customerFlat: customBillFlat.trim() || undefined,
+      items: customBillItems.map((it) => ({
+        id: it.id,
+        name: it.name,
+        price: it.price,
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        selectedSize: it.selectedSize || 'Regular',
+        category: it.category || 'General',
+      })),
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: customBillNotes.trim() || `Custom bill recorded from Kitchen by ${currentUser?.name || staffName || 'Kitchen Staff'}`,
+      createdAt: customCreatedAt,
+      updatedAt: Date.now(),
+      status: 'served',
+      isPaid: customBillIsPaid,
+      settledBy: customBillIsPaid ? (currentUser?.name || staffName || 'Kitchen Staff') : undefined,
+    };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    setHistoryOrders((prev) => [optimisticCustomOrder, ...prev]);
+    setIsCustomBillModalOpen(false);
+    setCustomBillSuccessMsg(`✓ Custom Bill #${optNum} successfully recorded!`);
+    setTimeout(() => setCustomBillSuccessMsg(''), 5000);
+    setKitchenViewMode('history');
+    logOptimisticSuccess('Kitchen Custom Bill Recorded Instantly', optimisticCustomOrder);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    setIsSubmittingCustomBill(true);
+    let res: Response | null = null;
+    const payload = {
+      action: 'kitchen_custom_order',
+      tableNumber: customBillTable,
+      customerName: customBillGuest.trim() || 'Counter Walk-in',
+      customerPhone: customBillPhone.trim() || '9830000000',
+      customerFlat: customBillFlat.trim() || undefined,
+      items: customBillItems.map((it) => ({
+        id: it.id,
+        name: it.name,
+        price: it.price,
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        selectedSize: it.selectedSize || 'Regular',
+        category: it.category || 'General',
+      })),
+      subtotal,
+      taxAmount,
+      total,
+      specialInstructions: customBillNotes.trim() || `Custom bill recorded from Kitchen by ${currentUser?.name || staffName || 'Kitchen Staff'}`,
+      createdAt: customCreatedAt,
+      status: 'served',
+      isPaid: customBillIsPaid,
+      settledBy: customBillIsPaid ? (currentUser?.name || staffName || 'Kitchen Staff') : undefined,
+      staffName: currentUser?.name || staffName || 'Kitchen Staff',
+    };
+
+    try {
+      res = await fetch('/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getKitchenAuthHeaders(),
         },
-        body: JSON.stringify({
-          action: 'kitchen_custom_order',
-          tableNumber: customBillTable,
-          customerName: customBillGuest.trim() || 'Counter Walk-in',
-          customerPhone: customBillPhone.trim() || '9830000000',
-          customerFlat: customBillFlat.trim() || undefined,
-          items: customBillItems.map((it) => ({
-            id: it.id,
-            name: it.name,
-            price: it.price,
-            quantity: Math.max(1, Number(it.quantity) || 1),
-            selectedSize: it.selectedSize || 'Regular',
-            category: it.category || 'General',
-          })),
-          subtotal,
-          taxAmount,
-          total,
-          specialInstructions: customBillNotes.trim() || `Custom bill recorded from Kitchen by ${currentUser?.name || staffName || 'Kitchen Staff'}`,
-          createdAt: customCreatedAt,
-          status: 'served', // Directly completed! Does not go to new/prep/ready
-          isPaid: customBillIsPaid,
-          settledBy: customBillIsPaid ? (currentUser?.name || staffName || 'Kitchen Staff') : undefined,
-          staffName: currentUser?.name || staffName || 'Kitchen Staff',
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const createdOrder: Order = data.order;
-        setIsCustomBillModalOpen(false);
-        setCustomBillSuccessMsg(`✓ Custom Bill #${createdOrder.orderNumber} successfully recorded!`);
-        setTimeout(() => setCustomBillSuccessMsg(''), 5000);
-
-        // Refresh orders & history
-        await fetchHistoryOrders();
-        await fetchOrders();
-
-        // Switch to history view so kitchen staff immediately sees the logged bill
-        setKitchenViewMode('history');
-
-        // Offer to print receipt
-        if (confirm(`Bill #${createdOrder.orderNumber} (₹${createdOrder.total}) recorded directly to Order History & Admin!\n\nWould you like to print or view the receipt now?`)) {
-          setPrintOrder(createdOrder);
-        }
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to record custom bill. Please check inputs.');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      alert('Network error while creating custom bill.');
+
+      const data = await res.json();
+      const createdOrder: Order = data.order;
+      setHistoryOrders((prev) => prev.map((o) => (o.id === optId ? createdOrder : o)));
+      logActionSuccess('Kitchen Custom Bill Persisted to Database', createdOrder);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      setHistoryOrders(previousHistory);
+
+      logActionError({
+        action: 'Kitchen Custom Bill Creation',
+        endpoint: '/api/orders',
+        method: 'POST',
+        payload,
+        status: res?.status,
+        error: err,
+        rollbackState: { removedOptimisticOrderId: optId },
+      });
     } finally {
       setIsSubmittingCustomBill(false);
     }
@@ -792,27 +902,30 @@ export default function KitchenDashboard() {
     };
   }, [isAuthenticated, fetchOrders, fetchHistoryOrders, fetchMenuItems]);
 
-  // Advance Order Status (Instant Optimistic UI Updates + Receipt on Served!)
+  // Advance Order Status (Instant Optimistic UI Updates + Background DB Sync + Debug Console Logging)
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
     const previousOrders = [...orders];
+    const previousRecentServed = [...recentServed];
     const targetOrder = orders.find((o) => o.id === orderId);
 
-    // Instant optimistic update: remove immediately when served/cancelled
+    // ── STEP 1: INSTANT OPTIMISTIC UI UPDATE ──
     if (nextStatus === 'served' || nextStatus === 'cancelled') {
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
       if (nextStatus === 'served' && targetOrder) {
         const servedOrder: Order = { ...targetOrder, status: 'served', updatedAt: Date.now() };
         setRecentServed((prev) => [servedOrder, ...prev.filter((o) => o.id !== orderId).slice(0, 19)]);
-        // Order moves directly to Bill Settlement column; no unwanted modal popup
       }
     } else {
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus, updatedAt: Date.now() } : o))
       );
     }
+    logOptimisticSuccess(`Kitchen Order Status Updated -> ${nextStatus}`, { orderId });
 
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/orders', {
+      res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -823,17 +936,29 @@ export default function KitchenDashboard() {
       if (res.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('anassa_kitchen_session');
-        alert('Session expired. Please sign in with Kitchen Staff credentials.');
+        console.warn('[OZKAFE] Session expired. Please sign in with Kitchen Staff credentials.');
         return;
       }
       if (!res.ok) {
-        setOrders(previousOrders);
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to update order status');
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
+      logActionSuccess(`Kitchen Order Status Persisted to DB -> ${nextStatus}`, { orderId });
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
       setOrders(previousOrders);
-      alert('Network error while updating order status');
+      setRecentServed(previousRecentServed);
+
+      logActionError({
+        action: `Kitchen Order Status Update -> ${nextStatus}`,
+        endpoint: '/api/orders',
+        method: 'PATCH',
+        payload: { id: orderId, status: nextStatus },
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredOrdersCount: previousOrders.length },
+      });
     }
   };
 

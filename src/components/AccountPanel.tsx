@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { StaffUser } from '@/lib/types';
 import Link from 'next/link';
+import { logActionError, logOptimisticSuccess, logActionSuccess } from '@/lib/clientLog';
 
 interface AccountPanelProps {
   isOpen: boolean;
@@ -62,28 +63,60 @@ export default function AccountPanel({
       return;
     }
 
+    const previousUser = { ...user };
+    const optimisticUpdatedUser: StaffUser = {
+      ...user,
+      name: nameInput.trim(),
+      phone: phoneInput.trim(),
+      avatarColor: avatarColorInput,
+    };
+
+    // ── STEP 1: OPTIMISTIC UI UPDATE ──
+    onUpdateUser(optimisticUpdatedUser);
+    setProfileMessage('✓ Profile updated successfully!');
+    setTimeout(() => setProfileMessage(''), 4000);
+    logOptimisticSuccess('Staff Profile Updated Instantly', optimisticUpdatedUser);
+
+    // ── STEP 2: BACKGROUND DATABASE SYNC ──
     setIsSavingProfile(true);
+    let res: Response | null = null;
+    const payload = {
+      name: nameInput.trim(),
+      phone: phoneInput.trim(),
+      avatarColor: avatarColorInput,
+    };
+
     try {
-      const res = await fetch('/api/auth/profile', {
+      res = await fetch('/api/auth/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: nameInput.trim(),
-          phone: phoneInput.trim(),
-          avatarColor: avatarColorInput,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (res.ok && data.user) {
-        setProfileMessage('Profile updated successfully!');
-        onUpdateUser(data.user);
-        setTimeout(() => setProfileMessage(''), 3000);
-      } else {
-        setProfileError(data.error || 'Failed to update profile.');
+      if (!res.ok) {
+        let errData: unknown = null;
+        try { errData = await res.json(); } catch {}
+        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
       }
-    } catch {
-      setProfileError('Network error updating profile.');
+
+      const data = await res.json();
+      if (data.user) {
+        onUpdateUser(data.user);
+      }
+      logActionSuccess('Staff Profile Persisted to Database', data.user || optimisticUpdatedUser);
+    } catch (err) {
+      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
+      onUpdateUser(previousUser);
+      setProfileMessage('');
+      logActionError({
+        action: 'Update Staff Profile',
+        endpoint: '/api/auth/profile',
+        method: 'PATCH',
+        payload,
+        status: res?.status,
+        error: err,
+        rollbackState: { restoredUser: previousUser },
+      });
     } finally {
       setIsSavingProfile(false);
     }

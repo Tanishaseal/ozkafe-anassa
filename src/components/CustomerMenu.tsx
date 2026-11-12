@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { Category, MenuItem, MenuAddon, CartItem, Order, CafeSettings } from '@/lib/types';
+import { logActionError, logOptimisticSuccess, logActionSuccess } from '@/lib/clientLog';
 
 interface CustomerMenuProps {
   initialCategories: Category[];
@@ -426,7 +427,7 @@ export default function CustomerMenu({
               const liveDish = data.items.find((i: MenuItem) => i.id === cartIt.id);
               if (liveDish && (!liveDish.isAvailable || (typeof liveDish.stock === 'number' && liveDish.stock <= 0))) {
                 updateCartItemQuantity(cartIt.cartKey, -cartIt.quantity);
-                alert(`Notice: "${cartIt.name}" was just marked OUT OF STOCK by the kitchen and has been removed from your cart.`);
+                console.warn(`[OZKAFE] Notice: "${cartIt.name}" was marked OUT OF STOCK by kitchen and removed from cart.`);
               }
             });
           }
@@ -692,16 +693,13 @@ export default function CustomerMenu({
   const handleAddToCart = (e?: React.MouseEvent) => {
     if (!activeItem || !activeItem.isAvailable || (typeof activeItem.stock === 'number' && activeItem.stock <= 0)) return;
 
-    if (quantity <= 0) {
-      alert('Please press the + sign to select quantity before adding to order.');
-      return;
-    }
+    const effQty = quantity <= 0 ? 1 : quantity;
 
     const cartKey = `${activeItem.id}_${selectedSize}`;
     const existing = cart[cartKey];
-    const newQty = existing ? existing.quantity + quantity : quantity;
+    const newQty = existing ? existing.quantity + effQty : effQty;
     if (typeof activeItem.stock === 'number' && newQty > activeItem.stock) {
-      alert(`Only ${activeItem.stock} item(s) available in kitchen stock for "${activeItem.name}".`);
+      console.warn(`[OZKAFE Inventory] Only ${activeItem.stock} item(s) available in stock for "${activeItem.name}".`);
       return;
     }
 
@@ -798,27 +796,27 @@ export default function CustomerMenu({
     if (settings.requireCustomerPhone !== false) {
       if (!cleanedPhone || cleanedPhone.length !== 10) {
         setPhoneError('Please enter a valid 10-digit mobile number');
-        alert('Please enter a valid 10-digit mobile number to complete your order.');
+        console.warn('[OZKAFE Validation] Invalid phone number entered:', customerPhone);
         return;
       }
     }
 
     if (settings.requireCustomerName !== false && !customerName.trim()) {
-      alert('Please enter your name for the order.');
+      console.warn('[OZKAFE Validation] Customer name is required');
       return;
     }
 
     if (isTakeaway) {
       if (!customerFlat || !customerFlat.trim()) {
         setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
-        alert('Flat Number is required for Takeaway / In-Flat orders (e.g. 14B or Tower 2 - 14B).');
+        console.warn('[OZKAFE Validation] Flat number required for takeaway');
         return;
       }
       const hasDigits = /\d/.test(customerFlat);
       const hasLetters = /[a-zA-Z]/.test(customerFlat);
       if (!hasDigits || !hasLetters) {
         setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
-        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        console.warn('[OZKAFE Validation] Invalid flat number format:', customerFlat);
         return;
       }
     } else if (customerFlat && customerFlat.trim()) {
@@ -826,7 +824,7 @@ export default function CustomerMenu({
       const hasLetters = /[a-zA-Z]/.test(customerFlat);
       if (!hasDigits || !hasLetters) {
         setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
-        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+        console.warn('[OZKAFE Validation] Invalid flat number format:', customerFlat);
         return;
       }
     }
@@ -841,8 +839,7 @@ export default function CustomerMenu({
     }
 
     setIsSubmittingOrder(true);
-    try {
-      // ── PILLAR 2: GEOLOCATION PHYSICAL PROXIMITY VERIFICATION ──
+    // ── PILLAR 2: GEOLOCATION PHYSICAL PROXIMITY VERIFICATION ──
       let customerLat: number | undefined = undefined;
       let customerLng: number | undefined = undefined;
 
@@ -890,6 +887,43 @@ export default function CustomerMenu({
         specialInstructions: '',
       };
 
+      const tempOrderId = `opt_${Date.now()}`;
+      const optimisticOrderNumber = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+      const optimisticOrder: Order = {
+        id: tempOrderId,
+        orderNumber: optimisticOrderNumber,
+        tableNumber: initialTable,
+        tableKey: initialKey,
+        sessionId: tableSessionId,
+        idempotencyKey,
+        customerName: customerName.trim() || 'Guest',
+        customerPhone: cleanedPhone,
+        customerFlat: customerFlat.trim() || undefined,
+        customerLat,
+        customerLng,
+        items: Object.values(cart).map((it) => ({
+          id: it.id,
+          name: it.name,
+          price: it.price,
+          quantity: it.quantity,
+          selectedSize: it.selectedSize,
+          category: it.category,
+          isAddon: it.isAddon,
+        })),
+        subtotal: cartSubtotal,
+        taxAmount: cartTax,
+        total: cartGrandTotal,
+        specialInstructions: '',
+        status: 'received',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      // Snapshot previous state for rollback in case of background failure
+      const previousCart = { ...cart };
+      const previousActiveOrders = [...activeOrders];
+      const previousHasLocalOrders = hasLocalOrders;
+
       const completeOrderSuccess = (placedOrder: Order, serverSessionId?: string) => {
         // Ensure session ID is synchronized with server response
         const effSession = serverSessionId || placedOrder.sessionId;
@@ -921,7 +955,7 @@ export default function CustomerMenu({
         setIsGuestProfileSaved(true);
         setIsEditingGuestProfile(false);
 
-        setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id)]);
+        setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id && o.id !== tempOrderId)]);
         setHasLocalOrders(true);
 
         // Clear cart in both state & persistent localStorage
@@ -939,7 +973,12 @@ export default function CustomerMenu({
         setIsTrackerOpen(true);
       };
 
-      let res: Response;
+      // ── STEP 1: OPTIMISTIC UI UPDATE (Instant user feedback) ──
+      completeOrderSuccess(optimisticOrder, tableSessionId);
+      logOptimisticSuccess('Customer Order Submitted Instantly', optimisticOrder);
+
+      // ── STEP 2: BACKGROUND DATABASE SYNC ──
+      let res: Response | null = null;
       try {
         res = await fetch('/api/orders', {
           method: 'POST',
@@ -947,11 +986,24 @@ export default function CustomerMenu({
           body: JSON.stringify(orderPayload),
           signal: AbortSignal.timeout(12000), // 12-second safe timeout
         });
-      } catch (networkErr) {
-        console.warn('Network issue during POST /api/orders, executing instant order reconciliation check:', networkErr);
 
-        // ── INSTANT RECONCILIATION GUARD ──
-        // If connection dropped on the return path, check if the server already created the order!
+        if (!res.ok) {
+          let errData: unknown = null;
+          try {
+            errData = await res.json();
+          } catch {}
+          throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+        }
+
+        const data = await res.json();
+        const serverOrder: Order = data.order;
+
+        // Reconcile optimistic order with server-confirmed order
+        completeOrderSuccess(serverOrder, data.sessionId);
+        logActionSuccess('Customer Order Confirmed by Database', serverOrder);
+      } catch (networkOrServerError) {
+        // Attempt instant reconciliation in case server already created order before connection dropped
+        let reconciled = false;
         try {
           const checkParams = new URLSearchParams({
             table: String(initialTable),
@@ -967,37 +1019,44 @@ export default function CustomerMenu({
               (o.customerPhone?.replace(/\D/g, '').slice(-10) === cleanedPhone.slice(-10))
             );
             if (matched) {
-              console.log('Order successfully reconciled from kitchen:', matched.orderNumber);
               completeOrderSuccess(matched, matched.sessionId);
-              return;
+              logActionSuccess('Order Reconciled Successfully from Kitchen', matched);
+              reconciled = true;
             }
           }
         } catch (reconErr) {
-          console.warn('Reconciliation check failed:', reconErr);
+          console.warn('[OZKAFE] Reconciliation attempt failed:', reconErr);
         }
 
-        throw new Error('Connection issue with the kitchen. Please verify your Wi-Fi or mobile data and tap Send Order again.');
-      }
+        if (!reconciled) {
+          // ── STEP 3: ROLLBACK UI STATE ON DEFINITIVE FAILURE ──
+          setCart(previousCart);
+          try {
+            localStorage.setItem(`anassa_cart_${initialTable}`, JSON.stringify(previousCart));
+          } catch {}
+          setActiveOrders(previousActiveOrders);
+          setHasLocalOrders(previousHasLocalOrders);
+          setIsCartOpen(true);
+          setIsTrackerOpen(false);
+          setShowConfetti(false);
 
-      if (!res.ok) {
-        let errMessage = 'Failed to place order';
-        try {
-          const err = await res.json();
-          errMessage = err.error || errMessage;
-        } catch {
-          // not JSON
+          // Detailed console debug log instead of alert dialog
+          logActionError({
+            action: 'Submit Customer Order to Kitchen',
+            endpoint: '/api/orders',
+            method: 'POST',
+            payload: orderPayload,
+            status: res?.status,
+            error: networkOrServerError,
+            rollbackState: {
+              cartItemsRestored: Object.keys(previousCart).length,
+              activeOrdersRestored: previousActiveOrders.length,
+            },
+          });
         }
-        throw new Error(errMessage);
+      } finally {
+        setIsSubmittingOrder(false);
       }
-
-      const data = await res.json();
-      const placedOrder: Order = data.order;
-      completeOrderSuccess(placedOrder, data.sessionId);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Order submission failed.');
-    } finally {
-      setIsSubmittingOrder(false);
-    }
   };
 
   return (
@@ -1746,17 +1805,18 @@ export default function CustomerMenu({
                   onClick={() => {
                     const cleaned = sanitizePhoneNumber(customerPhone);
                     if (!cleaned || cleaned.length !== 10) {
-                      alert('Please enter a valid 10-digit mobile number.');
+                      setPhoneError('Please enter a valid 10-digit mobile number.');
+                      console.warn('[OZKAFE Validation] Invalid phone number:', customerPhone);
                       return;
                     }
                     if (!customerName.trim()) {
-                      alert('Please enter your name.');
+                      console.warn('[OZKAFE Validation] Customer name is required');
                       return;
                     }
                     const isTakeaway = initialTable === 'Takeaway' || initialTable === '0' || String(initialTable).toLowerCase() === 'takeaway';
                     if (isTakeaway && !customerFlat.trim()) {
                       setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
-                      alert('Please enter your Flat Number for Takeaway / In-Flat order (e.g. 14B or Tower 2 - 14B).');
+                      console.warn('[OZKAFE Validation] Flat number required for takeaway');
                       return;
                     }
                     if (customerFlat.trim()) {
@@ -1764,7 +1824,7 @@ export default function CustomerMenu({
                       const hasLetters = /[a-zA-Z]/.test(customerFlat);
                       if (!hasDigits || !hasLetters) {
                         setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
-                        alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+                        console.warn('[OZKAFE Validation] Invalid flat number format:', customerFlat);
                         return;
                       }
                     }
@@ -2044,17 +2104,18 @@ export default function CustomerMenu({
                             onClick={() => {
                               const cleaned = sanitizePhoneNumber(customerPhone);
                               if (!cleaned || cleaned.length !== 10) {
-                                alert('Please enter a valid 10-digit mobile number.');
+                                setPhoneError('Please enter a valid 10-digit mobile number.');
+                                console.warn('[OZKAFE Validation] Invalid phone number:', customerPhone);
                                 return;
                               }
                               if (!customerName.trim()) {
-                                alert('Please enter your name.');
+                                console.warn('[OZKAFE Validation] Customer name is required');
                                 return;
                               }
                               const isTakeaway = initialTable === 'Takeaway' || initialTable === '0';
                               if (isTakeaway && !customerFlat.trim()) {
                                 setFlatError('Flat Number is required (e.g. 14B or Tower 2 - 14B)');
-                                alert('Please enter your Flat Number for Takeaway / In-Flat order (e.g. 14B or Tower 2 - 14B).');
+                                console.warn('[OZKAFE Validation] Flat number required for takeaway');
                                 return;
                               }
                               if (customerFlat.trim()) {
@@ -2062,7 +2123,7 @@ export default function CustomerMenu({
                                 const hasLetters = /[a-zA-Z]/.test(customerFlat);
                                 if (!hasDigits || !hasLetters) {
                                   setFlatError('Flat number must contain both digits and letters (e.g. 14B or Tower 2 - 14B)');
-                                  alert('Please enter a valid Flat Number containing both digits and letters (e.g. 14B or Tower 2 - 14B).');
+                                  console.warn('[OZKAFE Validation] Invalid flat number format:', customerFlat);
                                   return;
                                 }
                               }
