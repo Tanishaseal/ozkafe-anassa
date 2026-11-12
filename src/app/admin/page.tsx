@@ -406,7 +406,9 @@ export default function AdminPage() {
     const previousMenuItems = [...menuItems];
     const nextAvailable = !currentAvailable;
     const currentItem = menuItems.find((i) => i.id === itemId);
-    const nextStock = nextAvailable && (currentItem?.stock ?? 0) <= 0 ? 10 : (currentItem?.stock ?? 10);
+    const nextStock = nextAvailable
+      ? (typeof currentItem?.stock === 'number' && currentItem.stock > 0 ? currentItem.stock : 10)
+      : 0;
 
     // ── STEP 1: OPTIMISTIC UI UPDATE ──
     setMenuItems((prev) =>
@@ -3170,8 +3172,8 @@ export default function AdminPage() {
                                 />
                                 <span className="admin-slider"></span>
                               </label>
-                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: (item.isAvailable && (item.stock ?? 10) > 0) ? 'var(--adm-matcha)' : 'var(--adm-terracotta)' }}>
-                                {(item.isAvailable && (item.stock ?? 10) > 0) ? 'IN STOCK' : 'OUT (86ed)'}
+                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', color: (item.isAvailable && (item.stock ?? 10) > 0) ? 'var(--adm-matcha, #16A34A)' : 'var(--adm-terracotta, #DC2626)' }}>
+                                {(item.isAvailable && (item.stock ?? 10) > 0) ? 'IN' : 'OUT'}
                               </span>
                             </td>
                             <td style={{ fontSize: 12 }}>{item.sizes.join(', ')}</td>
@@ -3874,7 +3876,7 @@ export default function AdminPage() {
                       setEditingItem({
                         ...editingItem,
                         stock: val,
-                        isAvailable: val > 0 ? editingItem.isAvailable : false,
+                        isAvailable: val > 0,
                       });
                     }}
                     className="admin-form-input"
@@ -3894,7 +3896,7 @@ export default function AdminPage() {
                         setEditingItem({
                           ...editingItem,
                           isAvailable: checked,
-                          stock: checked && (editingItem.stock ?? 0) <= 0 ? 10 : (editingItem.stock ?? 10),
+                          stock: checked ? ((editingItem.stock ?? 0) > 0 ? (editingItem.stock ?? 10) : 10) : 0,
                         });
                       }}
                     />

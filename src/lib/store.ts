@@ -386,7 +386,7 @@ export async function toggleItemAvailability(itemId: string, isAvailable: boolea
     addAuditLog({
       actor: 'admin',
       action: 'STOCK_TOGGLED',
-      details: `Item "${item.name}" marked ${isAvailable ? `IN STOCK (${currentStock} left)` : 'OUT OF STOCK (86ed)'}`,
+      details: `Item "${item.name}" marked ${isAvailable ? `IN STOCK (${currentStock} left)` : 'OUT OF STOCK'}`,
     });
   }
   return true;
@@ -531,8 +531,10 @@ export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuIt
 export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Promise<MenuItem | null> {
   if (updates.stock !== undefined) {
     updates.stock = Math.max(0, Math.floor(updates.stock));
-    if (updates.stock === 0 && updates.isAvailable === undefined) {
+    if (updates.stock === 0) {
       updates.isAvailable = false;
+    } else if (updates.stock > 0 && updates.isAvailable === undefined) {
+      updates.isAvailable = true;
     }
   }
   if (updates.isAvailable !== undefined) {
