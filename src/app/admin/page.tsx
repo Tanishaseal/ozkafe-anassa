@@ -512,6 +512,13 @@ export default function AdminPage() {
   const handleSaveEditItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
+    const updatedDish = { ...editingItem };
+
+    // Optimistically update item in local UI state immediately
+    setMenuItems((prev) =>
+      prev.map((it) => (it.id === updatedDish.id ? updatedDish : it))
+    );
+
     try {
       const res = await fetch('/api/menu', {
         method: 'PATCH',
@@ -519,7 +526,7 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           ...getAdminAuthHeaders(),
         },
-        body: JSON.stringify(editingItem),
+        body: JSON.stringify(updatedDish),
       });
 
       if (res.ok) {
@@ -530,9 +537,11 @@ export default function AdminPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         alert(err.error || 'Failed to update dish');
+        fetchAdminData();
       }
     } catch {
       alert('Network error while updating dish');
+      fetchAdminData();
     }
   };
 

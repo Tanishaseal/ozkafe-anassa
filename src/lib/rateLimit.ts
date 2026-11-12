@@ -103,3 +103,4 @@ export const rateLimitProfiles = {
   // Manual button refreshes: 6 per 5 seconds
   manualRefresh: { maxRequests: 6, windowMs: 5_000 },
 };
+
