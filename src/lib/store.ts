@@ -76,7 +76,7 @@ export function saveStoreToDisk() {
       auditLogs: globalStore.__anassa_audit_logs || [],
       updatedAt: Date.now(),
     };
-    fs.writeFileSync(STORE_BACKUP_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    fs.writeFileSync(/* turbopackIgnore: true */ STORE_BACKUP_FILE, JSON.stringify(payload, null, 2), 'utf-8');
   } catch {
     // Non-fatal if environment is read-only
   }
@@ -85,8 +85,11 @@ export function saveStoreToDisk() {
 export function loadStoreFromDisk() {
   if (isSupabaseConfigured || process.env.VERCEL) return;
   try {
-    if (fs.existsSync(STORE_BACKUP_FILE)) {
-      const raw = fs.readFileSync(STORE_BACKUP_FILE, 'utf-8');
+    // Runtime-created local data is not a deployment asset. Without this
+    // annotation, the configurable path causes Turbopack to bundle the project.
+    // Vercel and Supabase installations return above and never read this file.
+    if (fs.existsSync(/* turbopackIgnore: true */ STORE_BACKUP_FILE)) {
+      const raw = fs.readFileSync(/* turbopackIgnore: true */ STORE_BACKUP_FILE, 'utf-8');
       const data = JSON.parse(raw);
       if (data.counter) globalStore.__anassa_counter = data.counter;
       if (data.items) globalStore.__anassa_items = data.items;

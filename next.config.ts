@@ -13,6 +13,12 @@ import type { NextConfig } from "next";
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 
 const nextConfig: NextConfig = {
+  // Local runtime data and developer credentials must never be server assets.
+  // The backup path can still be discovered as a static path independently of
+  // the ignored filesystem calls; production uses Supabase instead.
+  outputFileTracingExcludes: {
+    '/*': ['.anassa_store.json', '.env', '.env.*', 'scratch/**/*'],
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },

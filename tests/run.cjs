@@ -13,6 +13,7 @@ async function main(){
   await run(['--test','tests/database.test.cjs']);
   await run(['node_modules/typescript/bin/tsc','--noEmit']);
   await run(['node_modules/next/dist/bin/next','build']);
+  await run(['--test','tests/build-output.test.cjs']);
   background(['tests/support/database-server.cjs'],'database-server.log');await waitFor('http://127.0.0.1:3200/health');
   background(['node_modules/next/dist/bin/next','start','--port','3101'],'server-one.log');
   background(['node_modules/next/dist/bin/next','start','--port','3102'],'server-two.log');

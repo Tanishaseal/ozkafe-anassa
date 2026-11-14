@@ -1,5 +1,26 @@
 # Admin deletion repair — 14 November 2026
 
+## Deployment packaging follow-up
+
+The Vercel log for `27a8741` completed compilation, TypeScript and output
+generation, then stopped at deployment. It also warned that the configurable
+local backup reads traced the entire project. Locally, the orders API trace
+included 414 files totalling approximately 324 MiB, including 191 public images
+and six test files. Ignoring the runtime filesystem reads reduced it to 122
+files and approximately 2 MiB before the additional runtime-data exclusion.
+This verifies a packaging defect; the supplied Vercel log alone does not prove
+the final platform error was a size limit.
+
+Runtime backup filesystem accesses now use Turbopack ignore annotations.
+Explicit tracing exclusions prevent the static backup path, environment files
+and scratch artifacts from being bundled. Supabase behavior and UI remain
+unchanged. `tests/build-output.test.cjs` checks every app server trace for
+accidentally bundled public assets, tests, environment files and local data.
+Final validation passed: production build without tracing warnings, TypeScript,
+bundle-content checks, database tests, three-panel browser/API workflow,
+cross-instance synchronization, legacy-schema regression, and targeted lint.
+The final orders API trace contains 121 files totalling approximately 2 MiB.
+
 ## Production follow-up
 
 Read-only Supabase API checks confirmed that production lacked `is_deleted`,
