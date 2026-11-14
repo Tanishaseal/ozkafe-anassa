@@ -1,5 +1,8 @@
+import { deleteOrderResponse } from '@/lib/orderDeletion';
 import { NextResponse } from 'next/server';
-import { createOrder, getOrders, getOrderById, updateOrderStatus, updateOrderDetails, deleteOrder, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
+import { menuPrice } from '@/lib/pricing';
+import { createOrder, getOrders, getOrderById, updateOrderStatus, updateOrderDetails, validateTable, getCafeSettings, calculateDistanceMeters, addAuditLog, getMenuItems, getAddons } from '@/lib/store';
+import { randomUUID } from 'crypto';
 import { OrderStatus } from '@/lib/types';
 import { verifyAuthHeaderOrCookie, getTableSessionFromRequest } from '@/lib/auth';
 import { checkRateLimit, getClientIdentifier, rateLimitProfiles } from '@/lib/rateLimit';
@@ -74,19 +77,9 @@ export async function GET(request: Request) {
       // Check if caller is kitchen/admin or customer matching table
       const isStaff = verifyAuthHeaderOrCookie(request, ['kitchen', 'admin']);
       if (!isStaff) {
-        // Return masked customer details for privacy
-        return NextResponse.json({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          tableNumber: order.tableNumber,
-          customerName: order.customerName,
-          customerPhone: maskPhoneNumber(order.customerPhone),
-          customerFlat: order.customerFlat,
-          items: order.items,
-          total: order.total,
-          status: order.status,
-          createdAt: order.createdAt,
-        });
+        const session = getTableSessionFromRequest(request, order.tableNumber);
+        if (!session?.sessionId || session.sessionId !== order.sessionId) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        return NextResponse.json(publicOrder(order));
       }
       return NextResponse.json(order);
     }
@@ -95,31 +88,9 @@ export async function GET(request: Request) {
     if (table) {
       const isStaff = verifyAuthHeaderOrCookie(request, ['kitchen', 'admin']);
       const tableSession = getTableSessionFromRequest(request, table);
-      const knownIds = searchParams.get('knownIds')?.split(',').map((s) => s.trim()).filter(Boolean);
-      const phone = searchParams.get('phone')?.trim();
-
-      // If not staff, enforce session filter or knownIds or phone so user only sees their own session's orders
-      const filterSession = !isStaff ? (sessionId || tableSession?.sessionId) : undefined;
-
-      // Prevent data leakage: unauthenticated guest without a session, knownIds, or phone cannot see table orders
-      if (!isStaff && !filterSession && (!knownIds || knownIds.length === 0) && !phone) {
-        return NextResponse.json([]);
-      }
-
-      const tableOrders = await getOrders({
-        tableNumber: table,
-        sessionId: filterSession,
-        knownIds: !isStaff ? knownIds : undefined,
-        phone: !isStaff && phone ? phone : undefined,
-        status: 'active',
-      });
-
-      // Mask phone numbers if not staff
-      const sanitized = tableOrders.map((o) => ({
-        ...o,
-        customerPhone: isStaff ? o.customerPhone : maskPhoneNumber(o.customerPhone),
-      }));
-
+      if (!isStaff && !tableSession?.sessionId) return NextResponse.json([]);
+      const tableOrders = await getOrders({ tableNumber: table, sessionId: isStaff ? undefined : tableSession!.sessionId, status: 'customer' });
+      const sanitized = isStaff ? tableOrders : tableOrders.map(publicOrder);
       return NextResponse.json(sanitized);
     }
 
@@ -188,7 +159,7 @@ export async function POST(request: Request) {
         customerName: customerName ? customerName.trim() : 'Counter Guest',
         customerPhone: customerPhone ? customerPhone.trim() : '9830000000',
         customerFlat: customerFlat ? customerFlat.trim() : undefined,
-        items: items.map((it: any) => ({
+        items: items.map((it: import('@/lib/types').OrderItem) => ({
           id: it.id,
           name: it.name,
           price: Number(it.price) || 0,
@@ -257,8 +228,13 @@ export async function POST(request: Request) {
     }
 
     const targetTable = tableNumber ?? 'Takeaway';
-    const isTakeaway = targetTable === 'Takeaway' || targetTable === 0 || targetTable === '0';
+    const isTakeaway = ['takeaway', '0'].includes(String(targetTable).toLowerCase());
 
+    const tableSession = getTableSessionFromRequest(request, targetTable);
+    if (!tableSession?.sessionId) return NextResponse.json({ error: 'Please scan the menu QR again to restore your session.' }, { status: 403 });
+    const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey.slice(0, 200) : randomUUID();
+    const existing = (await getOrders({ sessionId: tableSession.sessionId })).find(o => o.idempotencyKey === idempotencyKey);
+    if (existing) return NextResponse.json({ success: true, order: publicOrder(existing), sessionId: tableSession.sessionId });
     // 2b. Mandatory & Strict Flat Number Validation (must contain both digits and letters, e.g. 14B)
     if (isTakeaway && (!customerFlat || !customerFlat.trim())) {
       return NextResponse.json({
@@ -288,6 +264,7 @@ export async function POST(request: Request) {
     const validatedItems: { id: string; name: string; price: number; quantity: number; selectedSize?: string; category?: string; isAddon?: boolean }[] = [];
     let serverSubtotal = 0;
 
+    const quantities = new Map<string, number>();
     for (const it of items) {
       if (!it || typeof it !== 'object' || !it.id) {
         return NextResponse.json({ error: 'Invalid item data in order' }, { status: 400 });
@@ -311,24 +288,28 @@ export async function POST(request: Request) {
             code: 'ITEM_SOLD_OUT',
           }, { status: 400 });
         }
-        if (typeof regularItem.stock === 'number' && regularItem.stock < rawQty) {
+        quantities.set(it.id, (quantities.get(it.id) || 0) + rawQty);
+        if (typeof regularItem.stock === 'number' && regularItem.stock < quantities.get(it.id)!) {
           return NextResponse.json({
             error: `Only ${regularItem.stock} portion(s) left of "${regularItem.name}". Please reduce quantity.`,
             code: 'INSUFFICIENT_STOCK',
           }, { status: 400 });
         }
-        const unitPrice = Number(regularItem.price);
+        const size = it.selectedSize || regularItem.sizes[0] || 'Regular';
+        if (regularItem.sizes.length && !regularItem.sizes.includes(size)) return NextResponse.json({ error: 'Invalid item size' }, { status: 400 });
+        const unitPrice = menuPrice(regularItem, size);
         serverSubtotal += unitPrice * rawQty;
         validatedItems.push({
           id: regularItem.id,
           name: regularItem.name,
           price: unitPrice,
           quantity: rawQty,
-          selectedSize: it.selectedSize || 'Regular',
+          selectedSize: size,
           category: regularItem.category,
           isAddon: false,
         });
       } else if (addonItem) {
+        if (!addonItem.isAvailable) return NextResponse.json({ error: 'Add-on is sold out' }, { status: 400 });
         const unitPrice = Number(addonItem.price);
         serverSubtotal += unitPrice * rawQty;
         validatedItems.push({
@@ -368,7 +349,7 @@ export async function POST(request: Request) {
 
     if (isStrictQR && !isTakeaway) {
       const verification = await validateTable(targetTable, tableKey);
-      if (!verification.isVerified) {
+      if (!verification.isVerified && !tableSession?.sessionId) {
         return NextResponse.json({
           error: 'Strict Table QR verification required. Please scan the QR code located on your table.',
           code: 'INVALID_TABLE_KEY',
@@ -435,50 +416,7 @@ export async function POST(request: Request) {
     }
 
     // Generate or preserve session ID
-    const effectiveSessionId = sessionId || `sess_${targetTable}_${Date.now()}`;
-
-    // ── IDEMPOTENCY & DUPLICATE ORDER SHIELD ──
-    const idempotencyKey = body.idempotencyKey ? String(body.idempotencyKey).trim() : undefined;
-
-    // Check for identical recent order placed within the last 60 seconds
-    // to prevent duplicate orders from network retries, double-clicks, or "failed to fetch" re-submissions
-    const recentCandidateOrders = await getOrders({
-      tableNumber: targetTable,
-      phone: cleanPhone,
-      limit: 10,
-    });
-
-    const now = Date.now();
-    const existingDuplicate = recentCandidateOrders.find((cand) => {
-      // Must be recent (placed within last 60 seconds)
-      if (now - cand.createdAt > 60_000) return false;
-      // Must not be cancelled
-      if (cand.status === 'cancelled') return false;
-      // If idempotency key matches, instant match
-      if (idempotencyKey && cand.idempotencyKey && cand.idempotencyKey === idempotencyKey) return true;
-      // Same customer phone (last 10 digits)
-      const candPhone = (cand.customerPhone || '').replace(/\D/g, '').slice(-10);
-      if (candPhone && cleanPhone && candPhone !== cleanPhone.slice(-10)) return false;
-      // Same total (within 0.10 rupees)
-      if (Math.abs(cand.total - serverTotal) > 0.10) return false;
-      // Same item count
-      if (cand.items.length !== validatedItems.length) return false;
-      // Same item IDs and quantities
-      const candItemMap = new Map(cand.items.map((i) => [i.id, i.quantity]));
-      const allItemsMatch = validatedItems.every((it) => candItemMap.get(it.id) === it.quantity);
-      return allItemsMatch;
-    });
-
-    if (existingDuplicate) {
-      console.log(`[POST /api/orders] Duplicate order suppressed: Order #${existingDuplicate.orderNumber} already exists for phone ${cleanPhone}`);
-      return NextResponse.json({
-        success: true,
-        order: existingDuplicate,
-        sessionId: existingDuplicate.sessionId || effectiveSessionId,
-        distanceMeters,
-        isDuplicateSuppressed: true,
-      });
-    }
+    const effectiveSessionId = tableSession.sessionId;
 
     // Spam prevention cooldown check
     const cooldownSec = settings.orderCooldownSeconds ?? 10;
@@ -512,11 +450,12 @@ export async function POST(request: Request) {
       taxAmount: serverTax,
       total: serverTotal,
       specialInstructions: specialInstructions || '',
+      status: settings.autoAcceptOrders ? 'preparing' : 'received',
     });
 
     return NextResponse.json({
       success: true,
-      order,
+      order: publicOrder(order),
       sessionId: effectiveSessionId,
       distanceMeters,
     });
@@ -635,8 +574,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
     }
 
-    const success = await deleteOrder(id, 'admin', permanent);
-    return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order deleted by admin' });
+    return await deleteOrderResponse(id, permanent);
   } catch (error) {
     console.error('API DELETE /api/orders error:', error);
     return NextResponse.json({ error: 'Failed to delete order' }, { status: 500 });
@@ -646,4 +584,9 @@ export async function DELETE(request: Request) {
 function maskPhoneNumber(phone: string): string {
   if (!phone || phone.length < 5) return '***';
   return phone.slice(0, 3) + '****' + phone.slice(-2);
+}
+
+function publicOrder(order: import('@/lib/types').Order) {
+  const { tableKey: _key, customerLat: _lat, customerLng: _lng, ...safe } = order;
+  return { ...safe, customerPhone: maskPhoneNumber(order.customerPhone) };
 }

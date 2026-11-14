@@ -1,3 +1,4 @@
+import { deleteOrderResponse } from '@/lib/orderDeletion';
 import { NextResponse } from 'next/server';
 import { 
   getCafeSettings, 
@@ -12,7 +13,6 @@ import {
   getStaffSchedule, 
   updateStaffStatus,
   createOrder,
-  deleteOrder,
   updateOrderDetails
 } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
@@ -33,9 +33,9 @@ export async function GET(request: Request) {
     ]);
 
     // Compute key analytics
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startOfToday = today.getTime();
+    const indiaOffset = 330 * 60 * 1000;
+    const indiaNow = new Date(Date.now() + indiaOffset);
+    const startOfToday = Date.UTC(indiaNow.getUTCFullYear(), indiaNow.getUTCMonth(), indiaNow.getUTCDate()) - indiaOffset;
 
     const todayOrders = orders.filter((o) => o.createdAt >= startOfToday && o.status !== 'cancelled' && !o.isDeleted);
     const todayRevenue = todayOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       stats: {
         todayRevenue,
         todayOrderCount: todayOrders.length,
-        totalOrders: orders.length,
+        totalOrders: orders.filter(order => !order.isDeleted).length,
         activeOrderCount: activeOrders.length,
         todayCustomersCount: customerPhones.size,
         popularItems,
@@ -181,8 +181,7 @@ export async function POST(request: Request) {
       if (!orderId) {
         return NextResponse.json({ error: 'Order ID is required to delete' }, { status: 400 });
       }
-      const success = await deleteOrder(orderId, 'admin', permanent);
-      return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order successfully deleted by admin' });
+      return await deleteOrderResponse(orderId, permanent);
     }
 
     // Action 7: Edit order receipt
@@ -192,6 +191,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Order ID and updates are required' }, { status: 400 });
       }
       const updated = await updateOrderDetails(orderId, updates);
+      if (!updated) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
       return NextResponse.json({ success: true, order: updated });
     }
 
@@ -250,11 +250,7 @@ export async function DELETE(request: Request) {
     const orderId = searchParams.get('orderId') || searchParams.get('id');
 
     if (action === 'delete_order' || (action !== 'purge_database' && orderId)) {
-      if (orderId) {
-        const permanent = searchParams.get('permanent') === 'true';
-        const success = await deleteOrder(orderId, 'admin', permanent);
-        return NextResponse.json({ success, message: permanent ? 'Order permanently purged' : 'Order deleted by admin' });
-      }
+      return await deleteOrderResponse(orderId, searchParams.get('permanent') === 'true');
     }
 
     if (action === 'purge_database') {

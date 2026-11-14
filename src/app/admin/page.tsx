@@ -76,6 +76,10 @@ export default function AdminPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const deletedOrderIdsRef = useRef(new Set<string>());
+  const deletingOrderIdsRef = useRef(new Set<string>());
+  const [deletingOrderIds, setDeletingOrderIds] = useState<string[]>([]);
+  const [deleteError, setDeleteError] = useState('');
   const [staff, setStaff] = useState<StaffShift[]>([]);
   const [tablesList, setTablesList] = useState<{ tableNumber: number; label: string; secretKey: string; isActive: boolean }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -266,7 +270,7 @@ export default function AdminPage() {
       if (ordersRes.ok) {
         const ordersData = await ordersRes.json();
         if (Array.isArray(ordersData)) {
-          setOrders(ordersData);
+          setOrders(ordersData.filter((order: Order) => !order.isDeleted && !deletedOrderIdsRef.current.has(order.id)));
         }
       }
 
@@ -831,7 +835,7 @@ export default function AdminPage() {
     const qty = Math.max(1, Number(manualQuantity) || 1);
     const subtotal = item.price * qty;
     const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
-    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = subtotal + taxAmount;
     const customCreatedAt = manualDateTime ? new Date(manualDateTime).getTime() : Date.now();
 
@@ -1017,7 +1021,7 @@ export default function AdminPage() {
 
     const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
     const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
-    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = subtotal + taxAmount;
     const createdAt = editDateTime ? new Date(editDateTime).getTime() : editingReceiptOrder.createdAt;
 
@@ -1080,6 +1084,8 @@ export default function AdminPage() {
       // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
       setOrders(previousOrders);
       setSelectedReceiptOrder(previousSelectedReceipt);
+      setEditingReceiptOrder(previousEditingReceipt);
+      setSaveSuccessMsg('');
       logActionError({
         action: 'Edit Order Receipt',
         endpoint: '/api/admin?action=edit_order',
@@ -1092,67 +1098,37 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteOrder = async (ord: Order, permanent: boolean = false) => {
-    const confirmMsg = permanent
-      ? `Permanently purge order "${ord.orderNumber}" (₹${ord.total}) from database? This action cannot be undone.`
-      : `Delete order "${ord.orderNumber}" (₹${ord.total})? This will cancel and delete the order from active queues everywhere, marking it Deleted by Admin.`;
-
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-
-    const previousOrders = [...orders];
-    const previousSelectedReceipt = selectedReceiptOrder;
-
-    // ── STEP 1: OPTIMISTIC UI UPDATE ──
-    if (permanent) {
-      setOrders((prev) => prev.filter((o) => o.id !== ord.id));
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === ord.id
-            ? { ...o, isDeleted: true, status: 'cancelled' as const, deletedBy: 'admin' as const, updatedAt: Date.now() }
-            : o
-        )
-      );
-    }
-    if (selectedReceiptOrder?.id === ord.id) {
-      setSelectedReceiptOrder(null);
-    }
-    setSaveSuccessMsg(permanent ? `✓ Order ${ord.orderNumber} permanently purged.` : `✓ Order ${ord.orderNumber} deleted by Admin.`);
-    setTimeout(() => setSaveSuccessMsg(''), 4000);
-    logOptimisticSuccess(`Admin Order Deleted Instantly (${permanent ? 'Permanent' : 'Soft'})`, { orderId: ord.id });
-
-    // ── STEP 2: BACKGROUND DATABASE SYNC ──
+  const handleDeleteOrder = async (ord: Order) => {
+    if (deletingOrderIdsRef.current.has(ord.id)) return;
+    if (!confirm('Delete order "' + ord.orderNumber + '" (₹' + ord.total + ')? This removes it from the admin ledger and kitchen queue and notifies the customer that it was cancelled.')) return;
+    deletingOrderIdsRef.current.add(ord.id);
+    setDeletingOrderIds([...deletingOrderIdsRef.current]);
+    setDeleteError('');
+    setSaveSuccessMsg('');
     let res: Response | null = null;
     try {
-      res = await fetch(`/api/admin?action=delete_order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAdminAuthHeaders(),
-        },
-        body: JSON.stringify({ orderId: ord.id, permanent }),
+      res = await fetch('/api/orders?id=' + encodeURIComponent(ord.id), {
+        method: 'DELETE', headers: getAdminAuthHeaders(),
       });
-      if (!res.ok) {
-        let errData: unknown = null;
-        try { errData = await res.json(); } catch {}
-        throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+      const result = await res.json();
+      if (!res.ok || result.success !== true) {
+        throw new Error(result.error || 'The order could not be deleted. Please retry.');
       }
-      logActionSuccess('Admin Order Deletion Persisted to Database', { orderId: ord.id, permanent });
-    } catch (err) {
-      // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
-      setOrders(previousOrders);
-      setSelectedReceiptOrder(previousSelectedReceipt);
-      logActionError({
-        action: 'Delete Order',
-        endpoint: '/api/admin?action=delete_order',
-        method: 'POST',
-        payload: { orderId: ord.id, permanent },
-        status: res?.status,
-        error: err,
-        rollbackState: { restoredOrder: ord },
-      });
+      // A poll started before this mutation must not restore the removed row.
+      deletedOrderIdsRef.current.add(ord.id);
+      setOrders(prev => prev.filter(order => order.id !== ord.id));
+      setSelectedReceiptOrder(prev => prev?.id === ord.id ? null : prev);
+      setEditingReceiptOrder(prev => prev?.id === ord.id ? null : prev);
+      setSaveSuccessMsg('✓ Order ' + ord.orderNumber + ' deleted.');
+      setTimeout(() => setSaveSuccessMsg(''), 4000);
+      logActionSuccess('Admin Order Deleted', { orderId: ord.id });
+      void fetchAdminData();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'The order could not be deleted. Please retry.');
+      logActionError({ action: 'Delete Order', endpoint: '/api/orders', method: 'DELETE', status: res?.status, error });
+    } finally {
+      deletingOrderIdsRef.current.delete(ord.id);
+      setDeletingOrderIds([...deletingOrderIdsRef.current]);
     }
   };
 
@@ -2029,6 +2005,8 @@ export default function AdminPage() {
           </div>
         )}
 
+        {deleteError && <div role="alert" style={{ padding: '12px 20px', color: '#991B1B', background: '#FEE2E2' }}>{deleteError}</div>}
+
         {/* ── SCROLLABLE BODY VIEW ── */}
         <div className="admin-body">
           {/* ══════════════════════════════════════════
@@ -2698,11 +2676,6 @@ export default function AdminPage() {
                                 <td><strong>₹{ord.total}</strong></td>
                                 <td>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
-                                      <span className="admin-status-badge red" style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
-                                        ❌ DELETED BY ADMIN
-                                      </span>
-                                    ) : (
                                       <span className={`admin-status-badge ${
                                         ord.status === 'served' ? 'green' :
                                         ord.status === 'preparing' ? 'amber' :
@@ -2711,12 +2684,7 @@ export default function AdminPage() {
                                       }`}>
                                         {ord.status.toUpperCase()}
                                       </span>
-                                    )}
-                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
-                                      <span style={{ fontSize: 10, color: '#991B1B', fontWeight: 600 }}>
-                                        Cancelled & Deleted
-                                      </span>
-                                    ) : ord.isPaid ? (
+                                    {ord.isPaid ? (
                                       <span style={{ fontSize: 10, fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
                                         ✓ PAID
                                       </span>
@@ -2729,22 +2697,6 @@ export default function AdminPage() {
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    {ord.isDeleted || ord.deletedBy === 'admin' ? (
-                                      <>
-                                        <span style={{ fontSize: 11.5, color: '#991B1B', fontWeight: 700, paddingRight: 4 }}>
-                                          Deleted by Admin
-                                        </span>
-                                        <button
-                                          onClick={() => handleDeleteOrder(ord, true)}
-                                          className="admin-wipe-btn"
-                                          title="Purge order permanently from database"
-                                          style={{ height: 28, padding: '0 8px', fontSize: 11, fontWeight: 700 }}
-                                        >
-                                          🗑️ Purge
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <>
                                         {ord.status === 'received' && (
                                           <button
                                             onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
@@ -2789,15 +2741,14 @@ export default function AdminPage() {
                                           Edit
                                         </button>
                                         <button
-                                          onClick={() => handleDeleteOrder(ord, false)}
+                                          onClick={() => handleDeleteOrder(ord)}
+                                          disabled={deletingOrderIds.includes(ord.id)}
                                           className="admin-wipe-btn"
                                           title="Delete Order by Admin"
                                           style={{ height: 30, padding: '0 8px', fontSize: 11.5, fontWeight: 600 }}
                                         >
-                                          Delete
+                                          {deletingOrderIds.includes(ord.id) ? 'Deleting…' : 'Delete'}
                                         </button>
-                                      </>
-                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -2889,7 +2840,7 @@ export default function AdminPage() {
                     />
                     <select
                       value={settlementTableFilter}
-                      onChange={(e) => setSettlementTableFilter(e.target.value as any)}
+                      onChange={(e) => setSettlementTableFilter(e.target.value as 'all' | 'table' | 'takeaway')}
                       className="admin-form-select"
                     >
                       <option value="all">All Order Types</option>
@@ -4115,7 +4066,7 @@ export default function AdminPage() {
                   if (!sel) return null;
                   const qty = manualQuantity || 1;
                   const sub = sel.price * qty;
-                  const gst = Math.round((sub * (settings.gstPercent || 5)) / 100);
+                  const gst = Number(((sub * (settings.gstPercent ?? 5)) / 100).toFixed(2));
                   const tot = sub + gst;
                   return (
                     <div style={{ background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: 12, borderRadius: 8, fontSize: 12.5, border: '1px solid var(--adm-border)' }}>
@@ -4563,7 +4514,7 @@ export default function AdminPage() {
                 {/* 5. Live Pricing Breakdown Preview */}
                 {(() => {
                   const sub = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-                  const gst = Math.round((sub * (settings.gstPercent || 5)) / 100);
+                  const gst = Number(((sub * (settings.gstPercent ?? 5)) / 100).toFixed(2));
                   const tot = sub + gst;
                   return (
                     <div style={{ background: '#fff', border: '1px solid var(--adm-border)', borderRadius: 8, padding: 12, fontSize: 12.5 }}>

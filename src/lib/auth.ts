@@ -1,7 +1,11 @@
 import crypto from 'crypto';
 
 // Secret key for HMAC token signing (falls back to persistent stable default if not in env)
-const SESSION_SECRET = process.env.SESSION_SECRET || 'ozkafe-anassa-production-super-secret-key-2026-secure';
+function sessionSecret(): string {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (process.env.VERCEL) throw new Error('SESSION_SECRET must be configured on Vercel');
+  return 'anassa-local-development-only';
+}
 
 export interface TokenPayload {
   role: 'admin' | 'kitchen' | 'table';
@@ -19,7 +23,7 @@ export interface TokenPayload {
 export function signToken(payload: TokenPayload): string {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', sessionSecret())
     .update(data)
     .digest('base64url');
   return `${data}.${signature}`;
@@ -35,7 +39,7 @@ export function verifyToken(token: string): TokenPayload | null {
   if (!data || !signature) return null;
 
   const expectedSignature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', sessionSecret())
     .update(data)
     .digest('base64url');
 
@@ -52,7 +56,7 @@ export function verifyToken(token: string): TokenPayload | null {
     );
 
     // Check expiration
-    if (Date.now() > payload.exp) {
+    if (!Number.isFinite(payload.exp) || Date.now() >= payload.exp || !['admin', 'kitchen', 'table'].includes(payload.role)) {
       return null;
     }
 
@@ -73,7 +77,7 @@ export function generateTableQRToken(tableNumber: number | string, secretKey: st
   };
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto
-    .createHmac('sha256', secretKey + SESSION_SECRET)
+    .createHmac('sha256', secretKey + sessionSecret())
     .update(data)
     .digest('base64url');
   return `${data}.${sig}`;
@@ -90,7 +94,7 @@ export function verifyTableQRToken(tableNumber: number | string, secretKey: stri
 
   try {
     const expectedSig = crypto
-      .createHmac('sha256', secretKey + SESSION_SECRET)
+      .createHmac('sha256', secretKey + sessionSecret())
       .update(data)
       .digest('base64url');
 
@@ -216,7 +220,7 @@ function parseCookies(cookieString: string): Record<string, string> {
     if (parts.length >= 2) {
       const name = parts[0]?.trim();
       const val = parts.slice(1).join('=').trim();
-      if (name) list[name] = decodeURIComponent(val);
+      if (name) { try { list[name] = decodeURIComponent(val); } catch { /* Ignore malformed cookies. */ } }
     }
   });
   return list;

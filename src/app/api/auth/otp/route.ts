@@ -9,7 +9,8 @@ import {
   clearAllStaffUserData,
   ALLOWED_ADMIN_EMAILS,
 } from '@/lib/staffUsers';
-import { signToken } from '@/lib/auth';
+import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimit';
+import { signToken, verifyAuthHeaderOrCookie, getTokenFromRequest, verifyToken } from '@/lib/auth';
 import { addAuditLog } from '@/lib/store';
 
 export async function POST(request: Request) {
@@ -17,6 +18,8 @@ export async function POST(request: Request) {
   const userAgent = (request.headers.get('user-agent') || 'Unknown').slice(0, 100);
 
   try {
+    const rate = checkRateLimit(getClientIdentifier(request, 'staff_auth'), 15, 60000);
+    if (!rate.allowed) return NextResponse.json({ error: 'Too many attempts. Try again in a minute.' }, { status: 429 });
     const body = await request.json();
     const { action } = body;
 
@@ -24,6 +27,7 @@ export async function POST(request: Request) {
     // 0. ACTION: CLEAR ALL SAVED USER ENTRIES
     // ──────────────────────────────────────────
     if (action === 'clear_all_users') {
+      if (!verifyAuthHeaderOrCookie(request, ['admin'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       const freshUsers = await clearAllStaffUserData();
       return NextResponse.json({
         success: true,
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
       }
 
       // STRICT ADMIN CHECK: ONLY tanishaseal20@gmail.com
-      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
+      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.some(email => email === cleanId)) {
         await addAuditLog({
           actor: 'admin',
           action: 'AUTH_ADMIN_FAILED',
@@ -133,7 +137,7 @@ export async function POST(request: Request) {
             { status: 403 }
           );
         }
-        if (!ALLOWED_ADMIN_EMAILS.includes(userEmailNorm as any)) {
+        if (!ALLOWED_ADMIN_EMAILS.some(email => email === userEmailNorm)) {
           return NextResponse.json(
             { error: 'Invalid credentials or access unauthorized for Admin.' },
             { status: 403 }
@@ -141,7 +145,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const verification = verifyStaffOtp(user.id, otp);
+      const verification = await verifyStaffOtp(user.id, otp, role);
       if (!verification.valid) {
         await addAuditLog({
           actor: role,
@@ -231,7 +235,7 @@ export async function POST(request: Request) {
       }
 
       // STRICT ADMIN CHECK: ONLY tanishaseal20@gmail.com
-      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.includes(cleanId as any)) {
+      if (role === 'admin' && !ALLOWED_ADMIN_EMAILS.some(email => email === cleanId)) {
         await addAuditLog({
           actor: 'admin',
           action: 'AUTH_ADMIN_FAILED',
@@ -264,7 +268,7 @@ export async function POST(request: Request) {
       }
 
       const inputPin = String(pin).trim();
-      const isPinValid = inputPin === user.masterPin || inputPin === '1234';
+      const isPinValid = inputPin === user.masterPin;
 
       if (!isPinValid) {
         await addAuditLog({
@@ -334,6 +338,11 @@ export async function POST(request: Request) {
     // ──────────────────────────────────────────
     if (action === 'set_master_pin') {
       const { userId, newPin } = body;
+      const token = getTokenFromRequest(request, 'oz_admin_token') || getTokenFromRequest(request, 'oz_kitchen_token');
+      const payload = token ? verifyToken(token) : null;
+      const user = (await getStaffUsers()).find(u => u.id === userId);
+      if (!payload || !['admin', 'kitchen'].includes(payload.role) || !user || payload.email !== user.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      if (user.hasCustomPin && String(body.currentPin || '') !== user.masterPin) return NextResponse.json({ error: 'Current PIN is required' }, { status: 403 });
       if (!userId || !newPin) {
         return NextResponse.json({ error: 'Missing User ID or new PIN.' }, { status: 400 });
       }

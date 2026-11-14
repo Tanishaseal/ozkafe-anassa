@@ -108,6 +108,7 @@ export default function AccountPanel({
       // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
       onUpdateUser(previousUser);
       setProfileMessage('');
+      setProfileError('Profile could not be saved. Please try again.');
       logActionError({
         action: 'Update Staff Profile',
         endpoint: '/api/auth/profile',

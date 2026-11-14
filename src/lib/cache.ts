@@ -50,6 +50,8 @@ export async function fetchWithCache<T>(
   ttlSeconds: number,
   tags: string[] = []
 ): Promise<T> {
+  // Invalidation in one server process cannot invalidate other Vercel instances.
+  if (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VERCEL) return fetcher();
   const now = Date.now();
   const cache = g.__oz_memory_cache!;
   const inFlight = g.__oz_inflight_promises!;

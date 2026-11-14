@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getTables, validateTable, ensureTablesCount } from '@/lib/store';
+import { randomUUID } from 'crypto';
+import { getTables, validateTable, ensureTablesCount, getCafeSettings } from '@/lib/store';
 import { verifyAuthHeaderOrCookie, signToken, verifyToken, getTokenFromRequest } from '@/lib/auth';
 
 export async function GET(request: Request) {
@@ -12,9 +13,10 @@ export async function GET(request: Request) {
     if (tableNumber) {
       const result = await validateTable(tableNumber, key);
       
+      const settings = await getCafeSettings();
       if (result.valid) {
         // Reuse existing session if already established by client to prevent dropping active customer orders!
-        const clientSessionId = searchParams.get('session');
+
         const existingToken = getTokenFromRequest(request, `oz_tbl_session_${tableNumber}`);
         let existingSessionFromToken: string | undefined;
         if (existingToken) {
@@ -24,8 +26,10 @@ export async function GET(request: Request) {
           }
         }
 
-        const exp = Date.now() + 1000 * 60 * 60 * 24; // 24-hour dining session
-        const sessionId = clientSessionId || existingSessionFromToken || `sess_${tableNumber}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        if (settings.tableKeyValidationStrict !== false && !result.isVerified && !existingSessionFromToken) return NextResponse.json({ ...result, valid: false }, { status: 403 });
+        const lifetime = Math.max(1, settings.tableSessionTimeoutMinutes || 120) * 60;
+        const exp = Date.now() + 1000 * lifetime; // 24-hour dining session
+        const sessionId = existingSessionFromToken || randomUUID();
         const sessionToken = signToken({
           role: 'table',
           tableNumber,
@@ -35,6 +39,7 @@ export async function GET(request: Request) {
 
         const response = NextResponse.json({
           ...result,
+          isVerified: true,
           tableNumber,
           sessionToken,
           sessionId,
@@ -45,7 +50,7 @@ export async function GET(request: Request) {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
-          maxAge: 60 * 60 * 24,
+          maxAge: lifetime,
           path: '/',
         });
 

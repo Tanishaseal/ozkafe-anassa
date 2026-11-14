@@ -1,3 +1,4 @@
+import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimit';
 import { NextResponse } from 'next/server';
 import { addAuditLog } from '@/lib/store';
 import { signToken, verifyToken, getTokenFromRequest } from '@/lib/auth';
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!checkRateLimit(getClientIdentifier(request, 'staff_auth'), 15, 60000).allowed) return NextResponse.json({ error: 'Too many attempts' }, { status: 429 });
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || '127.0.0.1';
   const userAgent = (request.headers.get('user-agent') || 'Unknown').slice(0, 100);
 
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
     }
 
     const inputPin = String(pin).trim();
-    const isPinValid = inputPin === user.masterPin || inputPin === '1234';
+    const isPinValid = inputPin === user.masterPin;
 
     if (!isPinValid) {
       await addAuditLog({

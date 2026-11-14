@@ -29,7 +29,7 @@ export async function GET() {
   const connectivity = await testSupabaseConnectivity(supabaseUrl);
 
   return NextResponse.json({
-    status: 'healthy',
+    status: isSupabaseConfigured ? (supabaseConnected ? 'healthy' : 'unhealthy') : (process.env.VERCEL ? 'unhealthy' : 'development'),
     timestamp: new Date().toISOString(),
     database: {
       provider: isSupabaseConfigured ? 'supabase' : 'in-memory-fallback',
@@ -46,11 +46,11 @@ export async function GET() {
     proxy: {
       enabled: true,
       mode: 'custom-fetch-with-retry',
-      retries: 3,
-      timeoutMs: 15000,
+      retries: 1,
+      timeoutMs: 4000,
       vercelRegion: process.env.VERCEL_REGION || 'local',
       rewritesConfigured: Boolean(supabaseUrl && !supabaseUrl.includes('placeholder')),
       directConnectivity: connectivity,
     },
-  });
+  }, { status: (isSupabaseConfigured && !supabaseConnected) || (process.env.VERCEL && !isSupabaseConfigured) ? 503 : 200 });
 }

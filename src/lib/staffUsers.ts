@@ -2,6 +2,8 @@ import { StaffUser, StaffRole } from './types';
 import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
 import { addAuditLog } from './store';
 import nodemailer from 'nodemailer';
+import { randomInt, createHash } from 'crypto';
+import { assertStorageConfigured } from './supabaseServer';
 
 // ── STRICT WHITELISTS OF AUTHORIZED IDENTIFIERS ──
 // For Admin: ONLY tanishaseal20@gmail.com — mamonix109@gmail.com is STRICTLY PROHIBITED.
@@ -107,13 +109,14 @@ export function maskDestination(identifier: string): string {
  * Strictly filters out any foreign or legacy user records
  */
 export async function getStaffUsers(): Promise<StaffUser[]> {
+  assertStorageConfigured();
   if (isSupabaseConfigured && supabaseServer) {
     try {
       const { data, error } = await supabaseServer
         .from('cafe_settings')
         .select('value')
         .eq('key', 'staff_users_config')
-        .single();
+        .maybeSingle().throwOnError();
 
       if (!error && data?.value && Array.isArray(data.value) && data.value.length > 0) {
         const allowedEmails = ['tanishaseal20@gmail.com', 'mamonix109@gmail.com'];
@@ -138,7 +141,7 @@ export async function getStaffUsers(): Promise<StaffUser[]> {
         return merged;
       }
     } catch (err) {
-      console.warn('Supabase getStaffUsers error, using in-memory store:', err);
+      throw err;
     }
   }
 
@@ -171,9 +174,9 @@ export async function clearAllStaffUserData(): Promise<StaffUser[]> {
         key: 'staff_users_config',
         value: freshUsers,
         updated_at: new Date().toISOString(),
-      });
+      }).throwOnError();
     } catch (err) {
-      console.warn('Supabase clearAllStaffUserData error:', err);
+      throw err;
     }
   }
 
@@ -202,7 +205,7 @@ export async function saveStaffUsers(users: StaffUser[]): Promise<void> {
       return u;
     });
 
-  globalStore.__anassa_staff_users = sanitized;
+  assertStorageConfigured();
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
@@ -210,13 +213,15 @@ export async function saveStaffUsers(users: StaffUser[]): Promise<void> {
         key: 'staff_users_config',
         value: sanitized,
         updated_at: new Date().toISOString(),
-      });
+      }).throwOnError();
     } catch (err) {
-      console.warn('Supabase saveStaffUsers error:', err);
+      throw err;
     }
   }
+  globalStore.__anassa_staff_users = sanitized;
 }
 
+// Updates only become visible locally after the durable write succeeds.
 /**
  * Find user by email or phone
  */
@@ -246,14 +251,14 @@ export function isUserAuthorizedForRole(user: StaffUser, role: StaffRole): boole
   // mamonix109@gmail.com is STRICTLY prohibited from the admin panel
   if (role === 'admin') {
     if (emailNorm === 'mamonix109@gmail.com') return false;
-    return ALLOWED_ADMIN_EMAILS.includes(emailNorm as any);
+    return ALLOWED_ADMIN_EMAILS.some(email => email === emailNorm);
   }
 
   if (role === 'kitchen') {
     const phoneNorm = user.phone ? normalizeIdentifier(user.phone) : '';
     return (
-      ALLOWED_KITCHEN_IDENTIFIERS.includes(emailNorm as any) ||
-      Boolean(phoneNorm && ALLOWED_KITCHEN_IDENTIFIERS.includes(phoneNorm as any))
+      ALLOWED_KITCHEN_IDENTIFIERS.some(identifier => identifier === emailNorm) ||
+      Boolean(phoneNorm && ALLOWED_KITCHEN_IDENTIFIERS.some(identifier => identifier === phoneNorm))
     );
   }
 
@@ -269,7 +274,7 @@ export async function updateStaffMasterPin(userId: string, newPin: string): Prom
     throw new Error('PIN must be exactly 4 numeric digits.');
   }
 
-  const users = await getStaffUsers();
+  const users = structuredClone(await getStaffUsers());
   const target = users.find((u) => u.id === userId);
   if (!target) return false;
 
@@ -330,23 +335,27 @@ export async function generateAndSendOtp(
   }
 
   // 6-digit cryptographic random OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpCode = randomInt(100000, 1000000).toString();
   const exp = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   // Store in cache
-  globalStore.__anassa_otp_cache?.set(user.id, {
+  globalStore.__anassa_otp_cache?.set(user.id + ':' + consoleType, {
     code: otpCode,
     exp,
     attempts: 0,
   });
 
-  const isEmail = identifier.includes('@') || !user.phone;
+  const isEmail = true; // This application has an email transport; no SMS transport is configured.
   const destination = isEmail ? user.email : user.phone || user.email;
   const destinationType = isEmail ? 'email' : 'phone';
   const destinationMasked = maskDestination(destination);
 
-  console.log(`[OZKAFE AUTH OTP] Generated OTP ${otpCode} for ${user.name} (${destination}) [Console: ${consoleType}]`);
 
+  if (supabaseServer) {
+    await supabaseServer.from('cafe_settings').upsert({ key: 'otp:' + user.id + ':' + consoleType,
+      value: { hash: createHash('sha256').update(otpCode).digest('hex'), exp, attempts: 0 }, updated_at: new Date().toISOString() }).throwOnError();
+  }
+  const previewAllowed = !process.env.VERCEL && process.env.ANASSA_TEST_OTP === '1';
   // Attempt to send real email if SMTP is configured
   let emailDispatched = false;
   const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
@@ -392,6 +401,7 @@ export async function generateAndSendOtp(
     }
   }
 
+  if (!emailDispatched && !previewAllowed) throw new Error('Unable to deliver the security code. Configure SMTP or use your staff PIN.');
   await addAuditLog({
     actor: consoleType,
     action: 'AUTH_ADMIN_SUCCESS',
@@ -402,7 +412,7 @@ export async function generateAndSendOtp(
     success: true,
     destinationType,
     destinationMasked,
-    previewOtp: otpCode,
+    previewOtp: previewAllowed ? otpCode : undefined,
     message: emailDispatched
       ? `A 6-digit security code has been sent to ${destinationMasked}.`
       : `Security code sent to ${destinationMasked}! (Ready to verify: ${otpCode})`,
@@ -412,7 +422,13 @@ export async function generateAndSendOtp(
 /**
  * Verify OTP entered by staff user
  */
-export function verifyStaffOtp(userId: string, inputOtp: string): { valid: boolean; reason?: string } {
+export async function verifyStaffOtp(userId: string, inputOtp: string, role: 'admin' | 'kitchen'): Promise<{ valid: boolean; reason?: string }> {
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.rpc('verify_staff_otp', { challenge_key: 'otp:' + userId + ':' + role, input_hash: createHash('sha256').update(String(inputOtp)).digest('hex') });
+    if (error) throw error;
+    return data ? { valid: true } : { valid: false, reason: 'Invalid or expired security code.' };
+  }
+  userId = userId + ':' + role;
   const cached = globalStore.__anassa_otp_cache?.get(userId);
   if (!cached) {
     return { valid: false, reason: 'OTP has expired or was not requested. Please request a new code.' };

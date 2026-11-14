@@ -1,9 +1,10 @@
 'use client';
+import { menuPrice } from '@/lib/pricing';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { Category, MenuItem, MenuAddon, CartItem, Order, CafeSettings } from '@/lib/types';
-import { logActionError, logOptimisticSuccess, logActionSuccess } from '@/lib/clientLog';
+import { logActionError, logActionSuccess } from '@/lib/clientLog';
 
 interface CustomerMenuProps {
   initialCategories: Category[];
@@ -99,12 +100,12 @@ export default function CustomerMenu({
     const catIdx = categories.findIndex((c) => c.id === searchedItem.categoryId);
     if (catIdx !== -1) {
       setActiveCategoryIdx(catIdx);
-      const catItems = items.filter((it) => it.categoryId === searchedItem.categoryId);
-      const itemIdx = catItems.findIndex((it) => it.id === searchedItem.id);
+      const itemIdx = items.findIndex((it) => it.id === searchedItem.id);
       if (itemIdx !== -1) {
         setActiveItemIdx(itemIdx);
       }
     }
+    setSelectedSizeIdx(0);
     setQuantity(1);
     setMenuSearch('');
     setTimeout(() => {
@@ -161,6 +162,8 @@ export default function CustomerMenu({
   };
 
   const activeItem: MenuItem | undefined = flattenedItems[activeItemIdx] || flattenedItems[0];
+  const activeItemIdRef = useRef(activeItem?.id);
+  useEffect(() => { activeItemIdRef.current = activeItem?.id; }, [activeItem?.id]);
   const activeCategory: Category | undefined = categories[activeCategoryIdx] || categories[0];
 
   // Splash timeout
@@ -298,7 +301,7 @@ export default function CustomerMenu({
         const res = await fetch(`/api/tables?${queryParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          setIsTableVerified(Boolean(data.isVerified || data.valid));
+          setIsTableVerified(Boolean(data.isVerified));
 
           if (data.sessionId && data.sessionId !== existingSessionId) {
             existingSessionId = data.sessionId;
@@ -387,22 +390,13 @@ export default function CustomerMenu({
       if (res.ok) {
         const data: Order[] = await res.json();
         if (Array.isArray(data)) {
-          const liveActive = data.filter((o) => !o.isDeleted && o.status !== 'cancelled');
           const deletedByAdmin = data.filter((o) => o.isDeleted || (o.status === 'cancelled' && o.deletedBy === 'admin'));
 
           if (deletedByAdmin.length > 0) {
             setDeletedOrdersNotice(deletedByAdmin);
           }
 
-          if (liveActive.length > 0) {
-            setActiveOrders(liveActive);
-          } else {
-            // Guard: Retain active orders placed within the last 10 minutes (strictly non-deleted and non-cancelled)
-            setActiveOrders((prev) => {
-              const recent = prev.filter((o) => !o.isDeleted && o.status !== 'cancelled' && Date.now() - o.createdAt < 10 * 60 * 1000);
-              return recent.length > 0 ? recent : [];
-            });
-          }
+          setActiveOrders(data.filter(o => !o.isDeleted));
         }
       }
     } catch (err) {
@@ -420,6 +414,8 @@ export default function CustomerMenu({
         if (res.ok) {
           const data = await res.json();
           if (data.items) {
+            const selectedIndex = data.items.findIndex((i: MenuItem) => i.id === activeItemIdRef.current);
+            if (selectedIndex >= 0) setActiveItemIdx(selectedIndex);
             setItems(data.items);
             // Check if any cart item was 86'd (marked out of stock)
             const currentCart = cartRef.current;
@@ -435,7 +431,7 @@ export default function CustomerMenu({
       } catch {
         // silent fail
       }
-    }, 40000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -455,7 +451,7 @@ export default function CustomerMenu({
       }
     };
 
-    const interval = setInterval(syncSettings, 60000);
+    const interval = setInterval(syncSettings, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -544,6 +540,7 @@ export default function CustomerMenu({
   // Cart operations
   const currentSizes = activeItem?.sizes && activeItem.sizes.length > 0 ? activeItem.sizes : ['Regular'];
   const selectedSize = currentSizes[selectedSizeIdx] || 'Regular';
+  const selectedPrice = activeItem ? menuPrice(activeItem, selectedSize) : 0;
 
   // Visual Fly-to-Cart Drag Animation using Web Animations API (direct to document.body)
   const triggerFlyAnimation = (
@@ -709,7 +706,7 @@ export default function CustomerMenu({
         id: activeItem.id,
         cartKey,
         name: activeItem.name,
-        price: activeItem.price,
+        price: selectedPrice,
         quantity: newQty,
         selectedSize,
         category: activeItem.category,
@@ -860,8 +857,14 @@ export default function CustomerMenu({
         }
       }
 
-      const idempotencyKey = `idem_${cleanedPhone}_${cartGrandTotal.toFixed(2)}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const newIdempotencyKey = `idem_${cleanedPhone}_${cartGrandTotal.toFixed(2)}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
+      const fingerprint = JSON.stringify({ cart, customerName, customerFlat, cleanedPhone, table: initialTable });
+      const pendingKey = 'anassa_pending_' + initialTable;
+      let pending: { fingerprint: string; key: string } | null = null;
+      try { pending = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch {}
+      const idempotencyKey = pending?.fingerprint === fingerprint ? pending.key : newIdempotencyKey;
+      localStorage.setItem(pendingKey, JSON.stringify({ fingerprint, key: idempotencyKey }));
       const orderPayload = {
         tableNumber: initialTable,
         tableKey: initialKey,
@@ -887,43 +890,9 @@ export default function CustomerMenu({
         specialInstructions: '',
       };
 
-      const tempOrderId = `opt_${Date.now()}`;
-      const optimisticOrderNumber = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
-      const optimisticOrder: Order = {
-        id: tempOrderId,
-        orderNumber: optimisticOrderNumber,
-        tableNumber: initialTable,
-        tableKey: initialKey,
-        sessionId: tableSessionId,
-        idempotencyKey,
-        customerName: customerName.trim() || 'Guest',
-        customerPhone: cleanedPhone,
-        customerFlat: customerFlat.trim() || undefined,
-        customerLat,
-        customerLng,
-        items: Object.values(cart).map((it) => ({
-          id: it.id,
-          name: it.name,
-          price: it.price,
-          quantity: it.quantity,
-          selectedSize: it.selectedSize,
-          category: it.category,
-          isAddon: it.isAddon,
-        })),
-        subtotal: cartSubtotal,
-        taxAmount: cartTax,
-        total: cartGrandTotal,
-        specialInstructions: '',
-        status: 'received',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
-      // Snapshot previous state for rollback in case of background failure
       const previousCart = { ...cart };
       const previousActiveOrders = [...activeOrders];
       const previousHasLocalOrders = hasLocalOrders;
-
       const completeOrderSuccess = (placedOrder: Order, serverSessionId?: string) => {
         // Ensure session ID is synchronized with server response
         const effSession = serverSessionId || placedOrder.sessionId;
@@ -955,9 +924,10 @@ export default function CustomerMenu({
         setIsGuestProfileSaved(true);
         setIsEditingGuestProfile(false);
 
-        setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id && o.id !== tempOrderId)]);
+        setActiveOrders((prev) => [placedOrder, ...prev.filter((o) => o.id !== placedOrder.id)]);
         setHasLocalOrders(true);
 
+        localStorage.removeItem(pendingKey);
         // Clear cart in both state & persistent localStorage
         setCart({});
         try {
@@ -974,8 +944,8 @@ export default function CustomerMenu({
       };
 
       // ── STEP 1: OPTIMISTIC UI UPDATE (Instant user feedback) ──
-      completeOrderSuccess(optimisticOrder, tableSessionId);
-      logOptimisticSuccess('Customer Order Submitted Instantly', optimisticOrder);
+      // Confirm persistence before clearing the cart or showing success.
+
 
       // ── STEP 2: BACKGROUND DATABASE SYNC ──
       let res: Response | null = null;
@@ -984,7 +954,7 @@ export default function CustomerMenu({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(orderPayload),
-          signal: AbortSignal.timeout(12000), // 12-second safe timeout
+          signal: AbortSignal.timeout(25000), // 12-second safe timeout
         });
 
         if (!res.ok) {
@@ -992,7 +962,7 @@ export default function CustomerMenu({
           try {
             errData = await res.json();
           } catch {}
-          throw new Error(`Server returned HTTP ${res.status}: ${JSON.stringify(errData)}`);
+          throw new Error((errData as { error?: string })?.error || 'Unable to place the order. Please try again.');
         }
 
         const data = await res.json();
@@ -1015,8 +985,7 @@ export default function CustomerMenu({
           if (checkRes.ok) {
             const recentOrders: Order[] = await checkRes.json();
             const matched = recentOrders.find((o) =>
-              Date.now() - o.createdAt < 120_000 &&
-              (o.customerPhone?.replace(/\D/g, '').slice(-10) === cleanedPhone.slice(-10))
+              o.idempotencyKey === idempotencyKey
             );
             if (matched) {
               completeOrderSuccess(matched, matched.sessionId);
@@ -1039,6 +1008,7 @@ export default function CustomerMenu({
           setIsCartOpen(true);
           setIsTrackerOpen(false);
           setShowConfetti(false);
+          alert(networkOrServerError instanceof Error ? networkOrServerError.message : 'Order could not be confirmed. Please try again.');
 
           // Detailed console debug log instead of alert dialog
           logActionError({
@@ -1429,8 +1399,8 @@ export default function CustomerMenu({
 
             <div className="item-price">
               <span className="currency">₹</span>
-              <span className="price-int">{Math.floor(activeItem.price)}</span>
-              <span className="price-dec">.00</span>
+              <span className="price-int">{Math.floor(selectedPrice)}</span>
+              <span className="price-dec">.{selectedPrice.toFixed(2).split('.')[1]}</span>
             </div>
           </div>
 

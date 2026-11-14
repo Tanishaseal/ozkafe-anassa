@@ -27,7 +27,7 @@ export default async function Page({ searchParams }: PageProps) {
         initialAddons={addons}
         initialTable={table}
         initialKey={key}
-        initialSettings={settings}
+        initialSettings={{ ...settings, adminPin: '', kitchenPin: undefined, geofenceTestBypassCode: undefined }}
       />
     </main>
   );

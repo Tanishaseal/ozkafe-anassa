@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   }
 
   const payload = verifyToken(token);
-  if (!payload || !payload.email) {
+  if (!payload || !payload.email || !['admin', 'kitchen'].includes(payload.role)) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
@@ -51,7 +51,7 @@ export async function PATCH(request: Request) {
   }
 
   const payload = verifyToken(token);
-  if (!payload || !payload.email) {
+  if (!payload || !payload.email || !['admin', 'kitchen'].includes(payload.role)) {
     return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
   }
 
@@ -71,7 +71,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'New PIN must be exactly 4 numeric digits.' }, { status: 400 });
       }
 
-      if (user.hasCustomPin && currentPin) {
+      if (user.hasCustomPin) {
         if (String(currentPin).trim() !== user.masterPin) {
           return NextResponse.json({ error: 'Current PIN is incorrect.' }, { status: 400 });
         }
@@ -91,7 +91,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       success: true,
       message: 'Account updated successfully!',
-      user: updated,
+      user: updated ? { ...updated, masterPin: undefined } : null,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Update failed';

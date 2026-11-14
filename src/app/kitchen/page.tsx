@@ -37,7 +37,7 @@ export default function KitchenDashboard() {
   const isFetchingOrdersRef = useRef(false);
   const isFetchingHistoryRef = useRef(false);
   const kitchenViewModeRef = useRef(kitchenViewMode);
-  kitchenViewModeRef.current = kitchenViewMode;
+  useEffect(() => { kitchenViewModeRef.current = kitchenViewMode; }, [kitchenViewMode]);
 
   // Bill Settlement State
   const [isSettlingId, setIsSettlingId] = useState<string | null>(null);
@@ -121,10 +121,12 @@ export default function KitchenDashboard() {
 
   // Dynamic KDS Configuration
   const [kitchenSettings, setKitchenSettings] = useState<{
+    gstPercent: number;
     warningTimeMinutes: number;
     dangerTimeMinutes: number;
     allowOrderCancellation: boolean;
   }>({
+    gstPercent: 5,
     warningTimeMinutes: 10,
     dangerTimeMinutes: 15,
     allowOrderCancellation: true,
@@ -137,6 +139,7 @@ export default function KitchenDashboard() {
         const data = await res.json();
         if (data.settings) {
           setKitchenSettings({
+            gstPercent: data.settings.gstPercent ?? 5,
             warningTimeMinutes: data.settings.warningTimeMinutes ?? 10,
             dangerTimeMinutes: data.settings.dangerTimeMinutes ?? 15,
             allowOrderCancellation: data.settings.allowOrderCancellation ?? true,
@@ -151,7 +154,6 @@ export default function KitchenDashboard() {
   // Check persistent kitchen session on mount (do NOT lock on refresh!)
   useEffect(() => {
     fetchKitchenSettings();
-    fetchMenuItems();
 
     // Verify session with server using Bearer token or cookie
     fetch(`/api/kitchen/auth?_t=${Date.now()}`, {
@@ -164,8 +166,7 @@ export default function KitchenDashboard() {
             setIsAuthenticated(true);
             setCurrentUser(data.staff);
             setStaffName(data.staff.name);
-            fetchOrders();
-            fetchHistoryOrders();
+
           }
         }
       })
@@ -232,28 +233,16 @@ export default function KitchenDashboard() {
           playChime();
         }
 
-        // Alert kitchen if an active order was deleted by admin
-        if (previousOrderIdsRef.current.size > 0) {
-          previousOrderIdsRef.current.forEach((prevId) => {
-            if (!currentIds.has(prevId)) {
-              const deletedOrd = orders.find((o) => o.id === prevId);
-              if (deletedOrd && deletedOrd.status !== 'served') {
-                setAdminDeleteAlert(`⚠️ Order #${deletedOrd.orderNumber || prevId.slice(0, 8)} was deleted by Admin.`);
-                setTimeout(() => setAdminDeleteAlert(''), 6000);
-              }
-            }
-          });
-        }
-
         previousOrderIdsRef.current = currentIds;
         setOrders(data);
+        setRecentServed(prev => prev.filter(o => data.some(live => live.id === o.id)).map(o => data.find(live => live.id === o.id) || o));
       }
     } catch (err) {
       console.warn('KDS fetch error:', err);
     } finally {
       isFetchingOrdersRef.current = false;
     }
-  }, [soundEnabled, orders]);
+  }, [soundEnabled]);
 
   // Fetch 15-day kitchen order history (with anti-spam concurrency lock & manual refresh feedback)
   const fetchHistoryOrders = useCallback(async (isManual: boolean = false) => {
@@ -312,9 +301,9 @@ export default function KitchenDashboard() {
       if (!o.isDeleted && o.status !== 'cancelled') map.set(o.id, o);
     });
     // History orders may contain completed and cancelled/deleted records for historical review
-    historyOrders.forEach((o) => map.set(o.id, o));
+    historyOrders.forEach((o) => { if (!map.has(o.id) || map.get(o.id)!.updatedAt < o.updatedAt) map.set(o.id, o); });
     recentServed.forEach((o) => {
-      if (!o.isDeleted && o.status !== 'cancelled') map.set(o.id, o);
+      if (!o.isDeleted && o.status !== 'cancelled' && (!map.has(o.id) || map.get(o.id)!.updatedAt < o.updatedAt)) map.set(o.id, o);
     });
     return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, [orders, historyOrders, recentServed]);
@@ -514,7 +503,7 @@ export default function KitchenDashboard() {
     const previousTargetOrder = { ...editingReceiptOrder };
 
     const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-    const gstRate = 5;
+    const gstRate = kitchenSettings.gstPercent;
     const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = Number((subtotal + taxAmount).toFixed(2));
 
@@ -708,8 +697,8 @@ export default function KitchenDashboard() {
 
     const previousHistory = [...historyOrders];
     const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-    const gstRate = 5;
-    const taxAmount = Math.round((subtotal * gstRate) / 100);
+    const gstRate = kitchenSettings.gstPercent;
+    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = subtotal + taxAmount;
     const customCreatedAt = customBillDateTime ? new Date(customBillDateTime).getTime() : Date.now();
 
@@ -861,6 +850,7 @@ export default function KitchenDashboard() {
     if (!isAuthenticated) return;
 
     fetchOrders();
+    fetchHistoryOrders();
     fetchMenuItems();
 
     // 1. Server-Sent Events (SSE) Stream with debouncing to prevent event spam
@@ -890,7 +880,7 @@ export default function KitchenDashboard() {
     const interval = setInterval(() => {
       fetchOrders();
       pollTick++;
-      if (kitchenViewModeRef.current === 'history' && pollTick % 2 === 0) {
+      if (pollTick % 2 === 0) {
         fetchHistoryOrders(false);
       }
     }, 5000);
@@ -1921,7 +1911,7 @@ export default function KitchenDashboard() {
           ? printOrder.subtotal
           : printOrder.items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
 
-        const gstPercent = 5;
+        const gstPercent = kitchenSettings.gstPercent;
         const gstRate = gstPercent / 100;
         const orderTax = printOrder.taxAmount !== undefined && printOrder.taxAmount > 0
           ? printOrder.taxAmount
@@ -2739,7 +2729,7 @@ export default function KitchenDashboard() {
               {/* 6. Live Bill Total */}
               {(() => {
                 const subtotal = customBillItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-                const taxAmount = Math.round((subtotal * 5) / 100);
+                const taxAmount = Number(((subtotal * kitchenSettings.gstPercent) / 100).toFixed(2));
                 const total = subtotal + taxAmount;
 
                 return (

@@ -3,13 +3,17 @@ import { initialCategories, initialMenuItems, initialAddons, initialSettings, in
 import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
 import { fetchWithCache, invalidateCache } from './cache';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
+import { assertStorageConfigured } from './supabaseServer';
 import path from 'path';
 
 // Local storage backup file path (persists in-memory state across restarts/workers)
-const STORE_BACKUP_FILE = path.join(process.cwd(), '.anassa_store.json');
+const STORE_BACKUP_FILE = process.env.ANASSA_STORE_FILE || path.join(process.cwd(), '.anassa_store.json');
 
 // In-memory persistent caches for ultra-fast response and zero-config local testing
 const globalStore = globalThis as unknown as {
+  __anassa_local_write?: Promise<unknown>;
+  __anassa_counter?: number;
   __anassa_categories?: Category[];
   __anassa_items?: MenuItem[];
   __anassa_addons?: MenuAddon[];
@@ -60,8 +64,15 @@ if (!globalStore.__anassa_tables) {
 
 // Persist and load store to/from disk so orders NEVER vanish across restarts or worker reloads
 export function saveStoreToDisk() {
+  if (isSupabaseConfigured || process.env.VERCEL) return;
   try {
     const payload = {
+      counter: globalStore.__anassa_counter,
+      items: globalStore.__anassa_items,
+      settings: globalStore.__anassa_settings,
+      tables: globalStore.__anassa_tables,
+      inventory: globalStore.__anassa_inventory,
+      staff: globalStore.__anassa_staff,
       orders: globalStore.__anassa_orders || [],
       auditLogs: globalStore.__anassa_audit_logs || [],
       updatedAt: Date.now(),
@@ -73,10 +84,17 @@ export function saveStoreToDisk() {
 }
 
 export function loadStoreFromDisk() {
+  if (isSupabaseConfigured || process.env.VERCEL) return;
   try {
     if (fs.existsSync(STORE_BACKUP_FILE)) {
       const raw = fs.readFileSync(STORE_BACKUP_FILE, 'utf-8');
       const data = JSON.parse(raw);
+      if (data.counter) globalStore.__anassa_counter = data.counter;
+      if (data.items) globalStore.__anassa_items = data.items;
+      if (data.settings) globalStore.__anassa_settings = data.settings;
+      if (data.tables) globalStore.__anassa_tables = data.tables;
+      if (data.inventory) globalStore.__anassa_inventory = data.inventory;
+      if (data.staff) globalStore.__anassa_staff = data.staff;
       if (data && Array.isArray(data.orders) && data.orders.length > 0) {
         if (!globalStore.__anassa_orders || globalStore.__anassa_orders.length === 0) {
           globalStore.__anassa_orders = data.orders;
@@ -136,14 +154,15 @@ export function broadcastOrder(order: Order) {
 // CATEGORIES
 // ──────────────────────────────────────────
 export async function getCategories(): Promise<Category[]> {
+  assertStorageConfigured();
   return fetchWithCache('categories_all', async () => {
     if (isSupabaseConfigured && supabaseServer) {
       try {
         const { data, error } = await supabaseServer
           .from('categories')
           .select('*')
-          .order('sort_order', { ascending: true });
-        if (!error && data && data.length >= initialCategories.length) {
+          .order('sort_order', { ascending: true }).throwOnError();
+        if (!error && data) {
           // Count items per category
           const items = await getMenuItems();
           const counts: Record<string, number> = {};
@@ -161,13 +180,12 @@ export async function getCategories(): Promise<Category[]> {
             sortOrder: c.sort_order,
             itemsCount: counts[c.id] || 0,
           }));
-        } else {
-          // Auto-sync categories if Supabase table has fewer categories
-          syncMenuToDatabase().catch((e) => console.warn('Auto-sync categories error:', e));
         }
       } catch (err) {
-        console.warn('Supabase getCategories error, falling back to memory store:', err);
-      }
+        console.warn('Supabase getCategories failed:', err);
+
+      throw err;
+    }
     }
 
     // Count items per category
@@ -207,6 +225,7 @@ if (!globalStockStore.__anassa_stock_map) {
 }
 
 export async function getStockMap(): Promise<Record<string, number>> {
+  assertStorageConfigured();
   return fetchWithCache('stock_map', async () => {
     if (isSupabaseConfigured && supabaseServer) {
       try {
@@ -214,7 +233,7 @@ export async function getStockMap(): Promise<Record<string, number>> {
           .from('cafe_settings')
           .select('value')
           .eq('key', 'menu_stock_inventory')
-          .single();
+          .maybeSingle().throwOnError();
         if (!error && data?.value && typeof data.value === 'object') {
           globalStockStore.__anassa_stock_map = {
             ...globalStockStore.__anassa_stock_map,
@@ -231,8 +250,11 @@ export async function getStockMap(): Promise<Record<string, number>> {
 }
 
 export async function saveStockMap(stockMap: Record<string, number>): Promise<void> {
+  assertStorageConfigured();
+  if (isSupabaseConfigured) return;
   globalStockStore.__anassa_stock_map = { ...stockMap };
   invalidateCache('stock');
+  saveStoreToDisk();
   invalidateCache('menu');
   if (isSupabaseConfigured && supabaseServer) {
     try {
@@ -240,9 +262,11 @@ export async function saveStockMap(stockMap: Record<string, number>): Promise<vo
         key: 'menu_stock_inventory',
         value: stockMap,
         updated_at: new Date().toISOString(),
-      });
+      }).throwOnError();
     } catch (e) {
       console.warn('Supabase saveStockMap error:', e);
+
+      throw e;
     }
   }
 }
@@ -251,9 +275,10 @@ export async function saveStockMap(stockMap: Record<string, number>): Promise<vo
 // MENU ITEMS
 // ──────────────────────────────────────────
 export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
+  assertStorageConfigured();
   const cacheKey = categoryId ? `menu_items_${categoryId}` : 'menu_items_all';
   return fetchWithCache(cacheKey, async () => {
-    const stockMap = await getStockMap();
+    const stockMap = isSupabaseConfigured ? {} : await getStockMap();
 
     if (isSupabaseConfigured && supabaseServer) {
       try {
@@ -261,27 +286,15 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
         if (categoryId) {
           query = query.eq('category_id', categoryId);
         }
-        const { data, error } = await query;
-        if (!error && data && data.length >= (categoryId ? 1 : initialMenuItems.length)) {
+        const { data, error } = await query.throwOnError();
+        if (!error && data) {
           const mapped = data.map((i) => {
             let itemStock: number;
-            if (typeof stockMap[i.id] === 'number') {
-              itemStock = stockMap[i.id];
-            } else if (typeof i.stock === 'number') {
+            if (typeof i.stock === 'number') {
               itemStock = i.stock;
             } else {
               itemStock = 10;
             }
-
-            // Consistency & self-healing guard: If item is available, stock must be positive (>= 1)
-            if (i.is_available && itemStock <= 0) {
-              itemStock = typeof i.stock === 'number' && i.stock > 0 ? i.stock : 10;
-              stockMap[i.id] = itemStock;
-            } else if (!i.is_available && itemStock > 0) {
-              itemStock = 0;
-              stockMap[i.id] = 0;
-            }
-
             const isAvail = (i.is_available ?? true) && itemStock > 0;
 
             return {
@@ -310,14 +323,14 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
             return (a.sortOrder || 0) - (b.sortOrder || 0);
           });
 
+          globalStore.__anassa_items = categoryId ? globalStore.__anassa_items : mapped;
           return mapped;
-        } else if (!categoryId && (!data || data.length < initialMenuItems.length)) {
-          // Auto-sync full 76 PDF items to Supabase if Supabase has fewer items
-          syncMenuToDatabase().catch((e) => console.warn('Auto-sync menu items error:', e));
         }
       } catch (err) {
-        console.warn('Supabase getMenuItems error, falling back to memory store:', err);
-      }
+        console.warn('Supabase getMenuItems failed:', err);
+
+      throw err;
+    }
     }
 
     const items = (globalStore.__anassa_items || initialMenuItems).map((it) => {
@@ -352,90 +365,17 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
 }
 
 export async function toggleItemAvailability(itemId: string, isAvailable: boolean): Promise<boolean> {
-  invalidateCache('menu');
-  invalidateCache('stock');
-  const stockMap = await getStockMap();
-  const item = globalStore.__anassa_items?.find((i) => i.id === itemId);
-  let currentStock = typeof stockMap[itemId] === 'number' ? stockMap[itemId] : (item?.stock ?? 10);
-
-  if (isAvailable && currentStock <= 0) {
-    currentStock = 10;
-    stockMap[itemId] = 10;
-    await saveStockMap(stockMap);
-  } else if (!isAvailable) {
-    currentStock = 0;
-    stockMap[itemId] = 0;
-    await saveStockMap(stockMap);
-  }
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const dbPayload: Record<string, unknown> = { is_available: isAvailable, stock: currentStock };
-      const { error } = await supabaseServer.from('menu_items').update(dbPayload).eq('id', itemId);
-      if (error) {
-        await supabaseServer.from('menu_items').update({ is_available: isAvailable }).eq('id', itemId);
-      }
-    } catch (err) {
-      console.warn('Supabase toggleItemAvailability error:', err);
-    }
-  }
-
-  if (item) {
-    item.isAvailable = isAvailable;
-    item.stock = currentStock;
-    addAuditLog({
-      actor: 'admin',
-      action: 'STOCK_TOGGLED',
-      details: `Item "${item.name}" marked ${isAvailable ? `IN STOCK (${currentStock} left)` : 'OUT OF STOCK'}`,
-    });
-  }
-  return true;
+  const item = (await getMenuItems()).find(i => i.id === itemId);
+  if (!item) return false;
+  return Boolean(await updateMenuItem(itemId, { isAvailable, stock: isAvailable ? Math.max(1, item.stock || 10) : 0 }));
 }
 
 export async function updateMenuItemStock(id: string, newStock: number): Promise<MenuItem | null> {
-  const finalStock = Math.max(0, Math.floor(newStock));
-  const isAvailable = finalStock > 0;
-
-  const stockMap = await getStockMap();
-  stockMap[id] = finalStock;
-  await saveStockMap(stockMap);
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { error } = await supabaseServer
-        .from('menu_items')
-        .update({ stock: finalStock, is_available: isAvailable })
-        .eq('id', id);
-      if (error) {
-        await supabaseServer.from('menu_items').update({ is_available: isAvailable }).eq('id', id);
-      }
-    } catch (err) {
-      console.warn('Supabase updateMenuItemStock error:', err);
-    }
-  }
-
-  let item = globalStore.__anassa_items?.find((i) => i.id === id);
-  if (item) {
-    item.stock = finalStock;
-    item.isAvailable = isAvailable;
-    addAuditLog({
-      actor: 'admin',
-      action: 'STOCK_TOGGLED',
-      details: `Stock for "${item.name}" updated to ${finalStock} items (${isAvailable ? 'In Stock' : 'Out of Stock'})`,
-    });
-    return item;
-  } else {
-    const base = initialMenuItems.find((i) => i.id === id);
-    if (base) {
-      item = { ...base, stock: finalStock, isAvailable };
-      if (globalStore.__anassa_items) globalStore.__anassa_items.push(item);
-      return item;
-    }
-  }
-  return null;
+  return updateMenuItem(id, { stock: newStock });
 }
 
 export async function decrementMenuItemStock(id: string, quantity: number): Promise<void> {
+  assertStorageConfigured();
   const stockMap = await getStockMap();
   const item = globalStore.__anassa_items?.find((i) => i.id === id);
   const currentStock = typeof stockMap[id] === 'number'
@@ -443,7 +383,6 @@ export async function decrementMenuItemStock(id: string, quantity: number): Prom
     : (typeof item?.stock === 'number' ? item.stock : 10);
 
   const newStock = Math.max(0, currentStock - quantity);
-  const isAvailable = newStock > 0;
 
   stockMap[id] = newStock;
   await saveStockMap(stockMap);
@@ -463,25 +402,28 @@ export async function decrementMenuItemStock(id: string, quantity: number): Prom
           stock: newStock,
           ...(newStock === 0 ? { is_available: false } : {}),
         })
-        .eq('id', id);
+        .eq('id', id).throwOnError();
 
       if (error && newStock === 0) {
-        await supabaseServer.from('menu_items').update({ is_available: false }).eq('id', id);
+        await supabaseServer.from('menu_items').update({ is_available: false }).eq('id', id).throwOnError();
       }
     } catch (e) {
       console.warn('Supabase decrementMenuItemStock error:', e);
       if (newStock === 0) {
         try {
-          await supabaseServer.from('menu_items').update({ is_available: false }).eq('id', id);
+          await supabaseServer.from('menu_items').update({ is_available: false }).eq('id', id).throwOnError();
         } catch {
           // ignore
         }
       }
+
+      throw e;
     }
   }
 }
 
 export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuItem> {
+  assertStorageConfigured();
   const id = `item-${Date.now()}`;
   const initialStock = typeof newItem.stock === 'number' ? newItem.stock : 10;
   const created: MenuItem = {
@@ -511,24 +453,31 @@ export async function addMenuItem(newItem: Omit<MenuItem, 'id'>): Promise<MenuIt
         stock: created.stock,
         sizes: created.sizes,
         sort_order: created.sortOrder,
-      });
+      }).throwOnError();
     } catch (err) {
       console.warn('Supabase addMenuItem error:', err);
+
+      throw err;
     }
   }
 
   globalStore.__anassa_items?.unshift(created);
   invalidateCache('menu');
   invalidateCache('stock');
+  saveStoreToDisk();
   addAuditLog({
     actor: 'admin',
     action: 'MENU_ITEM_ADDED',
     details: `Added new dish "${created.name}" (₹${created.price}, Stock: ${created.stock}) in ${created.category}`,
   });
+  saveStoreToDisk();
   return created;
 }
 
 export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Promise<MenuItem | null> {
+  assertStorageConfigured();
+  const currentItem = (await getMenuItems()).find(i => i.id === id);
+  if (!currentItem) return null;
   if (updates.stock !== undefined) {
     updates.stock = Math.max(0, Math.floor(updates.stock));
     if (updates.stock === 0) {
@@ -575,14 +524,13 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
       if (updates.isAvailable !== undefined) dbUpdates.is_available = updates.isAvailable;
       if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
       if (updates.sizes !== undefined) dbUpdates.sizes = updates.sizes;
-      
-      const { error: upErr } = await supabaseServer.from('menu_items').update(dbUpdates).eq('id', id);
-      if (upErr && dbUpdates.stock !== undefined) {
-        delete dbUpdates.stock;
-        await supabaseServer.from('menu_items').update(dbUpdates).eq('id', id);
-      }
+
+      const { error: upErr } = await supabaseServer.from('menu_items').update(dbUpdates).eq('id', id).throwOnError();
+      if (upErr) throw upErr;
     } catch (err) {
       console.warn('Supabase updateMenuItem error:', err);
+
+      throw err;
     }
   }
 
@@ -630,6 +578,7 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
 
   invalidateCache('menu');
   invalidateCache('stock');
+  saveStoreToDisk();
 
   if (item) {
     addAuditLog({
@@ -643,8 +592,12 @@ export async function updateMenuItem(id: string, updates: Partial<MenuItem>): Pr
 }
 
 export async function deleteMenuItem(id: string): Promise<boolean> {
+  assertStorageConfigured();
+  const currentItem = (await getMenuItems()).find(i => i.id === id);
+  if (!currentItem) return false;
   invalidateCache('menu');
   invalidateCache('stock');
+  saveStoreToDisk();
   const stockMap = await getStockMap();
   if (stockMap[id] !== undefined) {
     delete stockMap[id];
@@ -653,9 +606,11 @@ export async function deleteMenuItem(id: string): Promise<boolean> {
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      await supabaseServer.from('menu_items').delete().eq('id', id);
+      await supabaseServer.from('menu_items').delete().eq('id', id).throwOnError();
     } catch (err) {
       console.warn('Supabase deleteMenuItem error:', err);
+
+      throw err;
     }
   }
 
@@ -670,6 +625,7 @@ export async function deleteMenuItem(id: string): Promise<boolean> {
       action: 'MENU_ITEM_DELETED',
       details: `Deleted dish "${deletedItem.name}"`,
     });
+    saveStoreToDisk();
     return true;
   }
   return true;
@@ -679,6 +635,7 @@ export async function deleteMenuItem(id: string): Promise<boolean> {
 // ADD-ONS
 // ──────────────────────────────────────────
 export async function getAddons(): Promise<MenuAddon[]> {
+  assertStorageConfigured();
   const current = globalStore.__anassa_addons || initialAddons;
   return current.filter(
     (a) =>
@@ -708,68 +665,11 @@ export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number
  * Migrates any legacy '#OZ-XXXX' or missing order numbers chronologically (oldest to newest).
  */
 export function normalizeAndSyncOrders(orders: Order[]): Order[] {
-  if (!orders || orders.length === 0) return [];
-
-  // Sort oldest first (chronological order)
-  const sorted = [...orders].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  
-  let currentSeq = 1;
-  const updatesToDb: { id: string; orderNumber: string }[] = [];
-
-  for (const ord of sorted) {
-    const raw = (ord.orderNumber || '').trim();
-    const match = raw.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
-
-    if (match) {
-      const num = parseInt(match[1], 10);
-      const normalized = `oz-anassa-${num}`;
-      if (ord.orderNumber !== normalized) {
-        ord.orderNumber = normalized;
-        updatesToDb.push({ id: ord.id, orderNumber: normalized });
-      }
-      if (num >= currentSeq) {
-        currentSeq = num + 1;
-      }
-    } else {
-      // Legacy '#OZ-XXXX', undefined, or non-sequential format -> assign oz-anassa-N
-      const normalized = `oz-anassa-${currentSeq}`;
-      ord.orderNumber = normalized;
-      updatesToDb.push({ id: ord.id, orderNumber: normalized });
-      currentSeq++;
-    }
-  }
-
-  // Update in-memory store if cached
-  if (globalStore.__anassa_orders && globalStore.__anassa_orders.length > 0) {
-    const map = new Map(sorted.map((o) => [o.id, o.orderNumber]));
-    for (const memOrder of globalStore.__anassa_orders) {
-      if (map.has(memOrder.id)) {
-        memOrder.orderNumber = map.get(memOrder.id)!;
-      }
-    }
-  }
-
-  // Asynchronously persist normalized numbers to Supabase in background
-  if (updatesToDb.length > 0 && isSupabaseConfigured && supabaseServer) {
-    (async () => {
-      try {
-        for (const item of updatesToDb) {
-          await supabaseServer
-            .from('orders')
-            .update({ order_number: item.orderNumber })
-            .eq('id', item.id);
-        }
-      } catch (err) {
-        console.warn('Background sync of normalized order numbers failed:', err);
-      }
-    })();
-  }
-
-  // Maintain newest-first sort order
-  return sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // Reads must not renumber receipts or write to the database.
+  return [...orders].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function createOrder(data: {
+async function createOrderUnlocked(data: {
   tableNumber: number | string;
   tableKey?: string;
   sessionId?: string;
@@ -790,10 +690,26 @@ export async function createOrder(data: {
   isPaid?: boolean;
   settledBy?: string;
 }): Promise<Order> {
+  assertStorageConfigured();
+  if (data.idempotencyKey && !supabaseServer) {
+    const duplicate = globalStore.__anassa_orders?.find(o => o.idempotencyKey === data.idempotencyKey);
+    if (duplicate) return duplicate;
+  }
+  if (!Array.isArray(data.items) || !data.items.length) throw new Error('Order requires items');
+  for (const it of data.items) {
+    if (!Number.isFinite(it.price) || it.price < 0 || !Number.isInteger((it as { quantity?: number }).quantity || 1) || ((it as { quantity?: number }).quantity || 1) < 1) throw new Error('Invalid order item');
+  }
+  for (const amount of [data.subtotal, data.taxAmount, data.total]) if (!Number.isFinite(amount) || amount < 0) throw new Error('Invalid order amount');
+  if (!supabaseServer && data.sessionId) {
+    const required = new Map<string, number>();
+    for (const it of data.items) if (!(it as { isAddon?: boolean }).isAddon) required.set(it.id, (required.get(it.id) || 0) + ((it as { quantity?: number }).quantity || 1));
+    const menu = await getMenuItems();
+    for (const [id, qty] of required) { const item = menu.find(i => i.id === id); if (!item?.isAvailable || (item.stock ?? 10) < qty) throw new Error('Insufficient stock'); }
+  }
   const now = data.createdAt ? Number(data.createdAt) : Date.now();
-  
+
   // Calculate next sequential oz-anassa order number (starts strictly from oz-anassa-1)
-  let maxSeq = 0;
+  let maxSeq = globalStore.__anassa_counter || 0;
   const existingOrders = globalStore.__anassa_orders || [];
   for (const o of existingOrders) {
     if (o.orderNumber) {
@@ -805,32 +721,10 @@ export async function createOrder(data: {
     }
   }
 
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data: dbOrders } = await supabaseServer
-        .from('orders')
-        .select('order_number')
-        .order('created_at', { ascending: false })
-        .limit(500);
-      if (dbOrders) {
-        for (const o of dbOrders) {
-          if (o.order_number) {
-            const match = o.order_number.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
-            if (match) {
-              const num = parseInt(match[1], 10);
-              if (num > maxSeq) maxSeq = num;
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   const nextSeq = maxSeq + 1;
+  globalStore.__anassa_counter = nextSeq;
   const orderNumber = `oz-anassa-${nextSeq}`;
-  const orderId = `oz-anassa-${now}-${nextSeq}`;
+  const orderId = randomUUID();
 
   const newOrder: Order = {
     id: orderId,
@@ -903,34 +797,20 @@ export async function createOrder(data: {
         settled_by: newOrder.settledBy || null,
       };
 
-      const { error: insertErr } = await supabaseServer.from('orders').insert(fullInsertPayload);
-      if (insertErr) {
-        console.warn('Supabase insert with paid columns failed, falling back to base schema:', insertErr.message);
-        const { error: baseErr } = await supabaseServer.from('orders').insert(baseInsertPayload);
-        if (baseErr) {
-          console.warn('Supabase base insert failed, falling back to minimal core payload:', baseErr.message);
-          const minimalPayload = {
-            id: newOrder.id,
-            order_number: newOrder.orderNumber,
-            table_number: String(newOrder.tableNumber),
-            customer_name: newOrder.customerName,
-            customer_phone: newOrder.customerPhone,
-            items: newOrder.items,
-            subtotal: newOrder.subtotal,
-            tax_amount: newOrder.taxAmount,
-            total: newOrder.total,
-            status: newOrder.status,
-            created_at: new Date(now).toISOString(),
-            updated_at: new Date(now).toISOString(),
-          };
-          const { error: minErr } = await supabaseServer.from('orders').insert(minimalPayload);
-          if (minErr) {
-            console.error('Supabase minimal insert error:', minErr.message);
-          }
-        }
-      }
+      const { data: saved, error } = await supabaseServer.rpc('place_order', {
+        payload: { ...fullInsertPayload, idempotency_key: newOrder.idempotencyKey || null },
+      }).throwOnError();
+      if (error) throw error;
+      invalidateCache('orders');
+      invalidateCache('menu');
+      const confirmed = mapOrderRow(saved);
+      broadcastOrder(confirmed);
+      await addAuditLog({ actor: 'customer', action: 'ORDER_CREATED', details: 'Order #' + confirmed.orderNumber + ' saved' });
+      return confirmed;
     } catch (err) {
-      console.warn('Supabase createOrder error, saved in memory store:', err);
+      console.warn('Supabase createOrder failed:', err);
+
+      throw err;
     }
   }
 
@@ -946,6 +826,7 @@ export async function createOrder(data: {
   invalidateCache('orders');
   invalidateCache('menu');
   invalidateCache('stock');
+  saveStoreToDisk();
   broadcastOrder(newOrder);
   addAuditLog({
     actor: 'customer',
@@ -956,27 +837,28 @@ export async function createOrder(data: {
 }
 
 export async function getOrders(filter?: {
-  status?: OrderStatus | 'active';
+  status?: OrderStatus | 'active' | 'customer';
   tableNumber?: number | string;
   sessionId?: string;
   knownIds?: string[];
   phone?: string;
   limit?: number;
 }): Promise<Order[]> {
+  assertStorageConfigured();
   const filterKey = filter ? JSON.stringify(filter) : 'all';
   const cacheKey = `orders_${filterKey}`;
 
   return fetchWithCache(
     cacheKey,
     async () => {
-      loadStoreFromDisk();
+
 
       if (isSupabaseConfigured && supabaseServer) {
         try {
           let query = supabaseServer.from('orders').select('*').order('created_at', { ascending: false });
           if (filter?.status === 'active') {
             query = query.in('status', ['received', 'preparing', 'ready', 'served']);
-          } else if (filter?.status) {
+          } else if (filter?.status && filter.status !== 'customer') {
             query = query.eq('status', filter.status);
           }
           if (filter?.tableNumber !== undefined) {
@@ -994,53 +876,10 @@ export async function getOrders(filter?: {
           if (filter?.limit) {
             query = query.limit(filter.limit);
           }
-          const { data, error } = await query;
+          const { data, error } = await query.throwOnError();
           if (!error && data) {
             const recentServedCutoff = Date.now() - 45 * 60 * 1000;
-            const rawOrders: Order[] = data.map((o) => {
-              const rawInstructions = o.special_instructions || '';
-              const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
-              const isPaid = Boolean(o.is_paid ?? (settledMatch !== null));
-              const paidAt = o.paid_at
-                ? new Date(o.paid_at).getTime()
-                : (settledMatch ? Number(settledMatch[1]) : (o as any).paidAt);
-              const settledBy = o.settled_by || (settledMatch ? settledMatch[2] : (o as any).settledBy);
-              const cleanInstructions = rawInstructions
-                .replace(/\[SETTLED:[^\]]+\]/g, '')
-                .replace(/\[DELETED_BY_[^\]]+\]/g, '')
-                .trim();
-
-              const isDeletedMatch = rawInstructions.match(/\[DELETED_BY_([^\]]+)\]/);
-              const isDeleted = Boolean((o as any).is_deleted || isDeletedMatch !== null || (o.status === 'cancelled' && (o as any).deletedBy));
-              const deletedBy = (o as any).deleted_by || (isDeletedMatch ? isDeletedMatch[1].toLowerCase() : (o as any).deletedBy);
-
-              return {
-                id: o.id,
-                orderNumber: o.order_number || '',
-                tableNumber: isNaN(Number(o.table_number)) ? o.table_number : Number(o.table_number),
-                tableKey: o.table_key,
-                sessionId: o.session_id,
-                customerName: o.customer_name,
-                customerPhone: o.customer_phone,
-                customerFlat: o.customer_flat,
-                items: o.items || [],
-                subtotal: Number(o.subtotal || o.total),
-                taxAmount: Number(o.tax_amount || 0),
-                total: Number(o.total),
-                specialInstructions: cleanInstructions || undefined,
-                status: o.status as OrderStatus,
-                isPaid,
-                paidAt,
-                settledBy,
-                isDeleted,
-                deletedBy,
-                customerLat: o.customer_lat ? Number(o.customer_lat) : undefined,
-                customerLng: o.customer_lng ? Number(o.customer_lng) : undefined,
-                distanceMeters: o.distance_meters ? Number(o.distance_meters) : undefined,
-                createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
-                updatedAt: o.updated_at ? new Date(o.updated_at).getTime() : Date.now(),
-              };
-            });
+            const rawOrders: Order[] = data.map(mapOrderRow);
 
             let filtered = rawOrders;
             if (filter?.status === 'active') {
@@ -1065,11 +904,13 @@ export async function getOrders(filter?: {
               });
             }
 
-            return normalizeAndSyncOrders(filtered);
+            return normalizeAndSyncOrders(filtered).filter(o => filter?.status !== 'customer' || ['received', 'preparing', 'ready'].includes(o.status) || !o.isPaid && o.status === 'served' || Date.now() - o.updatedAt < 86400000);
           }
         } catch (err) {
-          console.warn('Supabase getOrders error, falling back to memory store:', err);
-        }
+          console.warn('Supabase getOrders failed:', err);
+
+      throw err;
+    }
       }
 
       let list = normalizeAndSyncOrders(globalStore.__anassa_orders || []);
@@ -1084,7 +925,7 @@ export async function getOrders(filter?: {
           }
           return false;
         });
-      } else if (filter?.status) {
+      } else if (filter?.status && filter.status !== 'customer') {
         list = list.filter((o) => o.status === filter.status);
       }
       if (filter?.sessionId || (filter?.knownIds && filter.knownIds.length > 0) || filter?.phone) {
@@ -1095,348 +936,95 @@ export async function getOrders(filter?: {
           if (filter.sessionId && o.sessionId === filter.sessionId) return true;
           return false;
         });
-      } else if (filter?.tableNumber !== undefined) {
+      }
+      if (filter?.tableNumber !== undefined) {
         list = list.filter((o) => isSameTable(o.tableNumber, filter.tableNumber));
       }
       if (filter?.limit) {
         list = list.slice(0, filter.limit);
       }
-      return list;
+      return list.filter(o => filter?.status !== 'customer' || ['received', 'preparing', 'ready'].includes(o.status) || !o.isPaid && o.status === 'served' || Date.now() - o.updatedAt < 86400000);
     },
-    2.5,
+    0,
     ['orders']
   );
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  return fetchWithCache(
-    `order_by_id_${orderId}`,
-    async () => {
-      if (isSupabaseConfigured && supabaseServer) {
-        try {
-          const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).single();
-          if (!error && data) {
-            const rawNumber = (data.order_number || '').trim();
-            const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
-            const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
-
-            const rawInstructions = data.special_instructions || '';
-            const settledMatch = rawInstructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
-            const isPaid = Boolean(data.is_paid ?? (settledMatch !== null));
-            const paidAt = data.paid_at
-              ? new Date(data.paid_at).getTime()
-              : (settledMatch ? Number(settledMatch[1]) : (data as any).paidAt);
-            const settledBy = data.settled_by || (settledMatch ? settledMatch[2] : (data as any).settledBy);
-            const cleanInstructions = rawInstructions.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
-
-            return {
-              id: data.id,
-              orderNumber,
-              tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
-              tableKey: data.table_key,
-              sessionId: data.session_id,
-              customerName: data.customer_name,
-              customerPhone: data.customer_phone,
-              customerFlat: data.customer_flat,
-              items: data.items || [],
-              subtotal: Number(data.subtotal || data.total),
-              taxAmount: Number(data.tax_amount || 0),
-              total: Number(data.total),
-              specialInstructions: cleanInstructions || undefined,
-              status: data.status as OrderStatus,
-              isPaid,
-              paidAt,
-              settledBy,
-              customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
-              customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
-              distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
-              createdAt: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
-              updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now(),
-            };
-          }
-        } catch (err) {
-          console.warn('Supabase getOrderById error:', err);
-        }
-      }
-
-      const all = globalStore.__anassa_orders || [];
-      return all.find((o) => o.id === orderId) || null;
-    },
-    2.5,
-    ['orders']
-  );
+  assertStorageConfigured();
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.from('orders').select('*').eq('id', orderId).maybeSingle().throwOnError();
+    if (error) throw error;
+    return data ? mapOrderRow(data) : null;
+  }
+  return globalStore.__anassa_orders?.find(o => o.id === orderId) || null;
 }
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
-  const now = Date.now();
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer
-        .from('orders')
-        .update({
-          status,
-          updated_at: new Date(now).toISOString(),
-        })
-        .eq('id', orderId)
-        .select()
-        .single();
-
-      if (!error && data) {
-        const rawNumber = (data.order_number || '').trim();
-        const match = rawNumber.match(/^(?:oz-?anassa|ozanassa)[-_]?(\d+)$/i);
-        const orderNumber = match ? `oz-anassa-${match[1]}` : (rawNumber || 'oz-anassa-1');
-
-        const updatedOrder: Order = {
-          id: data.id,
-          orderNumber,
-          tableNumber: isNaN(Number(data.table_number)) ? data.table_number : Number(data.table_number),
-          tableKey: data.table_key,
-          sessionId: data.session_id,
-          customerName: data.customer_name,
-          customerPhone: data.customer_phone,
-          customerFlat: data.customer_flat,
-          items: data.items || [],
-          subtotal: Number(data.subtotal || data.total),
-          taxAmount: Number(data.tax_amount || 0),
-          total: Number(data.total),
-          specialInstructions: data.special_instructions,
-          status: data.status as OrderStatus,
-          customerLat: data.customer_lat ? Number(data.customer_lat) : undefined,
-          customerLng: data.customer_lng ? Number(data.customer_lng) : undefined,
-          distanceMeters: data.distance_meters ? Number(data.distance_meters) : undefined,
-          createdAt: data.created_at ? new Date(data.created_at).getTime() : now,
-          updatedAt: now,
-        };
-
-        const inMem = globalStore.__anassa_orders?.find((o) => o.id === orderId);
-        if (inMem) {
-          inMem.status = status;
-          inMem.updatedAt = now;
-        }
-
-        broadcastOrder(updatedOrder);
-        invalidateCache('orders');
-        addAuditLog({
-          actor: 'kitchen',
-          action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
-          details: status === 'cancelled'
-            ? `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) rejected / cancelled by kitchen staff`
-            : `Order #${updatedOrder.orderNumber} (Table ${updatedOrder.tableNumber}) status changed to "${status}"`,
-        });
-        saveStoreToDisk();
-        return updatedOrder;
-      }
-    } catch (err) {
-      console.warn('Supabase updateOrderStatus error:', err);
-    }
-  }
-
-  const order = globalStore.__anassa_orders?.find((o) => o.id === orderId);
-  if (order) {
-    order.status = status;
-    order.updatedAt = now;
-    invalidateCache('orders');
-    broadcastOrder(order);
-    saveStoreToDisk();
-    addAuditLog({
-      actor: 'kitchen',
-      action: status === 'cancelled' ? 'ORDER_REJECTED' : 'ORDER_STATUS_CHANGED',
-      details: status === 'cancelled'
-        ? `Order #${order.orderNumber} (Table ${order.tableNumber}) rejected / cancelled by kitchen staff`
-        : `Order #${order.orderNumber} (Table ${order.tableNumber}) status changed to "${status}"`,
-    });
-    return order;
-  }
-  return null;
+  assertStorageConfigured();
+  return updateOrderDetails(orderId, { status }, 'kitchen');
 }
 
-export async function deleteOrder(
-  orderId: string,
-  actor: 'admin' | 'kitchen' = 'admin',
-  permanent: boolean = false
-): Promise<boolean> {
-  loadStoreFromDisk();
-  const existing = globalStore.__anassa_orders || [];
-  const idx = existing.findIndex((o) => o.id === orderId);
-
-  if (permanent) {
-    if (isSupabaseConfigured && supabaseServer) {
-      try {
-        await supabaseServer.from('orders').delete().eq('id', orderId);
-      } catch (err) {
-        console.warn('Supabase deleteOrder permanent error:', err);
-      }
-    }
-    if (idx !== -1) {
-      const deleted = existing.splice(idx, 1)[0];
-      saveStoreToDisk();
-      invalidateCache('orders');
-      broadcastOrder({ ...deleted, status: 'cancelled', isDeleted: true });
-      addAuditLog({
-        actor: actor as any,
-        action: 'ORDER_PURGED',
-        details: `Order #${deleted.orderNumber} permanently purged by ${actor}`,
-      });
-      return true;
-    }
-    return true;
+export async function deleteOrder(orderId: string, actor: 'admin' | 'kitchen' = 'admin', permanent = false): Promise<boolean> {
+  assertStorageConfigured();
+  const order = await getOrderById(orderId);
+  if (!order) return false;
+  if (!permanent) {
+    const updated = await updateOrderDetails(orderId, { status: 'cancelled', isDeleted: true, deletedBy: actor, deletedAt: Date.now() }, actor);
+    return updated !== null;
   }
-
-  // Standard deletion: mark order cancelled & deleted by admin so it is purged from active boards everywhere
-  // while remaining verifiable in audit history and explicitly informing the customer tracker
-  if (idx !== -1) {
-    const target = existing[idx];
-    target.status = 'cancelled';
-    target.isDeleted = true;
-    target.deletedBy = actor;
-    target.deletedAt = Date.now();
-    target.deletionReason = `Deleted by ${actor === 'admin' ? 'Admin' : 'Kitchen'}`;
-    target.updatedAt = Date.now();
-
-    if (isSupabaseConfigured && supabaseServer) {
-      try {
-        await supabaseServer
-          .from('orders')
-          .update({
-            status: 'cancelled',
-            special_instructions: `${target.specialInstructions || ''} [DELETED_BY_${actor.toUpperCase()}]`.trim(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', orderId);
-      } catch (err) {
-        console.warn('Supabase deleteOrder soft-delete error:', err);
-      }
-    }
-
-    saveStoreToDisk();
-    invalidateCache('orders');
-    broadcastOrder(target);
-    addAuditLog({
-      actor: actor as any,
-      action: 'ORDER_DELETED',
-      details: `Order #${target.orderNumber} (₹${target.total}) deleted by ${actor}`,
-    });
-    return true;
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.from('orders').delete().eq('id', orderId).select('id').throwOnError();
+    if (error) throw error;
+    if (!data?.length) return false;
   }
+  globalStore.__anassa_orders = (globalStore.__anassa_orders || []).filter(o => o.id !== orderId);
+  saveStoreToDisk();
+  invalidateCache('orders');
+  broadcastOrder({ ...order, status: 'cancelled', isDeleted: true });
+  await addAuditLog({ actor, action: 'ORDER_PURGED', details: 'Order #' + order.orderNumber + ' permanently deleted' });
   return true;
 }
 
-export async function updateOrderDetails(
-  orderId: string,
-  updates: Partial<Order>,
-  actor: 'admin' | 'kitchen' = 'admin',
-  staffName?: string
-): Promise<Order | null> {
-  const now = Date.now();
-  if (!globalStore.__anassa_orders) globalStore.__anassa_orders = [];
-  let existing = globalStore.__anassa_orders;
-  let idx = existing.findIndex((o) => o.id === orderId);
-
-  // If order is not in memory store, fetch from database or load into memory first!
-  let currentOrder: Order | null = idx !== -1 ? existing[idx] : null;
-  if (!currentOrder) {
-    currentOrder = await getOrderById(orderId);
-    if (currentOrder) {
-      existing.unshift(currentOrder);
-      idx = 0;
-    }
+export async function updateOrderDetails(orderId: string, updates: Partial<Order>, actor: 'admin' | 'kitchen' = 'admin', staffName?: string): Promise<Order | null> {
+  assertStorageConfigured();
+  const current = await getOrderById(orderId);
+  if (!current) return null;
+  const columns: Record<string, string> = { orderNumber: 'order_number', tableNumber: 'table_number', customerName: 'customer_name', customerPhone: 'customer_phone', customerFlat: 'customer_flat', items: 'items', subtotal: 'subtotal', taxAmount: 'tax_amount', total: 'total', specialInstructions: 'special_instructions', status: 'status', isPaid: 'is_paid', paidAt: 'paid_at', settledBy: 'settled_by', createdAt: 'created_at', isDeleted: 'is_deleted', deletedBy: 'deleted_by', deletedAt: 'deleted_at' };
+  const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([k]) => k in columns)) as Partial<Order>;
+  if (safeUpdates.status && !['received', 'preparing', 'ready', 'served', 'cancelled'].includes(safeUpdates.status)) throw new Error('Invalid order status');
+  for (const key of ['subtotal', 'taxAmount', 'total'] as const) {
+    if (safeUpdates[key] !== undefined && (!Number.isFinite(safeUpdates[key]) || safeUpdates[key]! < 0)) throw new Error('Invalid receipt amount');
   }
-
-  // Handle instructions & settlement tag
-  let newInstructions = updates.specialInstructions !== undefined ? updates.specialInstructions : currentOrder?.specialInstructions;
-  let rawInstructionsForDb = newInstructions || '';
-
-  if (updates.isPaid === true) {
-    const sName = updates.settledBy || staffName || (actor === 'kitchen' ? 'Kitchen Staff' : 'Admin');
-    const pTime = updates.paidAt || now;
-    const tag = `[SETTLED:${pTime}:${sName}]`;
-    if (!rawInstructionsForDb.includes('[SETTLED')) {
-      rawInstructionsForDb = rawInstructionsForDb ? `${rawInstructionsForDb} ${tag}` : tag;
-    }
-  } else if (updates.isPaid === false) {
-    rawInstructionsForDb = rawInstructionsForDb.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
+  if (safeUpdates.items && (!Array.isArray(safeUpdates.items) || !safeUpdates.items.length || safeUpdates.items.some(i => !Number.isInteger(i.quantity) || i.quantity < 1 || !Number.isFinite(i.price) || i.price < 0))) throw new Error('Invalid receipt items');
+  if (safeUpdates.isPaid && current.isPaid) {
+    safeUpdates.paidAt = current.paidAt;
+    safeUpdates.settledBy = current.settledBy;
   }
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      const baseUpdates: Record<string, unknown> = {
-        updated_at: new Date(now).toISOString(),
-      };
-      if (updates.orderNumber !== undefined) baseUpdates.order_number = updates.orderNumber;
-      if (updates.tableNumber !== undefined) baseUpdates.table_number = String(updates.tableNumber);
-      if (updates.customerName !== undefined) baseUpdates.customer_name = updates.customerName;
-      if (updates.customerPhone !== undefined) baseUpdates.customer_phone = updates.customerPhone;
-      if (updates.customerFlat !== undefined) baseUpdates.customer_flat = updates.customerFlat;
-      if (updates.items !== undefined) baseUpdates.items = updates.items;
-      if (updates.subtotal !== undefined) baseUpdates.subtotal = updates.subtotal;
-      if (updates.taxAmount !== undefined) baseUpdates.tax_amount = updates.taxAmount;
-      if (updates.total !== undefined) baseUpdates.total = updates.total;
-      if (updates.status !== undefined) baseUpdates.status = updates.status;
-      if (updates.createdAt !== undefined) baseUpdates.created_at = new Date(updates.createdAt).toISOString();
-      if (rawInstructionsForDb !== undefined) baseUpdates.special_instructions = rawInstructionsForDb || null;
-
-      // Try updating with dedicated paid columns first
-      const fullUpdates = {
-        ...baseUpdates,
-        ...(updates.isPaid !== undefined ? { is_paid: updates.isPaid } : {}),
-        ...(updates.paidAt !== undefined ? { paid_at: updates.paidAt ? new Date(updates.paidAt).toISOString() : null } : {}),
-        ...(updates.settledBy !== undefined ? { settled_by: updates.settledBy } : {}),
-      };
-
-      const { error: fullErr } = await supabaseServer.from('orders').update(fullUpdates).eq('id', orderId);
-      if (fullErr) {
-        // If Postgres fails (e.g. column is_paid does not exist), fall back to baseUpdates which is guaranteed to succeed!
-        const { error: baseErr } = await supabaseServer.from('orders').update(baseUpdates).eq('id', orderId);
-        if (baseErr) {
-          console.warn('Supabase base update error:', baseErr.message);
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase updateOrderDetails error:', err);
+  let updated: Order = { ...current, ...safeUpdates, updatedAt: Date.now() };
+  if (supabaseServer) {
+    const dbUpdates: Record<string, unknown> = { updated_at: new Date(updated.updatedAt).toISOString() };
+    for (const [key, value] of Object.entries(safeUpdates)) {
+      dbUpdates[columns[key]] = ['createdAt', 'paidAt', 'deletedAt'].includes(key) ? (value ? new Date(Number(value)).toISOString() : null) : key === 'tableNumber' ? String(value) : value;
     }
+    const { data, error } = await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId).select().maybeSingle().throwOnError();
+    if (error) throw error;
+    if (!data) return null;
+    updated = mapOrderRow(data);
   }
-
-  if (currentOrder && idx !== -1) {
-    const cleanInstructions = rawInstructionsForDb.replace(/\[SETTLED:[^\]]+\]/g, '').trim();
-    existing[idx] = {
-      ...existing[idx],
-      ...updates,
-      specialInstructions: cleanInstructions || undefined,
-      isPaid: updates.isPaid !== undefined ? updates.isPaid : existing[idx].isPaid,
-      paidAt: updates.paidAt !== undefined ? updates.paidAt : existing[idx].paidAt,
-      settledBy: updates.settledBy !== undefined ? updates.settledBy : existing[idx].settledBy,
-      updatedAt: now,
-    };
-    invalidateCache('orders');
-    broadcastOrder(existing[idx]);
-
-    const isSettlement = updates.isPaid === true && (updates.paidAt || true);
-    const actorLabel = actor === 'kitchen' ? `Kitchen Staff (${staffName || 'Mamoni'})` : `Admin (${staffName || 'Floor Manager'})`;
-
-    if (isSettlement) {
-      addAuditLog({
-        actor,
-        action: 'BILL_SETTLED',
-        details: `Bill for Order #${existing[idx].orderNumber} (₹${existing[idx].total}) marked SETTLED/PAID by ${actorLabel}`,
-      });
-    } else {
-      addAuditLog({
-        actor,
-        action: 'RECEIPT_EDITED',
-        details: `Receipt/Order #${existing[idx].orderNumber} edited by ${actorLabel} (Total: ₹${existing[idx].total})`,
-      });
-    }
-    saveStoreToDisk();
-    return existing[idx];
-  }
-  return null;
+  globalStore.__anassa_orders = [updated, ...(globalStore.__anassa_orders || []).filter(o => o.id !== orderId)];
+  saveStoreToDisk();
+  invalidateCache('orders');
+  broadcastOrder(updated);
+  await addAuditLog({ actor, action: updates.isDeleted ? 'ORDER_DELETED' : updates.isPaid ? 'BILL_SETTLED' : updates.status ? 'ORDER_STATUS_CHANGED' : 'RECEIPT_EDITED', details: 'Order #' + updated.orderNumber + ' updated by ' + (staffName || actor) });
+  return updated;
 }
 
 // ──────────────────────────────────────────
 // TABLES & QR VALIDATION
 // ──────────────────────────────────────────
 export async function getTables(includeSecrets: boolean = false): Promise<TableSession[]> {
+  assertStorageConfigured();
   const cacheKey = includeSecrets ? 'tables_with_secrets' : 'tables_public';
   return fetchWithCache(
     cacheKey,
@@ -1446,8 +1034,8 @@ export async function getTables(includeSecrets: boolean = false): Promise<TableS
           const { data, error } = await supabaseServer
             .from('tables')
             .select('*')
-            .order('table_number', { ascending: true });
-          if (!error && data && data.length > 0) {
+            .order('table_number', { ascending: true }).throwOnError();
+          if (!error && data) {
             const loaded: TableSession[] = data.map((t) => ({
               tableNumber: t.table_number,
               label: t.label,
@@ -1457,8 +1045,10 @@ export async function getTables(includeSecrets: boolean = false): Promise<TableS
             globalStore.__anassa_tables = loaded;
           }
         } catch (err) {
-          console.warn('Supabase getTables error, falling back to memory store:', err);
-        }
+          console.warn('Supabase getTables failed:', err);
+
+      throw err;
+    }
       }
 
       const tables = globalStore.__anassa_tables || [];
@@ -1479,20 +1069,22 @@ export async function getTables(includeSecrets: boolean = false): Promise<TableS
 }
 
 export async function getTableByNumber(tableNumber: number | string): Promise<TableSession | null> {
+  assertStorageConfigured();
   const tNum = parseInt(String(tableNumber));
   const tables = await getTables(true);
   return tables.find((t) => t.tableNumber === tNum) || null;
 }
 
 export async function validateTable(tableNumber: number | string, key?: string): Promise<{ valid: boolean; isVerified: boolean; label: string }> {
+  assertStorageConfigured();
   const tNum = parseInt(String(tableNumber));
-  if (isNaN(tNum) || tNum === 0 || String(tableNumber).toLowerCase() === 'takeaway') {
+  if (tNum === 0 || String(tableNumber).toLowerCase() === 'takeaway') {
     return { valid: true, isVerified: true, label: 'Takeaway Counter' };
   }
 
   const tables = await getTables(true);
   const table = tables.find((t) => t.tableNumber === tNum);
-  if (!table) {
+  if (!table || !table.isActive) {
     return { valid: false, isVerified: false, label: `Table ${tableNumber}` };
   }
 
@@ -1501,6 +1093,7 @@ export async function validateTable(tableNumber: number | string, key?: string):
 }
 
 export async function ensureTablesCount(numTables: number): Promise<TableSession[]> {
+  assertStorageConfigured();
   const safeCount = Math.min(Math.max(1, Math.floor(numTables) || 12), 100);
   const current = (await getTables(true)) || [];
   const takeaway = current.find((t) => t.tableNumber === 0) || {
@@ -1536,9 +1129,12 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
           secret_key: t.secretKey,
           is_active: t.isActive,
         }))
-      );
+      ).throwOnError();
+      await supabaseServer.from('tables').delete().gt('table_number', safeCount).throwOnError();
     } catch (err) {
       console.warn('Supabase ensureTablesCount upsert error:', err);
+
+      throw err;
     }
   }
 
@@ -1548,6 +1144,7 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
     details: `Configured table capacity to ${numTables} tables`,
   });
   invalidateCache('tables');
+  saveStoreToDisk();
   return updatedTables;
 }
 
@@ -1555,6 +1152,7 @@ export async function ensureTablesCount(numTables: number): Promise<TableSession
 // CAFE SETTINGS
 // ──────────────────────────────────────────
 export async function getCafeSettings(): Promise<CafeSettings> {
+  assertStorageConfigured();
   return fetchWithCache(
     'cafe_settings_main',
     async () => {
@@ -1564,7 +1162,7 @@ export async function getCafeSettings(): Promise<CafeSettings> {
             .from('cafe_settings')
             .select('value')
             .eq('key', 'main_config')
-            .single();
+            .maybeSingle().throwOnError();
 
           if (!error && data?.value) {
             const loaded: CafeSettings = {
@@ -1575,8 +1173,10 @@ export async function getCafeSettings(): Promise<CafeSettings> {
             return loaded;
           }
         } catch (err) {
-          console.warn('Supabase getCafeSettings error, falling back to memory store:', err);
-        }
+          console.warn('Supabase getCafeSettings failed:', err);
+
+      throw err;
+    }
       }
       return globalStore.__anassa_settings || initialSettings;
     },
@@ -1586,36 +1186,22 @@ export async function getCafeSettings(): Promise<CafeSettings> {
 }
 
 export async function updateCafeSettings(updates: Partial<CafeSettings>): Promise<CafeSettings> {
-  const current = globalStore.__anassa_settings || initialSettings;
-  const merged: CafeSettings = {
-    ...current,
-    ...updates,
-  };
-  globalStore.__anassa_settings = merged;
-  invalidateCache('settings');
-
-  if (isSupabaseConfigured && supabaseServer) {
-    try {
-      await supabaseServer.from('cafe_settings').upsert({
-        key: 'main_config',
-        value: merged,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn('Supabase updateCafeSettings error, kept in memory store:', err);
-    }
+  assertStorageConfigured();
+  let merged = { ...await getCafeSettings(), ...updates };
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.rpc('patch_cafe_config', { config_key: 'main_config', defaults: initialSettings, patch: updates });
+    if (error) throw error;
+    merged = data;
   }
-
-  addAuditLog({
-    actor: 'admin',
-    action: 'SETTINGS_UPDATED',
-    details: `Cafe settings updated (${Object.keys(updates).join(', ')})`,
-  });
-
+  globalStore.__anassa_settings = merged;
+  invalidateCache('settings'); saveStoreToDisk();
+  await addAuditLog({ actor: 'admin', action: 'SETTINGS_UPDATED', details: 'Updated settings: ' + Object.keys(updates).join(', ') });
   return merged;
 }
 
 export async function resetCafeSettings(): Promise<CafeSettings> {
+  assertStorageConfigured();
+  invalidateCache('settings');
   globalStore.__anassa_settings = { ...initialSettings };
 
   if (isSupabaseConfigured && supabaseServer) {
@@ -1624,9 +1210,11 @@ export async function resetCafeSettings(): Promise<CafeSettings> {
         key: 'main_config',
         value: initialSettings,
         updated_at: new Date().toISOString(),
-      });
+      }).throwOnError();
     } catch (err) {
       console.warn('Supabase resetCafeSettings error:', err);
+
+      throw err;
     }
   }
 
@@ -1636,6 +1224,7 @@ export async function resetCafeSettings(): Promise<CafeSettings> {
     details: 'All cafe settings reset to factory defaults',
   });
 
+  saveStoreToDisk();
   return globalStore.__anassa_settings || initialSettings;
 }
 
@@ -1649,6 +1238,7 @@ export async function addAuditLog(entry: {
   ipAddress?: string;
   userAgent?: string;
 }): Promise<AuditLog> {
+  assertStorageConfigured();
   const now = Date.now();
   const log: AuditLog = {
     id: `log-${now}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1670,9 +1260,9 @@ export async function addAuditLog(entry: {
         ip_address: log.ipAddress,
         user_agent: log.userAgent,
         created_at: new Date(now).toISOString(),
-      });
+      }).throwOnError();
     } catch (err) {
-      console.warn('Supabase addAuditLog error, kept in memory store:', err);
+      console.warn('Supabase addAuditLog failed:', err);
     }
   }
 
@@ -1689,6 +1279,7 @@ export async function getAuditLogs(options?: {
   action?: string;
   actor?: string;
 }): Promise<AuditLog[]> {
+  assertStorageConfigured();
   const limit = options?.limit || 50;
 
   if (isSupabaseConfigured && supabaseServer) {
@@ -1702,7 +1293,7 @@ export async function getAuditLogs(options?: {
       if (options?.action) query = query.eq('action', options.action);
       if (options?.actor) query = query.eq('actor', options.actor);
 
-      const { data, error } = await query;
+      const { data, error } = await query.throwOnError();
       if (!error && data && data.length > 0) {
         return data.map((d) => ({
           id: d.id,
@@ -1715,7 +1306,9 @@ export async function getAuditLogs(options?: {
         }));
       }
     } catch (err) {
-      console.warn('Supabase getAuditLogs error, falling back to memory store:', err);
+      console.warn('Supabase getAuditLogs failed:', err);
+
+      throw err;
     }
   }
 
@@ -1733,22 +1326,21 @@ export async function getAuditLogs(options?: {
 // DATABASE PURGE (PRODUCTION LIVE LAUNCH)
 // ──────────────────────────────────────────
 export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; ordersCleared: number; logsCleared: number }> {
+  assertStorageConfigured();
   const ordersCount = globalStore.__anassa_orders?.length || 0;
   const logsCount = globalStore.__anassa_audit_logs?.length || 0;
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
       // 1. Delete all orders from Supabase using multiple delete filters for total reliability
-      await supabaseServer.from('orders').delete().neq('id', '');
-      await supabaseServer.from('orders').delete().not('id', 'is', null);
-      await supabaseServer.from('orders').delete().gt('created_at', '1970-01-01T00:00:00Z');
+      await supabaseServer.from('orders').delete().neq('id', '').throwOnError();
 
       // 2. Delete all audit logs from Supabase
-      await supabaseServer.from('audit_logs').delete().neq('id', '');
-      await supabaseServer.from('audit_logs').delete().not('id', 'is', null);
-      await supabaseServer.from('audit_logs').delete().gt('created_at', '1970-01-01T00:00:00Z');
+      await supabaseServer.from('audit_logs').delete().neq('id', '').throwOnError();
     } catch (err) {
       console.warn('Supabase purgeAllOrdersAndLogs error:', err);
+
+      throw err;
     }
   }
 
@@ -1759,6 +1351,7 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
   invalidateCache('orders');
   invalidateCache('audit');
 
+  saveStoreToDisk();
   // Log clean start audit entry
   addAuditLog({
     actor: 'admin',
@@ -1773,6 +1366,7 @@ export async function purgeAllOrdersAndLogs(): Promise<{ success: boolean; order
 // SYNC MENU ITEMS & CATEGORIES TO DATABASE
 // ──────────────────────────────────────────
 export async function syncMenuToDatabase(): Promise<{ success: boolean; categoriesCount: number; itemsCount: number }> {
+  assertStorageConfigured();
   globalStore.__anassa_categories = [...initialCategories];
   globalStore.__anassa_items = [...initialMenuItems];
   globalStore.__anassa_addons = [...initialAddons];
@@ -1783,8 +1377,7 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
   if (isSupabaseConfigured && supabaseServer) {
     try {
       // Upsert categories
-      for (const cat of initialCategories) {
-        await supabaseServer.from('categories').upsert({
+      await supabaseServer.from('categories').upsert(initialCategories.map(cat => ({
           id: cat.id,
           title: cat.title,
           subtitle: cat.subtitle,
@@ -1793,12 +1386,10 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
           icon_svg: cat.iconSvg,
           sort_order: cat.sortOrder,
           is_active: true,
-        });
-      }
+        }))).throwOnError();
 
       // Upsert menu items
-      for (const it of initialMenuItems) {
-        await supabaseServer.from('menu_items').upsert({
+      await supabaseServer.from('menu_items').upsert(initialMenuItems.map(it => ({
           id: it.id,
           category_id: it.categoryId,
           category_name: it.category,
@@ -1813,8 +1404,7 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
           sizes: it.sizes,
           size_price_multiplier: it.sizePriceMultiplier || null,
           sort_order: it.sortOrder,
-        });
-      }
+        }))).throwOnError();
 
       addAuditLog({
         actor: 'admin',
@@ -1823,9 +1413,12 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
       });
     } catch (err) {
       console.warn('Supabase syncMenuToDatabase error:', err);
+
+      throw err;
     }
   }
 
+  invalidateCache('menu'); invalidateCache('stock'); saveStoreToDisk();
   return { success: true, categoriesCount: catCount, itemsCount: itemCount };
 }
 
@@ -1833,11 +1426,18 @@ export async function syncMenuToDatabase(): Promise<{ success: boolean; categori
 // INVENTORY MANAGEMENT
 // ──────────────────────────────────────────
 export async function getInventory(): Promise<InventoryItem[]> {
+  assertStorageConfigured();
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.from('cafe_settings').select('key,value').like('key', 'inventory:%');
+    if (error) throw error;
+    return initialInventory.map(i => data?.find(row => row.key === 'inventory:' + i.id)?.value || i);
+  }
   return globalStore.__anassa_inventory || initialInventory;
 }
 
 export async function restockInventoryItem(id: string, amount: number): Promise<InventoryItem | null> {
-  const items = globalStore.__anassa_inventory || [];
+  assertStorageConfigured();
+  const items = structuredClone(await getInventory());
   const item = items.find((i) => i.id === id);
   if (!item) return null;
 
@@ -1849,6 +1449,8 @@ export async function restockInventoryItem(id: string, amount: number): Promise<
       ? 'low_stock' 
       : 'in_stock';
 
+  await persistConfigEntry('inventory:' + id, item);
+  globalStore.__anassa_inventory = items; saveStoreToDisk();
   addAuditLog({
     actor: 'admin',
     action: 'STOCK_TOGGLED',
@@ -1859,7 +1461,8 @@ export async function restockInventoryItem(id: string, amount: number): Promise<
 }
 
 export async function updateInventoryItem(id: string, updates: Partial<InventoryItem>): Promise<InventoryItem | null> {
-  const items = globalStore.__anassa_inventory || [];
+  assertStorageConfigured();
+  const items = structuredClone(await getInventory());
   const index = items.findIndex((i) => i.id === id);
   if (index === -1) return null;
 
@@ -1877,7 +1480,9 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
     updated.status = 'in_stock';
   }
 
+  await persistConfigEntry('inventory:' + id, updated);
   items[index] = updated;
+  globalStore.__anassa_inventory = items; saveStoreToDisk();
   return updated;
 }
 
@@ -1885,18 +1490,24 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
 // STAFF SCHEDULE & SHIFTS
 // ──────────────────────────────────────────
 export async function getStaffSchedule(): Promise<StaffShift[]> {
-  if (!globalStore.__anassa_staff || globalStore.__anassa_staff.some((s) => s.name === 'Rahul Sharma' || s.name === 'Vikram Ghosh')) {
-    globalStore.__anassa_staff = [...initialStaff];
+  assertStorageConfigured();
+  if (supabaseServer) {
+    const { data, error } = await supabaseServer.from('cafe_settings').select('key,value').like('key', 'shift:%');
+    if (error) throw error;
+    return initialStaff.map(i => data?.find(row => row.key === 'shift:' + i.id)?.value || i);
   }
-  return globalStore.__anassa_staff;
+  return globalStore.__anassa_staff || initialStaff;
 }
 
 export async function updateStaffStatus(id: string, status: 'on_duty' | 'break' | 'off_duty'): Promise<StaffShift | null> {
-  const roster = globalStore.__anassa_staff || [];
+  assertStorageConfigured();
+  const roster = structuredClone(await getStaffSchedule());
   const staff = roster.find((s) => s.id === id);
   if (!staff) return null;
 
   staff.status = status;
+  await persistConfigEntry('shift:' + id, staff);
+  globalStore.__anassa_staff = roster; saveStoreToDisk();
   addAuditLog({
     actor: 'admin',
     action: 'SETTINGS_UPDATED',
@@ -1907,3 +1518,42 @@ export async function updateStaffStatus(id: string, status: 'on_duty' | 'break' 
 }
 
 
+
+// A single database-to-domain mapping is used for reads and mutation responses.
+interface OrderRow {
+  id: string; order_number: string; table_number: string; table_key?: string; session_id?: string; idempotency_key?: string;
+  customer_name: string; customer_phone: string; customer_flat?: string; items: Order['items'];
+  subtotal: number | string; tax_amount: number | string; total: number | string; special_instructions?: string;
+  status: OrderStatus; is_paid?: boolean; paid_at?: string; settled_by?: string; is_deleted?: boolean; deleted_by?: string; deleted_at?: string;
+  customer_lat?: string | number; customer_lng?: string | number; distance_meters?: string | number; created_at: string; updated_at: string;
+}
+function mapOrderRow(row: OrderRow): Order {
+  const instructions = row.special_instructions || '';
+  const settled = instructions.match(/\[SETTLED:(\d+):([^\]]+)\]/);
+  const deleted = instructions.match(/\[DELETED_BY_([^\]]+)\]/);
+  return {
+    id: row.id, orderNumber: row.order_number, tableNumber: row.table_number,
+    tableKey: row.table_key, sessionId: row.session_id, idempotencyKey: row.idempotency_key,
+    customerName: row.customer_name, customerPhone: row.customer_phone, customerFlat: row.customer_flat,
+    items: row.items || [], subtotal: Number(row.subtotal ?? row.total), taxAmount: Number(row.tax_amount ?? 0), total: Number(row.total),
+    specialInstructions: instructions.replace(/\[(?:SETTLED|DELETED_BY_)[^\]]*\]/g, '').trim(),
+    status: row.status, isPaid: Boolean(row.is_paid || settled),
+    paidAt: row.paid_at ? Date.parse(row.paid_at) : settled ? Number(settled[1]) : undefined,
+    settledBy: row.settled_by || settled?.[2], isDeleted: Boolean(row.is_deleted || deleted),
+    deletedBy: row.deleted_by || deleted?.[1]?.toLowerCase(), deletedAt: row.deleted_at ? Date.parse(row.deleted_at) : undefined,
+    customerLat: row.customer_lat == null ? undefined : Number(row.customer_lat), customerLng: row.customer_lng == null ? undefined : Number(row.customer_lng),
+    distanceMeters: row.distance_meters == null ? undefined : Number(row.distance_meters),
+    createdAt: Date.parse(row.created_at), updatedAt: Date.parse(row.updated_at),
+  };
+}
+
+export async function createOrder(data: Parameters<typeof createOrderUnlocked>[0]): Promise<Order> {
+  if (supabaseServer) return createOrderUnlocked(data);
+  const write = (globalStore.__anassa_local_write || Promise.resolve()).then(() => createOrderUnlocked(data));
+  globalStore.__anassa_local_write = write.catch(() => {});
+  return write;
+}
+
+async function persistConfigEntry(key: string, value: InventoryItem | StaffShift): Promise<void> {
+  if (supabaseServer) { const { error } = await supabaseServer.from('cafe_settings').upsert({ key, value, updated_at: new Date().toISOString() }); if (error) throw error; }
+}

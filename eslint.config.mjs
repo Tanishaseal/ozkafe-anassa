@@ -12,8 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "scratch/**",
   ]),
   {
+    files: ["src/**/*.{ts,tsx,js,jsx}"],
     rules: {
       "react/no-unescaped-entities": "off",
       "@typescript-eslint/no-unused-vars": "warn",
@@ -22,6 +24,10 @@ const eslintConfig = defineConfig([
       "react-hooks/immutability": "off",
       "react-hooks/purity": "off",
     },
+  },
+  {
+    files: ["tests/**/*.cjs", "scripts/**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ]);
 

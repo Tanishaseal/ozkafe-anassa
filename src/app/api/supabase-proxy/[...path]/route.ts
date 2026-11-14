@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { verifyAuthHeaderOrCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,9 @@ async function proxyRequest(
   request: Request,
   params: Promise<{ path: string[] }>
 ): Promise<Response> {
+  if (!verifyAuthHeaderOrCookie(request, ['admin'])) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 

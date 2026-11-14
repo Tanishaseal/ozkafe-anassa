@@ -1,57 +1,52 @@
 import { subscribeToOrders } from '@/lib/store';
-import { Order } from '@/lib/types';
+import { supabaseServer } from '@/lib/supabaseServer';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(request: Request) {
-  // Guard: Only authenticated kitchen staff or admin can subscribe to real-time order stream
-  if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) {
-    return new Response(JSON.stringify({ error: 'Unauthorized. Kitchen staff access required.' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
+  if (!verifyAuthHeaderOrCookie(request, ['kitchen', 'admin'])) return Response.json({ error: 'Unauthorized' }, { status: 401 });
   const encoder = new TextEncoder();
-
+  let cleanup = () => {};
   const stream = new ReadableStream({
     start(controller) {
-      // Send initial heartbeat
-      controller.enqueue(encoder.encode(`event: connected\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`));
-
-      // Subscribe to internal order updates
-      const unsubscribe = subscribeToOrders((order: Order) => {
-        try {
-          controller.enqueue(encoder.encode(`event: order\ndata: ${JSON.stringify(order)}\n\n`));
-        } catch {
-          unsubscribe();
-        }
-      });
-
-      // Keepalive ping every 15s to keep connections open
-      const interval = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: ping\n\n`));
-        } catch {
-          clearInterval(interval);
-          unsubscribe();
-        }
-      }, 15000);
-
-      // Clean up on cancel
-      return () => {
-        clearInterval(interval);
-        unsubscribe();
+      let closed = false;
+      let busy = false;
+      let lastRevision = '';
+      const send = (event: string) => {
+        if (!closed) controller.enqueue(encoder.encode('event: ' + event + '\ndata: {}\n\n'));
       };
+      send('connected');
+      const unsubscribe = subscribeToOrders(() => send('order'));
+      const interval = setInterval(async () => {
+        if (closed || busy) return;
+        busy = true;
+        try {
+          if (supabaseServer) {
+            const { data, error } = await supabaseServer.from('orders').select('id,updated_at').order('updated_at', { ascending: false }).limit(1);
+            if (error) throw error;
+            const revision = JSON.stringify(data);
+            if (revision !== lastRevision) { lastRevision = revision; send('order'); }
+          }
+          if (!closed) controller.enqueue(encoder.encode(': ping\n\n'));
+        } catch { /* Independent screen polling covers connection failures. */ }
+        finally { busy = false; }
+      }, 3000);
+      const expiry = setTimeout(() => { cleanup(); controller.close(); }, 25000);
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(interval); clearTimeout(expiry); unsubscribe();
+        request.signal.removeEventListener('abort', onAbort);
+      };
+      const onAbort = () => { cleanup(); try { controller.close(); } catch {} };
+      request.signal.addEventListener('abort', onAbort, { once: true });
+      if (request.signal.aborted) onAbort();
     },
+    cancel() { cleanup(); },
   });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-    },
-  });
+  return new Response(stream, { headers: {
+    'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no',
+  } });
 }

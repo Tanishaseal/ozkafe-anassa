@@ -28,9 +28,9 @@ interface ProxyFetchConfig {
 }
 
 const DEFAULT_CONFIG: ProxyFetchConfig = {
-  maxRetries: 3,
+  maxRetries: 1,
   baseDelayMs: 500,
-  timeoutMs: 15000,
+  timeoutMs: 4000,
   verbose: process.env.NODE_ENV === 'development',
 };
 
@@ -100,6 +100,8 @@ export function createProxyFetch(config: Partial<ProxyFetchConfig> = {}): FetchF
   const proxyFetch: FetchFn = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     const method = init?.method || (input instanceof Request ? input.method : 'GET');
+    // A timed-out write may already have committed. Only retry reads here.
+    const maxRetries = ['GET', 'HEAD'].includes(method.toUpperCase()) ? cfg.maxRetries : 0;
 
     // Extract a short label for logging (e.g., "/rest/v1/orders" from the full Supabase URL)
     let shortPath = url;
@@ -112,7 +114,7 @@ export function createProxyFetch(config: Partial<ProxyFetchConfig> = {}): FetchF
 
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt <= cfg.maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       // Back-off delay for retries (skip for first attempt)
       if (attempt > 0) {
         const delay = cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 200;
@@ -141,7 +143,7 @@ export function createProxyFetch(config: Partial<ProxyFetchConfig> = {}): FetchF
         clearTimeout(timeoutId);
 
         // If the response status is retriable, keep trying
-        if (isRetriableStatus(response.status) && attempt < cfg.maxRetries) {
+        if (isRetriableStatus(response.status) && attempt < maxRetries) {
           proxyLog('warn', `Retriable HTTP ${response.status}`, {
             method,
             path: shortPath,
@@ -158,7 +160,7 @@ export function createProxyFetch(config: Partial<ProxyFetchConfig> = {}): FetchF
         clearTimeout(timeoutId);
         lastError = error;
 
-        if (!isRetriableError(error) || attempt >= cfg.maxRetries) {
+        if (init?.signal?.aborted || !isRetriableError(error) || attempt >= maxRetries) {
           // Non-retriable or exhausted retries — throw
           proxyLog('error', `Request failed after ${attempt + 1} attempt(s)`, {
             method,
