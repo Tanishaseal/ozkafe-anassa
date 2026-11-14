@@ -19,5 +19,6 @@ async function main(){
   await waitFor('http://localhost:3101/api/health');await waitFor('http://localhost:3102/api/health');
   await run(['--test','tests/workflow.test.cjs']);
   await run(['--test','tests/instances.test.cjs']);
+  await run(['--test','tests/legacy-orders.test.cjs']);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{for(const p of children){if(process.platform==='win32')spawnSync('taskkill',['/pid',String(p.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});else p.kill();}});

@@ -1,10 +1,9 @@
 import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction, InventoryItem, StaffShift } from './types';
 import { initialCategories, initialMenuItems, initialAddons, initialSettings, initialInventory, initialStaff } from './initialData';
-import { supabaseServer, isSupabaseConfigured } from './supabaseServer';
+import { supabaseServer, isSupabaseConfigured, assertStorageConfigured } from './supabaseServer';
 import { fetchWithCache, invalidateCache } from './cache';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
-import { assertStorageConfigured } from './supabaseServer';
 import path from 'path';
 
 // Local storage backup file path (persists in-memory state across restarts/workers)
@@ -762,11 +761,7 @@ async function createOrderUnlocked(data: {
 
   if (isSupabaseConfigured && supabaseServer) {
     try {
-      let instructionsForDb = newOrder.specialInstructions || '';
-      if (newOrder.isPaid && !instructionsForDb.includes('[SETTLED')) {
-        const tag = `[SETTLED:${now}:${newOrder.settledBy || 'Staff'}]`;
-        instructionsForDb = instructionsForDb ? `${instructionsForDb} ${tag}` : tag;
-      }
+      const instructionsForDb = orderInstructionsWithMetadata(newOrder);
 
       const baseInsertPayload = {
         id: newOrder.id,
@@ -826,7 +821,6 @@ async function createOrderUnlocked(data: {
   invalidateCache('orders');
   invalidateCache('menu');
   invalidateCache('stock');
-  saveStoreToDisk();
   broadcastOrder(newOrder);
   addAuditLog({
     actor: 'customer',
@@ -986,6 +980,14 @@ export async function deleteOrder(orderId: string, actor: 'admin' | 'kitchen' = 
   return true;
 }
 
+function orderInstructionsWithMetadata(order: Order): string {
+  const notes = (order.specialInstructions || '').replace(/\[(?:SETTLED|DELETED_BY_)[^\]]*\]/g, '').trim();
+  const markers = [notes];
+  if (order.isPaid) markers.push('[SETTLED:' + (order.paidAt || order.updatedAt) + ':' + (order.settledBy || 'Staff').replace(/[\[\]:]/g, '') + ']');
+  if (order.isDeleted) markers.push('[DELETED_BY_' + (order.deletedBy || 'admin').toUpperCase() + ']');
+  return markers.filter(Boolean).join(' ');
+}
+
 export async function updateOrderDetails(orderId: string, updates: Partial<Order>, actor: 'admin' | 'kitchen' = 'admin', staffName?: string): Promise<Order | null> {
   assertStorageConfigured();
   const current = await getOrderById(orderId);
@@ -1007,7 +1009,19 @@ export async function updateOrderDetails(orderId: string, updates: Partial<Order
     for (const [key, value] of Object.entries(safeUpdates)) {
       dbUpdates[columns[key]] = ['createdAt', 'paidAt', 'deletedAt'].includes(key) ? (value ? new Date(Number(value)).toISOString() : null) : key === 'tableNumber' ? String(value) : value;
     }
-    const { data, error } = await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId).select().maybeSingle().throwOnError();
+    // Receipt edits must not erase persisted legacy payment/deletion markers.
+    if ('specialInstructions' in safeUpdates) dbUpdates.special_instructions = orderInstructionsWithMetadata(updated);
+    let { data, error } = await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId).select().maybeSingle();
+    // Older installations store these flags in special_instructions. Only retry
+    // a missing-column rejection (the original UPDATE did not execute), never
+    // a timeout or authorization failure with an uncertain outcome.
+    const metadataColumns = ['is_deleted', 'deleted_by', 'deleted_at', 'is_paid', 'paid_at', 'settled_by'];
+    if (error && ['42703', 'PGRST204'].includes(error.code)
+      && metadataColumns.some(column => column in dbUpdates && error!.message.includes(column))) {
+      for (const column of metadataColumns) delete dbUpdates[column];
+      dbUpdates.special_instructions = orderInstructionsWithMetadata(updated);
+      ({ data, error } = await supabaseServer.from('orders').update(dbUpdates).eq('id', orderId).select().maybeSingle());
+    }
     if (error) throw error;
     if (!data) return null;
     updated = mapOrderRow(data);
@@ -1540,7 +1554,7 @@ function mapOrderRow(row: OrderRow): Order {
     status: row.status, isPaid: Boolean(row.is_paid || settled),
     paidAt: row.paid_at ? Date.parse(row.paid_at) : settled ? Number(settled[1]) : undefined,
     settledBy: row.settled_by || settled?.[2], isDeleted: Boolean(row.is_deleted || deleted),
-    deletedBy: row.deleted_by || deleted?.[1]?.toLowerCase(), deletedAt: row.deleted_at ? Date.parse(row.deleted_at) : undefined,
+    deletedBy: row.deleted_by || deleted?.[1]?.toLowerCase(), deletedAt: row.deleted_at ? Date.parse(row.deleted_at) : deleted ? Date.parse(row.updated_at) : undefined,
     customerLat: row.customer_lat == null ? undefined : Number(row.customer_lat), customerLng: row.customer_lng == null ? undefined : Number(row.customer_lng),
     distanceMeters: row.distance_meters == null ? undefined : Number(row.distance_meters),
     createdAt: Date.parse(row.created_at), updatedAt: Date.parse(row.updated_at),

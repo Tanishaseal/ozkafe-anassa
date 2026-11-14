@@ -6,7 +6,7 @@ const { PGlite } = require('@electric-sql/pglite');
 const ts = require('typescript');
 const db = new PGlite();
 const ident = s => { if (!/^[a-z_][a-z_0-9]*$/i.test(s)) throw Error('Invalid identifier'); return '"' + s + '"'; };
-const tables = new Set(['orders','menu_items','categories','cafe_settings','tables','audit_logs']);
+const tables = new Set(['orders','menu_items','categories','cafe_settings','tables','audit_logs','order_counter']);
 async function start() {
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
   const schema = fs.readFileSync('supabase/schema.sql','utf8').replace(/CREATE EXTENSION[^;]+;/g,'').replace(/DO \$\$[\s\S]*?END \$\$;/g,'').replace(/ALTER PUBLICATION[^;]+;/g,'');
@@ -21,6 +21,12 @@ async function start() {
     try {
       const url = new URL(req.url, 'http://localhost');
       if (url.pathname === '/health') { res.end('ok'); return; }
+      // Local-only fixture: reproduce the production schema gap after creating
+      // test orders. This server binds exclusively to the loopback interface.
+      if (url.pathname === '/test/legacy-orders' && req.method === 'POST') {
+        await db.exec('ALTER TABLE orders DROP COLUMN is_deleted, DROP COLUMN deleted_by, DROP COLUMN deleted_at, DROP COLUMN is_paid, DROP COLUMN paid_at, DROP COLUMN settled_by');
+        res.end('ok'); return;
+      }
       let text=''; for await (const chunk of req) text += chunk;
       const body = text ? JSON.parse(text) : null;
       const path = url.pathname.replace('/rest/v1/', '');
