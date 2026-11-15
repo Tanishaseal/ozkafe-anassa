@@ -1,4 +1,5 @@
 'use client';
+import { Icon, IconText } from '@/components/Icon';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
@@ -1848,7 +1849,7 @@ export default function AdminPage() {
                   <div className="admin-notification-popover">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                       <strong style={{ fontSize: 13, color: 'var(--adm-text-main)' }}>Floor Alerts ({activeAlerts.length})</strong>
-                      <button onClick={() => setIsNotificationsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--adm-text-muted)' }}>✕</button>
+                      <button onClick={() => setIsNotificationsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--adm-text-muted)' }} aria-label="Close"><Icon name="close" /></button>
                     </div>
                     {activeAlerts.length === 0 ? (
                       <div style={{ fontSize: 12, color: 'var(--adm-text-muted)', padding: '12px 0', textAlign: 'center' }}>
@@ -2001,7 +2002,7 @@ export default function AdminPage() {
               zIndex: 30,
             }}
           >
-            {saveSuccessMsg}
+            <IconText>{saveSuccessMsg}</IconText>
           </div>
         )}
 
@@ -2182,14 +2183,14 @@ export default function AdminPage() {
                               <span className="admin-order-num">{ord.orderNumber}</span>
                               <span className="admin-order-table-badge">Table {ord.tableNumber}</span>
                               <span className={`admin-order-timer ${isDelayed ? 'danger' : isWarning ? 'warning' : ''}`}>
-                                ⏱ {elapsed}m
+                                <Icon name="clock" /> {elapsed}m
                               </span>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
-                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                               <span>•</span>
-                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
 
                             <div className="admin-order-customer">
@@ -2218,8 +2219,8 @@ export default function AdminPage() {
                                 onClick={() => setSelectedReceiptOrder(ord)}
                                 className="admin-btn-action receipt"
                                 title="Print thermal receipt"
-                              >
-                                🖨
+                               aria-label="Print">
+                                <Icon name="printer" />
                               </button>
                             </div>
                           </div>
@@ -2255,14 +2256,14 @@ export default function AdminPage() {
                               <span className="admin-order-num">{ord.orderNumber}</span>
                               <span className="admin-order-table-badge">Table {ord.tableNumber}</span>
                               <span className={`admin-order-timer ${isDelayed ? 'danger' : isWarning ? 'warning' : ''}`}>
-                                ⏱ {elapsed}m
+                                <Icon name="clock" /> {elapsed}m
                               </span>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
-                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                               <span>•</span>
-                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
 
                             <div className="admin-order-customer">
@@ -2290,8 +2291,8 @@ export default function AdminPage() {
                                 onClick={() => setSelectedReceiptOrder(ord)}
                                 className="admin-btn-action receipt"
                                 title="Print thermal receipt"
-                              >
-                                🖨
+                               aria-label="Print">
+                                <Icon name="printer" />
                               </button>
                             </div>
                           </div>
@@ -2327,9 +2328,9 @@ export default function AdminPage() {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
-                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                               <span>•</span>
-                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
 
                             <div className="admin-order-customer">
@@ -2358,8 +2359,8 @@ export default function AdminPage() {
                                 onClick={() => setSelectedReceiptOrder(ord)}
                                 className="admin-btn-action receipt"
                                 title="Print thermal receipt"
-                              >
-                                🖨
+                               aria-label="Print">
+                                <Icon name="printer" />
                               </button>
                             </div>
                           </div>
@@ -2384,7 +2385,7 @@ export default function AdminPage() {
                   <div className="admin-order-cards-list">
                     {unsettledOrders.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--adm-text-muted)', fontSize: 13 }}>
-                        <div style={{ fontSize: 24, marginBottom: 8 }}>💳</div>
+                        <div style={{ fontSize: 24, marginBottom: 8 }}><Icon name="card" /></div>
                         <div style={{ fontWeight: 600 }}>No bills awaiting settlement</div>
                         <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>
                           Orders move here after being served until payment is confirmed.
@@ -2402,13 +2403,13 @@ export default function AdminPage() {
                                   ? 'Takeaway'
                                   : `Table ${ord.tableNumber}`}
                               </span>
-                              <span className="admin-order-timer">⏱ {elapsed}m</span>
+                              <span className="admin-order-timer"><Icon name="clock" /> {elapsed}m</span>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)', margin: '4px 0 6px 0' }}>
-                              <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                               <span>•</span>
-                              <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
 
                             <div className="admin-order-customer">
@@ -2437,7 +2438,7 @@ export default function AdminPage() {
                                 style={{ flex: 1.8 }}
                                 title="Confirm payment collected and settle bill"
                               >
-                                💳 Mark Settled
+                                <Icon name="card" /> Mark Settled
                               </button>
                               <button
                                 onClick={() => setSelectedReceiptOrder(ord)}
@@ -2445,7 +2446,7 @@ export default function AdminPage() {
                                 title="Print thermal receipt"
                                 style={{ flex: 1 }}
                               >
-                                🧾 Bill
+                                <Icon name="receipt" /> Bill
                               </button>
                               <button
                                 onClick={() => handleOpenEditReceipt(ord)}
@@ -2453,7 +2454,7 @@ export default function AdminPage() {
                                 title="Edit receipt items and rates"
                                 style={{ flex: 1, background: 'var(--adm-surface-dim)', color: 'var(--adm-text-main)', border: '1px solid var(--adm-border)' }}
                               >
-                                ✏️ Edit
+                                <Icon name="edit" /> Edit
                               </button>
                             </div>
                           </div>
@@ -2490,7 +2491,7 @@ export default function AdminPage() {
                       className="admin-form-select"
                       style={{ fontWeight: 600 }}
                     >
-                      <option value="all">📅 All Months ({orders.length} orders)</option>
+                      <option value="all"> All Months ({orders.length} orders)</option>
                       {availableMonths.map((mKey) => {
                         const count = orders.filter((o) => {
                           const d = new Date(o.createdAt);
@@ -2528,7 +2529,7 @@ export default function AdminPage() {
                     </button>
                     <div className="admin-table-actions-row">
                       <button onClick={handleExportCSV} className="admin-btn-gps-calibrate">
-                        📥 Export CSV
+                        <Icon name="download" /> Export CSV
                       </button>
                       <button
                         onClick={() => setIsWipeModalOpen(true)}
@@ -2536,7 +2537,7 @@ export default function AdminPage() {
                         style={{ height: 40, fontSize: 13, padding: '0 12px', justifyContent: 'center' }}
                         title="Clear all test orders and sales history to start afresh"
                       >
-                        🗑 Clear All Data
+                        <Icon name="trash" /> Clear All Data
                       </button>
                     </div>
                   </div>
@@ -2592,7 +2593,7 @@ export default function AdminPage() {
 
                 {filteredOrders.length === 0 ? (
                   <div className="admin-empty-card">
-                    <div className="admin-empty-icon">📋</div>
+                    <div className="admin-empty-icon"><Icon name="clipboard" /></div>
                     <h3 className="admin-empty-title">No Orders in Live Feed</h3>
                     <p className="admin-empty-desc">
                       Customer dining and takeaway orders will appear here automatically in real time as guests place them.
@@ -2624,7 +2625,7 @@ export default function AdminPage() {
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 15 }}>🗓️</span>
+                            <span style={{ fontSize: 15 }}><Icon name="calendar" /></span>
                             <span style={{ color: 'var(--adm-text-main, #292524)', fontWeight: 800 }}>{group.monthLabel}</span>
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--adm-text-muted)' }}>
                               ({group.orders.length} order{group.orders.length === 1 ? '' : 's'})
@@ -2686,11 +2687,11 @@ export default function AdminPage() {
                                       </span>
                                     {ord.isPaid ? (
                                       <span style={{ fontSize: 10, fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                                        ✓ PAID
+                                        <Icon name="check" /> PAID
                                       </span>
                                     ) : (
                                       <span style={{ fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                                        ⏳ UNSETTLED
+                                        <Icon name="clock" /> UNSETTLED
                                       </span>
                                     )}
                                   </div>
@@ -2859,7 +2860,7 @@ export default function AdminPage() {
                         cursor: (isManualRefreshingAdmin || adminRefreshCooldown > 0) ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {isManualRefreshingAdmin ? '⏳ Refreshing...' : adminRefreshSuccess ? '✓ Updated' : '🔄 Refresh'}
+                      <IconText>{isManualRefreshingAdmin ? '⏳ Refreshing...' : adminRefreshSuccess ? '✓ Updated' : '🔄 Refresh'}</IconText>
                     </button>
                   </div>
                 </div>
@@ -2868,7 +2869,7 @@ export default function AdminPage() {
               {/* Unsettled Bills List / Grid */}
               {filteredSettlementOrders.length === 0 ? (
                 <div className="admin-card" style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--adm-text-muted)' }}>
-                  <div style={{ fontSize: 42, marginBottom: 12 }}>🎉</div>
+                  <div style={{ fontSize: 42, marginBottom: 12 }}><Icon name="sparkles" /></div>
                   <h3 style={{ margin: '0 0 6px', color: 'var(--adm-text-main)', fontSize: 18, fontWeight: 700 }}>
                     {unsettledOrders.length === 0 ? 'All Bills are Settled!' : 'No matching unsettled bills'}
                   </h3>
@@ -2896,11 +2897,11 @@ export default function AdminPage() {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--adm-text-muted)' }}>
-                          <span>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           <span>•</span>
-                          <span>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                           <span>•</span>
-                          <span>⏱ {elapsed}m ago</span>
+                          <span><Icon name="clock" /> {elapsed}m ago</span>
                         </div>
 
                         <div style={{ fontSize: 13, color: 'var(--adm-text-main)', borderTop: '1px solid var(--adm-border)', paddingTop: 8 }}>
@@ -2932,7 +2933,7 @@ export default function AdminPage() {
                             style={{ flex: 2, height: 42, fontSize: 13.5, fontWeight: 700 }}
                             title="Confirm payment collected and mark paid"
                           >
-                            💳 Mark Settled
+                            <Icon name="card" /> Mark Settled
                           </button>
                           <button
                             onClick={() => setSelectedReceiptOrder(ord)}
@@ -2940,7 +2941,7 @@ export default function AdminPage() {
                             style={{ flex: 1, height: 42, fontSize: 13 }}
                             title="View & Print thermal receipt"
                           >
-                            🧾 Bill
+                            <Icon name="receipt" /> Bill
                           </button>
                           <button
                             onClick={() => handleOpenEditReceipt(ord)}
@@ -2948,7 +2949,7 @@ export default function AdminPage() {
                             style={{ flex: 1, height: 42, fontSize: 13, background: 'var(--adm-surface-dim)', color: 'var(--adm-text-main)', border: '1px solid var(--adm-border)' }}
                             title="Edit receipt items and customer details"
                           >
-                            ✏️ Edit
+                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -2982,7 +2983,7 @@ export default function AdminPage() {
                       <option value="all">All Categories ({menuItems.length})</option>
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.emoji} {c.title}
+                          {c.title}
                         </option>
                       ))}
                     </select>
@@ -2999,7 +3000,7 @@ export default function AdminPage() {
                         className="admin-btn-gps-calibrate"
                         title="Sync all 76 PDF dishes and categories to Supabase database"
                       >
-                        {isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}
+                        <IconText>{isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}</IconText>
                       </button>
                     </div>
                   </div>
@@ -3007,7 +3008,7 @@ export default function AdminPage() {
 
                 {filteredMenuItems.length === 0 ? (
                   <div className="admin-empty-card">
-                    <div className="admin-empty-icon">🔍</div>
+                    <div className="admin-empty-icon"><Icon name="search" /></div>
                     <h3 className="admin-empty-title">No Dishes Match Your Search</h3>
                     <p className="admin-empty-desc">
                       Try clearing the search query or selecting another category to view dishes.
@@ -3211,13 +3212,13 @@ export default function AdminPage() {
                         onClick={() => handleStaffStatusToggle(person.id, 'on_duty')}
                         className={`admin-staff-btn ${person.status === 'on_duty' ? 'active' : ''}`}
                       >
-                        ● On Duty
+                        <Icon name="circle" /> On Duty
                       </button>
                       <button
                         onClick={() => handleStaffStatusToggle(person.id, 'break')}
                         className={`admin-staff-btn ${person.status === 'break' ? 'active' : ''}`}
                       >
-                        ☕ Break
+                        <Icon name="coffee" /> Break
                       </button>
                       <button
                         onClick={() => handleStaffStatusToggle(person.id, 'off_duty')}
@@ -3309,7 +3310,7 @@ export default function AdminPage() {
                 <div className="admin-settings-card-header">
                   <div>
                     <h3 className="admin-settings-card-title">
-                      ☕ Store Identity & Currency
+                      <Icon name="coffee" /> Store Identity & Currency
                     </h3>
                     <p className="admin-settings-card-desc">
                       Brand headers, receipts, and tax calculations
@@ -3362,7 +3363,7 @@ export default function AdminPage() {
                 <div className="admin-settings-card-header">
                   <div>
                     <h3 className="admin-settings-card-title">
-                      📍 Physical Geofence & Anti-Prank Security Guard
+                      <Icon name="pin" /> Physical Geofence & Anti-Prank Security Guard
                     </h3>
                     <p className="admin-settings-card-desc">
                       Restricts orders to guests physically located on cafe premises
@@ -3413,7 +3414,7 @@ export default function AdminPage() {
                 {/* Calibrate GPS Button - Fixed Geometry */}
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={handleCalibrateGPS} className="admin-btn-gps-calibrate">
-                    🎯 Calibrate with Current Device GPS
+                    <Icon name="target" /> Calibrate with Current Device GPS
                   </button>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                     <input
@@ -3431,7 +3432,7 @@ export default function AdminPage() {
                 <div className="admin-settings-card-header">
                   <div>
                     <h3 className="admin-settings-card-title">
-                      📱 Table QR & Session Security Guard
+                      <Icon name="phone" /> Table QR & Session Security Guard
                     </h3>
                     <p className="admin-settings-card-desc">
                       Cryptographic table verification and address bar scrubbing
@@ -3477,7 +3478,7 @@ export default function AdminPage() {
                 <div className="admin-settings-card-header">
                   <div>
                     <h3 className="admin-settings-card-title">
-                      🔐 Master Access Credentials
+                      <Icon name="lock" /> Master Access Credentials
                     </h3>
                     <p className="admin-settings-card-desc">
                       Access PINs for Master Admin Console and Kitchen KDS
@@ -3513,20 +3514,20 @@ export default function AdminPage() {
                   Make sure to save changes after modifying operational rules.
                 </span>
                 <button onClick={(e) => handleSaveSettings(e)} className="admin-save-primary-btn">
-                  💾 Save All Configuration Changes
+                  <Icon name="save" /> Save All Configuration Changes
                 </button>
               </div>
 
               {/* Card 5: Production Live Launch Wipe (Requested by User) */}
               <div className="admin-wipe-card">
                 <h3 className="admin-wipe-title">
-                  ⚠️ Production Live Launch: Purge Test Data
+                  <Icon name="warning" /> Production Live Launch: Purge Test Data
                 </h3>
                 <p className="admin-wipe-desc">
                   Wipes all test customer orders, sales ledger history, popular item sold counts, and audit logs from the database so OZKAFE can be handed over live cleanly from scratch. Menu items, categories, and settings will remain preserved.
                 </p>
                 <button onClick={() => setIsWipeModalOpen(true)} className="admin-wipe-btn">
-                  🗑 Clean Wipe Database for Live Launch
+                  <Icon name="trash" /> Clean Wipe Database for Live Launch
                 </button>
               </div>
             </div>
@@ -3576,7 +3577,7 @@ export default function AdminPage() {
                               className="admin-alert-action-btn"
                               style={{ display: 'inline-block' }}
                             >
-                              Test Scan Link ↗
+                              Test Scan Link <Icon name="external" />
                             </Link>
                           </td>
                         </tr>
@@ -3611,7 +3612,7 @@ export default function AdminPage() {
                   </div>
 
                   <button onClick={fetchAuditLogs} className="admin-alert-action-btn">
-                    🔄 Refresh Logs
+                    <Icon name="refresh" /> Refresh Logs
                   </button>
                 </div>
 
@@ -3660,7 +3661,7 @@ export default function AdminPage() {
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-header">
               <h3 className="admin-modal-title">+ Add New Menu Dish</h3>
-              <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn">✕</button>
+              <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
             </div>
             <form onSubmit={handleSaveNewItem}>
               <div className="admin-modal-body">
@@ -3771,7 +3772,7 @@ export default function AdminPage() {
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-header">
               <h3 className="admin-modal-title">Edit Dish: {editingItem.name}</h3>
-              <button onClick={() => setEditingItem(null)} className="admin-modal-close-btn">✕</button>
+              <button onClick={() => setEditingItem(null)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
             </div>
             <form onSubmit={handleSaveEditItem}>
               <div className="admin-modal-body">
@@ -3881,7 +3882,7 @@ export default function AdminPage() {
                   Create custom walk-in, phone, or scheduled orders with custom date & time.
                 </p>
               </div>
-              <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn">✕</button>
+              <button onClick={() => setQuickAddModalType(null)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
             </div>
             <form onSubmit={handleManualOrderSubmit}>
               <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -3889,7 +3890,7 @@ export default function AdminPage() {
                 <div style={{ background: 'var(--adm-bg-surface-2, #F8F5EE)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--adm-border)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <label className="admin-form-label" style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>📅</span> Order Date & Time
+                      <span><Icon name="calendar" /></span> Order Date & Time
                     </label>
                     <button
                       type="button"
@@ -3985,7 +3986,7 @@ export default function AdminPage() {
                   <SearchableDishPicker
                     items={menuItems}
                     selectedId={manualSelectedItemId}
-                    placeholder="🔍 Search dish or beverage..."
+                    placeholder="Search dish or beverage..."
                     onSelect={(selectedDish) => {
                       setManualSelectedItemId(selectedDish.id);
                       if (selectedDish.sizes && selectedDish.sizes.length > 0) {
@@ -4091,7 +4092,7 @@ export default function AdminPage() {
                   Cancel
                 </button>
                 <button type="submit" className="admin-btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>✓</span> Dispatch to Kitchen
+                  <span><Icon name="check" /></span> Dispatch to Kitchen
                 </button>
               </div>
             </form>
@@ -4107,9 +4108,9 @@ export default function AdminPage() {
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-header" style={{ borderBottomColor: '#FCA5A5' }}>
               <h3 className="admin-modal-title" style={{ color: '#DC2626' }}>
-                ⚠️ Purge All Test Data for Live Launch?
+                <Icon name="warning" /> Purge All Test Data for Live Launch?
               </h3>
-              <button onClick={() => setIsWipeModalOpen(false)} className="admin-modal-close-btn">✕</button>
+              <button onClick={() => setIsWipeModalOpen(false)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
             </div>
             <div className="admin-modal-body">
               <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--adm-text-secondary)', margin: 0 }}>
@@ -4173,10 +4174,10 @@ export default function AdminPage() {
             <div className="admin-modal-box" style={{ maxWidth: 410, padding: 0, overflow: 'hidden', background: '#FFFFFF', backgroundColor: '#FFFFFF' }} onClick={(e) => e.stopPropagation()}>
               <div className="admin-modal-header" style={{ padding: '14px 18px', borderBottom: '1px solid var(--adm-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>🧾</span>
+                  <span style={{ fontSize: 16 }}><Icon name="receipt" /></span>
                   <h3 className="admin-modal-title" style={{ fontSize: 15, fontWeight: 700 }}>Tax Invoice & Thermal Receipt</h3>
                 </div>
-                <button onClick={() => setSelectedReceiptOrder(null)} className="admin-modal-close-btn">✕</button>
+                <button onClick={() => setSelectedReceiptOrder(null)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
               </div>
 
               <div className="admin-modal-body" style={{ maxHeight: '78vh', overflowY: 'auto', padding: '16px 18px', background: '#FAFAF9' }}>
@@ -4296,7 +4297,7 @@ export default function AdminPage() {
                   className="admin-alert-action-btn"
                   style={{ height: 44, padding: '0 16px', fontSize: 13.5, fontWeight: 700, gap: 6, display: 'flex', alignItems: 'center' }}
                 >
-                  <span>✏️</span>
+                  <span><Icon name="edit" /></span>
                   <span>Edit Receipt</span>
                 </button>
                 {!selectedReceiptOrder.isPaid && (
@@ -4305,7 +4306,7 @@ export default function AdminPage() {
                     className="admin-alert-action-btn"
                     style={{ height: 44, padding: '0 14px', fontSize: 13, fontWeight: 800, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
                   >
-                    <span>✓</span>
+                    <span><Icon name="check" /></span>
                     <span>Settle Bill</span>
                   </button>
                 )}
@@ -4314,7 +4315,7 @@ export default function AdminPage() {
                   className="admin-btn-primary"
                   style={{ flex: 1, minWidth: 150, height: 44, fontSize: 14, fontWeight: 700, justifyContent: 'center', gap: 8 }}
                 >
-                  <span>🖨</span>
+                  <span><Icon name="printer" /></span>
                   <span>Print Thermal Receipt</span>
                 </button>
               </div>
@@ -4331,12 +4332,12 @@ export default function AdminPage() {
           <div className="admin-modal-box" style={{ maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-header">
               <div>
-                <h3 className="admin-modal-title">✏️ Edit Order & Receipt</h3>
+                <h3 className="admin-modal-title"><Icon name="edit" /> Edit Order & Receipt</h3>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--adm-text-muted)' }}>
                   Correct billing items, quantities, rates, customer details, or date & time.
                 </p>
               </div>
-              <button onClick={() => setEditingReceiptOrder(null)} className="admin-modal-close-btn">✕</button>
+              <button onClick={() => setEditingReceiptOrder(null)} className="admin-modal-close-btn" aria-label="Close"><Icon name="close" /></button>
             </div>
 
             <form onSubmit={handleSaveEditReceipt}>
@@ -4439,8 +4440,8 @@ export default function AdminPage() {
                             onClick={() => handleRemoveDishFromEditReceipt(idx)}
                             title="Remove item"
                             className="receipt-item-del-btn"
-                          >
-                            ✕
+                           aria-label="Close">
+                            <Icon name="close" />
                           </button>
                         </div>
 
@@ -4495,7 +4496,7 @@ export default function AdminPage() {
                         <SearchableDishPicker
                           items={menuItems}
                           selectedId={editAddItemId}
-                          placeholder="🔍 Search dish to add to receipt..."
+                          placeholder="Search dish to add to receipt..."
                           onSelect={(m) => setEditAddItemId(m.id)}
                         />
                       </div>
@@ -4540,7 +4541,7 @@ export default function AdminPage() {
                   Cancel
                 </button>
                 <button type="submit" className="admin-btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>✓</span> Save & Update Receipt
+                  <span><Icon name="check" /></span> Save & Update Receipt
                 </button>
               </div>
             </form>

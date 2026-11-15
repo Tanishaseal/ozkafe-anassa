@@ -1,4 +1,5 @@
 'use client';
+import { Icon, IconText } from '@/components/Icon';
 
 import React, { useState, useEffect } from 'react';
 import { StaffUser } from '@/lib/types';
@@ -198,7 +199,7 @@ export default function AccountPanel({
                   letterSpacing: 0.5,
                 }}
               >
-                {isSuperAdmin && <span>👑</span>}
+                {isSuperAdmin && <span><Icon name="crown" /></span>}
                 {user.badge || 'Staff Member'}
               </div>
             </div>
@@ -218,7 +219,7 @@ export default function AccountPanel({
               lineHeight: 1,
             }}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
 
@@ -259,7 +260,7 @@ export default function AccountPanel({
                   gap: 5,
                 }}
               >
-                Go to Kitchen 👨‍🍳
+                Go to Kitchen <Icon name="chef" />
               </Link>
             ) : (
               <Link
@@ -277,7 +278,7 @@ export default function AccountPanel({
                   gap: 5,
                 }}
               >
-                Go to Admin ⚙️
+                Go to Admin <Icon name="settings" />
               </Link>
             )}
           </div>
@@ -311,7 +312,7 @@ export default function AccountPanel({
                 style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 8, border: '1px solid var(--adm-border, #E5DFD7)', background: '#F2ECE3', color: '#73675C', cursor: 'not-allowed' }}
               />
               <span style={{ fontSize: 11, color: '#16A34A', marginTop: 4, display: 'block' }}>
-                ✓ Verified authorized management account
+                <Icon name="check" /> Verified authorized management account
               </span>
             </div>
 
@@ -362,11 +363,11 @@ export default function AccountPanel({
               </label>
               {user.email.toLowerCase().trim() === 'mamonix109@gmail.com' ? (
                 <div style={{ fontSize: 11.5, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '8px 12px', borderRadius: 8, fontWeight: 700, lineHeight: 1.4 }}>
-                  🛡️ <strong>Kitchen Lead</strong> · Assigned exclusively to Kitchen Display System (Admin access strictly prohibited).
+                  <Icon name="shield" /> <strong>Kitchen Lead</strong> · Assigned exclusively to Kitchen Display System (Admin access strictly prohibited).
                 </div>
               ) : (
                 <div style={{ fontSize: 11.5, color: '#15803D', background: '#DCFCE7', border: '1px solid #BBF7D0', padding: '8px 12px', borderRadius: 8, fontWeight: 700, lineHeight: 1.4 }}>
-                  👑 <strong>Super Admin & Founder</strong> · Full master clearance for Floor Admin, Menus, Receipts & Kitchen Display.
+                  <Icon name="crown" /> <strong>Super Admin & Founder</strong> · Full master clearance for Floor Admin, Menus, Receipts & Kitchen Display.
                 </div>
               )}
             </div>
@@ -379,7 +380,7 @@ export default function AccountPanel({
 
             {profileMessage && (
               <div style={{ color: '#16A34A', fontSize: 12.5, fontWeight: 600 }}>
-                {profileMessage}
+                <IconText>{profileMessage}</IconText>
               </div>
             )}
 
@@ -422,7 +423,7 @@ export default function AccountPanel({
                 gap: 8,
               }}
             >
-              🔒 Lock Console & Sign Out
+              <Icon name="lock" /> Lock Console & Sign Out
             </button>
           </div>
         </div>

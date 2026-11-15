@@ -1,4 +1,5 @@
 'use client';
+import { Icon, IconText } from '@/components/Icon';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Image from 'next/image';
@@ -970,7 +971,7 @@ export default function KitchenDashboard() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     if (receivedOrders.length > 0) {
-      document.title = `🔔 (${receivedOrders.length}) NEW ORDER! - OZKAFE Kitchen`;
+      document.title = `(${receivedOrders.length}) NEW ORDER! - OZKAFE Kitchen`;
     } else if (orders.length > 0) {
       document.title = `(${orders.length} Active) - OZKAFE Kitchen`;
     } else {
@@ -1036,7 +1037,7 @@ export default function KitchenDashboard() {
               fontWeight: 700,
             }}
           >
-            {soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF'}
+            <IconText>{soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF'}</IconText>
           </button>
 
           <button
@@ -1044,7 +1045,7 @@ export default function KitchenDashboard() {
             className="btn-kds-header"
             title="Toggle KDS Fullscreen"
           >
-            ⛶ Fullscreen
+            <Icon name="expand" /> Fullscreen
           </button>
 
           {/* Account Profile Badge Button */}
@@ -1098,7 +1099,7 @@ export default function KitchenDashboard() {
           onClick={() => setKitchenViewMode('board')}
           className={`kds-view-btn ${kitchenViewMode === 'board' ? 'active' : ''}`}
         >
-          <span>🍳 Live KDS Board</span>
+          <span><Icon name="chef" /> Live KDS Board</span>
           {receivedOrders.length > 0 ? (
             <span className="kds-view-badge" style={{ background: '#DC2626', color: '#FFF', fontWeight: 800 }}>
               {receivedOrders.length} NEW
@@ -1118,7 +1119,7 @@ export default function KitchenDashboard() {
           }}
           className={`kds-view-btn ${kitchenViewMode === 'history' ? 'active' : ''}`}
         >
-          <span>📜 Order History</span>
+          <span><Icon name="receipt" /> Order History</span>
           <span className="kds-view-badge">Past 15 Days</span>
         </button>
 
@@ -1128,7 +1129,7 @@ export default function KitchenDashboard() {
           className="kds-view-btn kds-custom-bill-btn"
           title="Add a custom bill for previous orders directly to history and admin records"
         >
-          <span>🧾 + Add Custom Bill</span>
+          <span><Icon name="receipt" /> + Add Custom Bill</span>
           <span className="kds-view-badge" style={{ background: '#8E402A', color: '#FFFFFF', fontSize: 10, letterSpacing: 0.3 }}>
             PREVIOUS ORDER
           </span>
@@ -1152,8 +1153,8 @@ export default function KitchenDashboard() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>✓</span>
-            <span>{customBillSuccessMsg}</span>
+            <span style={{ fontSize: 16 }}><Icon name="check" /></span>
+            <span>{customBillSuccessMsg.replace(/^✓\s*/, '')}</span>
           </div>
           <button
             type="button"
@@ -1166,8 +1167,8 @@ export default function KitchenDashboard() {
               cursor: 'pointer',
               fontWeight: 800,
             }}
-          >
-            ✕
+           aria-label="Close">
+            <Icon name="close" />
           </button>
         </div>
       )}
@@ -1189,7 +1190,7 @@ export default function KitchenDashboard() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>⚠️</span>
+            <span style={{ fontSize: 16 }}><Icon name="warning" /></span>
             <span>{adminDeleteAlert}</span>
           </div>
           <button
@@ -1203,8 +1204,8 @@ export default function KitchenDashboard() {
               cursor: 'pointer',
               fontWeight: 800,
             }}
-          >
-            ✕
+           aria-label="Close">
+            <Icon name="close" />
           </button>
         </div>
       )}
@@ -1219,28 +1220,28 @@ export default function KitchenDashboard() {
               onClick={() => setActiveMobileTab('received')}
               className={`kds-mobile-tab-btn tab-received ${activeMobileTab === 'received' ? 'active' : ''}`}
             >
-              <span>🔴 New ({receivedOrders.length})</span>
+              <span><Icon name="circle" /> New ({receivedOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveMobileTab('preparing')}
               className={`kds-mobile-tab-btn tab-prep ${activeMobileTab === 'preparing' ? 'active' : ''}`}
             >
-              <span>🟡 Prep ({preparingOrders.length})</span>
+              <span><Icon name="circle" /> Prep ({preparingOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveMobileTab('ready')}
               className={`kds-mobile-tab-btn tab-ready ${activeMobileTab === 'ready' ? 'active' : ''}`}
             >
-              <span>🟢 Ready ({readyOrders.length})</span>
+              <span><Icon name="circle" /> Ready ({readyOrders.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveMobileTab('settlement')}
               className={`kds-mobile-tab-btn tab-settlement ${activeMobileTab === 'settlement' ? 'active' : ''}`}
             >
-              <span>💰 Settle ({unsettledOrders.length})</span>
+              <span><Icon name="card" /> Settle ({unsettledOrders.length})</span>
             </button>
           </nav>
 
@@ -1259,7 +1260,7 @@ export default function KitchenDashboard() {
               <div className="kds-cards-container">
                 {receivedOrders.length === 0 ? (
                   <div className="empty-kds-state">
-                    <span className="empty-icon">☕</span>
+                    <span className="empty-icon"><Icon name="coffee" /></span>
                     <p>No incoming orders at the moment</p>
                     <span className="empty-sub">New customer and takeaway orders will chime and appear here in real-time.</span>
                   </div>
@@ -1277,24 +1278,24 @@ export default function KitchenDashboard() {
                         <div className="card-top-bar">
                           <div className="table-badge">
                             {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
-                              <span>🥡 TAKEAWAY & IN-FLAT</span>
+                              <span><Icon name="bag" /> TAKEAWAY & IN-FLAT</span>
                             ) : (
-                              <span>🍽️ TABLE {order.tableNumber}</span>
+                              <span><Icon name="utensils" /> TABLE {order.tableNumber}</span>
                             )}
                           </div>
                           <div className="order-timer">
-                            <span>⏱️ {elapsedMinutes}m ago</span>
+                            <span><Icon name="clock" /> {elapsedMinutes}m ago</span>
                           </div>
                         </div>
 
                         <div className="card-customer-row">
-                          <span className="card-cust-name">👤 {order.customerName}</span>
+                          <span className="card-cust-name"><Icon name="user" /> {order.customerName}</span>
                           <span className="card-cust-phone">{order.customerPhone}</span>
                         </div>
 
                         {order.customerFlat && (
                           <div className="card-flat-row">
-                            <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                            <span><Icon name="building" /> Flat: <strong>{order.customerFlat}</strong></span>
                           </div>
                         )}
 
@@ -1303,9 +1304,9 @@ export default function KitchenDashboard() {
                         </div>
 
                         <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span><Icon name="calendar" /> {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           <span>•</span>
-                          <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span><Icon name="clock" /> {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
 
                         <div className="card-items-list">
@@ -1327,7 +1328,7 @@ export default function KitchenDashboard() {
                             className="kds-action-btn btn-start-prep"
                             onClick={() => handleUpdateStatus(order.id, 'preparing')}
                           >
-                            ▶ Start Prep
+                            <Icon name="play" /> Start Prep
                           </button>
 
                           <button
@@ -1336,7 +1337,7 @@ export default function KitchenDashboard() {
                             title="View / Print Receipt"
                             onClick={() => setPrintOrder(order)}
                           >
-                            🧾 Bill
+                            <Icon name="receipt" /> Bill
                           </button>
 
                           <button
@@ -1345,7 +1346,7 @@ export default function KitchenDashboard() {
                             title="Edit Order / Receipt"
                             onClick={() => handleOpenEditReceipt(order)}
                           >
-                            ✏️ Edit
+                            <Icon name="edit" /> Edit
                           </button>
 
                           {kitchenSettings.allowOrderCancellation && (
@@ -1357,8 +1358,8 @@ export default function KitchenDashboard() {
                                   handleUpdateStatus(order.id, 'cancelled');
                                 }
                               }}
-                            >
-                              ✕
+                             aria-label="Close">
+                              <Icon name="close" />
                             </button>
                           )}
                         </div>
@@ -1382,9 +1383,9 @@ export default function KitchenDashboard() {
               <div className="kds-cards-container">
                 {preparingOrders.length === 0 ? (
                   <div className="empty-kds-state">
-                    <span className="empty-icon">🍳</span>
+                    <span className="empty-icon"><Icon name="chef" /></span>
                     <p>No orders currently in preparation</p>
-                    <span className="empty-sub">Tap &quot;▶ Start Prep&quot; on any new order to move it to prep.</span>
+                    <span className="empty-sub">Tap &quot;<Icon name="play" /> Start Prep&quot; on any new order to move it to prep.</span>
                   </div>
                 ) : (
                   preparingOrders.map((order) => {
@@ -1400,24 +1401,24 @@ export default function KitchenDashboard() {
                         <div className="card-top-bar">
                           <div className="table-badge prep">
                             {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
-                              <span>🥡 TAKEAWAY</span>
+                              <span><Icon name="bag" /> TAKEAWAY</span>
                             ) : (
-                              <span>🍽️ TABLE {order.tableNumber}</span>
+                              <span><Icon name="utensils" /> TABLE {order.tableNumber}</span>
                             )}
                           </div>
                           <div className="order-timer">
-                            <span>⏱️ {elapsedMinutes}m in prep</span>
+                            <span><Icon name="clock" /> {elapsedMinutes}m in prep</span>
                           </div>
                         </div>
 
                         <div className="card-customer-row">
-                          <span className="card-cust-name">👤 {order.customerName}</span>
+                          <span className="card-cust-name"><Icon name="user" /> {order.customerName}</span>
                           <span className="card-cust-phone">{order.customerPhone}</span>
                         </div>
 
                         {order.customerFlat && (
                           <div className="card-flat-row">
-                            <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                            <span><Icon name="building" /> Flat: <strong>{order.customerFlat}</strong></span>
                           </div>
                         )}
 
@@ -1426,9 +1427,9 @@ export default function KitchenDashboard() {
                         </div>
 
                         <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span><Icon name="calendar" /> {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           <span>•</span>
-                          <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span><Icon name="clock" /> {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
 
                         <div className="card-items-list">
@@ -1450,7 +1451,7 @@ export default function KitchenDashboard() {
                             className="kds-action-btn btn-mark-ready"
                             onClick={() => handleUpdateStatus(order.id, 'ready')}
                           >
-                            ✓ Mark Ready
+                            <Icon name="check" /> Mark Ready
                           </button>
                           <button
                             type="button"
@@ -1458,7 +1459,7 @@ export default function KitchenDashboard() {
                             title="View / Print Receipt"
                             onClick={() => setPrintOrder(order)}
                           >
-                            🧾 Bill
+                            <Icon name="receipt" /> Bill
                           </button>
                           <button
                             type="button"
@@ -1466,7 +1467,7 @@ export default function KitchenDashboard() {
                             title="Edit Order / Receipt"
                             onClick={() => handleOpenEditReceipt(order)}
                           >
-                            ✏️ Edit
+                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -1489,7 +1490,7 @@ export default function KitchenDashboard() {
               <div className="kds-cards-container">
                 {readyOrders.length === 0 ? (
                   <div className="empty-kds-state">
-                    <span className="empty-icon">🔔</span>
+                    <span className="empty-icon"><Icon name="bell" /></span>
                     <p>No orders waiting for pickup</p>
                     <span className="empty-sub">Prepared orders awaiting floor staff pickup or guest handover appear here.</span>
                   </div>
@@ -1502,9 +1503,9 @@ export default function KitchenDashboard() {
                         <div className="card-top-bar">
                           <div className="table-badge ready">
                             {order.tableNumber === 'Takeaway' || order.tableNumber === 0 ? (
-                              <span>🥡 TAKEAWAY & IN-FLAT</span>
+                              <span><Icon name="bag" /> TAKEAWAY & IN-FLAT</span>
                             ) : (
-                              <span>🍽️ TABLE {order.tableNumber}</span>
+                              <span><Icon name="utensils" /> TABLE {order.tableNumber}</span>
                             )}
                           </div>
                           <div className="order-timer">
@@ -1513,13 +1514,13 @@ export default function KitchenDashboard() {
                         </div>
 
                         <div className="card-customer-row">
-                          <span className="card-cust-name">👤 {order.customerName}</span>
+                          <span className="card-cust-name"><Icon name="user" /> {order.customerName}</span>
                           <span className="card-cust-phone">{order.customerPhone}</span>
                         </div>
 
                         {order.customerFlat && (
                           <div className="card-flat-row">
-                            <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                            <span><Icon name="building" /> Flat: <strong>{order.customerFlat}</strong></span>
                           </div>
                         )}
 
@@ -1528,9 +1529,9 @@ export default function KitchenDashboard() {
                         </div>
 
                         <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>📅 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span><Icon name="calendar" /> {new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           <span>•</span>
-                          <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span><Icon name="clock" /> {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
 
                         <div className="card-items-list">
@@ -1549,7 +1550,7 @@ export default function KitchenDashboard() {
                             onClick={() => handleUpdateStatus(order.id, 'served')}
                             title="Mark order served and move to Bill Settlement"
                           >
-                            ✓ Served
+                            <Icon name="check" /> Served
                           </button>
                           <button
                             type="button"
@@ -1557,7 +1558,7 @@ export default function KitchenDashboard() {
                             title="View / Print Receipt"
                             onClick={() => setPrintOrder(order)}
                           >
-                            🧾 Bill
+                            <Icon name="receipt" /> Bill
                           </button>
                           <button
                             type="button"
@@ -1565,7 +1566,7 @@ export default function KitchenDashboard() {
                             title="Edit Order / Receipt"
                             onClick={() => handleOpenEditReceipt(order)}
                           >
-                            ✏️ Edit
+                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -1588,7 +1589,7 @@ export default function KitchenDashboard() {
               <div className="kds-cards-container">
                 {unsettledOrders.length === 0 ? (
                   <div className="empty-kds-state">
-                    <span className="empty-icon">✓</span>
+                    <span className="empty-icon"><Icon name="check" /></span>
                     <p>No bills awaiting settlement</p>
                     <span style={{ fontSize: 11, color: '#A8A29E', marginTop: 4 }}>Orders pop here after passing Ready for Pickup & Served until payment is collected.</span>
                   </div>
@@ -1600,18 +1601,18 @@ export default function KitchenDashboard() {
                         <div className="card-top-bar">
                           <div className="table-badge" style={{ background: '#FDF4E7', color: '#7C4A1E', border: '1px solid #F5DEB3' }}>
                             {order.tableNumber === 0 || String(order.tableNumber).toLowerCase() === 'takeaway' ? (
-                              <span>🥡 TAKEAWAY & IN-FLAT</span>
+                              <span><Icon name="bag" /> TAKEAWAY & IN-FLAT</span>
                             ) : (
-                              <span>🍽️ TABLE {order.tableNumber}</span>
+                              <span><Icon name="utensils" /> TABLE {order.tableNumber}</span>
                             )}
                           </div>
                           <div className="order-timer">
-                            <span>⏱️ {elapsed}m ago</span>
+                            <span><Icon name="clock" /> {elapsed}m ago</span>
                           </div>
                         </div>
 
                         <div className="card-customer-row">
-                          <span className="card-cust-name">👤 {order.customerName || 'Walk-in Guest'}</span>
+                          <span className="card-cust-name"><Icon name="user" /> {order.customerName || 'Walk-in Guest'}</span>
                           {order.customerPhone && (
                             <span className="card-cust-phone">{order.customerPhone}</span>
                           )}
@@ -1619,14 +1620,14 @@ export default function KitchenDashboard() {
 
                         {order.customerFlat && (
                           <div className="card-flat-row">
-                            <span>🏢 Flat: <strong>{order.customerFlat}</strong></span>
+                            <span><Icon name="building" /> Flat: <strong>{order.customerFlat}</strong></span>
                           </div>
                         )}
 
                         <div style={{ fontSize: 11, color: '#78716C', margin: '2px 0 6px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontWeight: 800, color: '#5C381E' }}>#{order.orderNumber}</span>
                           <span>•</span>
-                          <span>⏰ {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span><Icon name="clock" /> {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
 
                         <div className="card-items-list">
@@ -1674,7 +1675,7 @@ export default function KitchenDashboard() {
                             }}
                             title="Mark order paid and settled"
                           >
-                            {isSettlingId === order.id ? 'Settling...' : '💳 Mark Settled'}
+                            <IconText>{isSettlingId === order.id ? 'Settling...' : '💳 Mark Settled'}</IconText>
                           </button>
                           <button
                             type="button"
@@ -1683,7 +1684,7 @@ export default function KitchenDashboard() {
                             onClick={() => setPrintOrder(order)}
                             style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                           >
-                            🧾 Bill
+                            <Icon name="receipt" /> Bill
                           </button>
                           <button
                             type="button"
@@ -1692,7 +1693,7 @@ export default function KitchenDashboard() {
                             onClick={() => handleOpenEditReceipt(order)}
                             style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                           >
-                            ✏️ Edit
+                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -1710,7 +1711,7 @@ export default function KitchenDashboard() {
         <div className="kds-section-view">
           <div className="kds-section-header">
             <div className="kds-section-title-wrap">
-              <h2>📜 Kitchen Order History (Past 15 Days)</h2>
+              <h2><Icon name="receipt" /> Kitchen Order History (Past 15 Days)</h2>
               <p>Showing orders from the past 15 days ({filteredHistoryOrders.length} records). Older orders are kept hidden.</p>
             </div>
 
@@ -1761,11 +1762,11 @@ export default function KitchenDashboard() {
                 title={historyRefreshCooldown ? 'Cooldown active - please wait a moment before refreshing again' : 'Refresh order history from server'}
               >
                 <span>
-                  {isManualRefreshingHistory
+                  <IconText>{isManualRefreshingHistory
                     ? '⏳ Refreshing...'
                     : historyRefreshSuccess
                     ? '✓ History Updated'
-                    : '🔄 Refresh History'}
+                    : '🔄 Refresh History'}</IconText>
                 </span>
               </button>
             </div>
@@ -1773,7 +1774,7 @@ export default function KitchenDashboard() {
 
           {filteredHistoryOrders.length === 0 ? (
             <div className="empty-kds-state" style={{ background: '#FFF', borderRadius: 14, border: '1px solid #E5DFD7' }}>
-              <span className="empty-icon">📜</span>
+              <span className="empty-icon"><Icon name="receipt" /></span>
               <p>No orders found in the past 15 days</p>
               <span className="empty-sub">Past dining and takeaway orders completed within 15 days are logged here.</span>
               <button
@@ -1782,7 +1783,7 @@ export default function KitchenDashboard() {
                 className="kds-action-btn-custom-bill"
                 style={{ marginTop: 14 }}
               >
-                🧾 + Add Custom Bill for Previous Order
+                <Icon name="receipt" /> + Add Custom Bill for Previous Order
               </button>
             </div>
           ) : (
@@ -1807,8 +1808,8 @@ export default function KitchenDashboard() {
                         <strong style={{ fontFamily: 'var(--font-mono, monospace)', color: '#1C1917' }}>{ord.orderNumber}</strong>
                       </td>
                       <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
-                        <div>📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-                        <div style={{ color: '#78716C' }}>⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div><Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        <div style={{ color: '#78716C' }}><Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
                       <td>
                         <span className="table-badge" style={{ fontSize: 11, padding: '3px 8px' }}>
@@ -1845,15 +1846,15 @@ export default function KitchenDashboard() {
                               gap: 4,
                             }}
                           >
-                            ❌ DELETED BY ADMIN
+                            <Icon name="close" /> DELETED BY ADMIN
                           </span>
                         ) : ord.isPaid ? (
                           <span className="settle-badge-paid" style={{ fontSize: 11 }}>
-                            ✓ PAID
+                            <Icon name="check" /> PAID
                           </span>
                         ) : (
                           <span className="settle-badge-unpaid" style={{ fontSize: 11 }}>
-                            ⏳ UNSETTLED
+                            <Icon name="clock" /> UNSETTLED
                           </span>
                         )}
                       </td>
@@ -1871,7 +1872,7 @@ export default function KitchenDashboard() {
                               style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
                               title="Check Bill / Receipt"
                             >
-                              🧾 View Bill
+                              <Icon name="receipt" /> View Bill
                             </button>
                             <button
                               type="button"
@@ -1880,7 +1881,7 @@ export default function KitchenDashboard() {
                               style={{ height: 32, padding: '0 10px', fontSize: 11.5 }}
                               title="Edit Receipt"
                             >
-                              ✏️ Edit
+                              <Icon name="edit" /> Edit
                             </button>
                             {!ord.isPaid && (
                               <button
@@ -1890,7 +1891,7 @@ export default function KitchenDashboard() {
                                 style={{ height: 32, padding: '0 10px', fontSize: 11.5, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}
                                 title="Mark Settled"
                               >
-                                ✓ Settle
+                                <Icon name="check" /> Settle
                               </button>
                             )}
                           </div>
@@ -1971,7 +1972,7 @@ export default function KitchenDashboard() {
                   boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
                 }}
               >
-                ✕
+                <Icon name="close" />
               </button>
 
               <div
@@ -2072,7 +2073,7 @@ export default function KitchenDashboard() {
                     style={{ flex: 1, height: 40, background: '#5C381E', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}
                     onClick={() => window.print()}
                   >
-                    🖨️ Print Receipt
+                    <Icon name="printer" /> Print Receipt
                   </button>
                   <button
                     type="button"
@@ -2083,7 +2084,7 @@ export default function KitchenDashboard() {
                       handleOpenEditReceipt(toEdit);
                     }}
                   >
-                    ✏️ Edit Receipt
+                    <Icon name="edit" /> Edit Receipt
                   </button>
                 </div>
 
@@ -2094,7 +2095,7 @@ export default function KitchenDashboard() {
                     onClick={() => handleSettleBill(printOrder.id)}
                     style={{ height: 40, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 800, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                   >
-                    {isSettlingId === printOrder.id ? 'Processing...' : '💳 Mark Settled (Customer Paid)'}
+                    <IconText>{isSettlingId === printOrder.id ? 'Processing...' : '💳 Mark Settled (Customer Paid)'}</IconText>
                   </button>
                 )}
               </div>
@@ -2114,7 +2115,7 @@ export default function KitchenDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E5DFD7', paddingBottom: 12, marginBottom: 16 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#1A1410' }}>
-                  ✏️ Edit Receipt & Order ({editingReceiptOrder.orderNumber})
+                  <Icon name="edit" /> Edit Receipt & Order ({editingReceiptOrder.orderNumber})
                 </h3>
                 <p style={{ margin: '3px 0 0', fontSize: 12, color: '#685E54' }}>
                   Correct item quantities, prices, dishes, or customer details. Changes log in Admin audit trail.
@@ -2124,8 +2125,8 @@ export default function KitchenDashboard() {
                 type="button"
                 onClick={() => setEditingReceiptOrder(null)}
                 style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#78716C' }}
-              >
-                ✕
+               aria-label="Close">
+                <Icon name="close" />
               </button>
             </div>
 
@@ -2225,8 +2226,8 @@ export default function KitchenDashboard() {
                           onClick={() => handleRemoveItem(idx)}
                           title="Remove dish from receipt"
                           className="receipt-item-del-btn"
-                        >
-                          ✕
+                         aria-label="Close">
+                          <Icon name="close" />
                         </button>
                       </div>
 
@@ -2281,7 +2282,7 @@ export default function KitchenDashboard() {
                       <SearchableDishPicker
                         items={availableMenuItems}
                         selectedId={editAddItemId}
-                        placeholder="🔍 Search dish to add..."
+                        placeholder="Search dish to add..."
                         onSelect={(dish) => setEditAddItemId(dish.id)}
                       />
                     </div>
@@ -2334,7 +2335,7 @@ export default function KitchenDashboard() {
                   disabled={isSavingReceipt}
                   style={{ flex: 1, height: 42, borderRadius: 8, border: 'none', background: '#5C381E', color: '#FFF', fontWeight: 800, cursor: isSavingReceipt ? 'wait' : 'pointer' }}
                 >
-                  {isSavingReceipt ? 'Saving...' : '✓ Save & Update Receipt'}
+                  <IconText>{isSavingReceipt ? 'Saving...' : '✓ Save & Update Receipt'}</IconText>
                 </button>
               </div>
             </form>
@@ -2362,7 +2363,7 @@ export default function KitchenDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #E5DFD7', paddingBottom: 14, marginBottom: 16 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#1A1410', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>🧾</span> + Add Custom Bill (Previous Order)
+                  <span><Icon name="receipt" /></span> + Add Custom Bill (Previous Order)
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#78716C', lineHeight: 1.4 }}>
                   Directly record counter or previous orders into Order History and Admin ledger. No kitchen prep queue required.
@@ -2372,8 +2373,8 @@ export default function KitchenDashboard() {
                 type="button"
                 onClick={() => setIsCustomBillModalOpen(false)}
                 style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#78716C', padding: '0 4px' }}
-              >
-                ✕
+               aria-label="Close">
+                <Icon name="close" />
               </button>
             </div>
 
@@ -2382,7 +2383,7 @@ export default function KitchenDashboard() {
               <div style={{ background: '#FAF8F5', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5DFD7' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#44403C', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>📅</span> Order Date & Time (Previous or Current)
+                    <span><Icon name="calendar" /></span> Order Date & Time (Previous or Current)
                   </label>
                   <button
                     type="button"
@@ -2560,8 +2561,8 @@ export default function KitchenDashboard() {
                                 fontSize: 13,
                               }}
                               title="Remove dish"
-                            >
-                              ✕
+                             aria-label="Close">
+                              <Icon name="close" />
                             </button>
                           )}
                         </div>
@@ -2646,7 +2647,7 @@ export default function KitchenDashboard() {
               {/* 5. Payment & Settlement Status */}
               <div style={{ background: '#FAF8F5', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5DFD7' }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#44403C', marginBottom: 6 }}>
-                  💳 Settlement Status
+                  <Icon name="card" /> Settlement Status
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <label
@@ -2671,7 +2672,7 @@ export default function KitchenDashboard() {
                       onChange={() => setCustomBillIsPaid(false)}
                       style={{ accentColor: '#8E402A' }}
                     />
-                    <span>⏳ Unsettled (Collect Later)</span>
+                    <span><Icon name="clock" /> Unsettled (Collect Later)</span>
                   </label>
 
                   <label
@@ -2696,7 +2697,7 @@ export default function KitchenDashboard() {
                       onChange={() => setCustomBillIsPaid(true)}
                       style={{ accentColor: '#15803D' }}
                     />
-                    <span>✅ Already Settled / Paid</span>
+                    <span><Icon name="check" /> Already Settled / Paid</span>
                   </label>
                 </div>
 
@@ -2790,7 +2791,7 @@ export default function KitchenDashboard() {
                     opacity: isSubmittingCustomBill ? 0.7 : 1,
                   }}
                 >
-                  {isSubmittingCustomBill ? 'Recording Bill...' : '✓ Record Bill (To History & Admin)'}
+                  <IconText>{isSubmittingCustomBill ? 'Recording Bill...' : '✓ Record Bill (To History & Admin)'}</IconText>
                 </button>
               </div>
             </form>

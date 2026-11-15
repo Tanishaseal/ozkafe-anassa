@@ -1,4 +1,6 @@
 'use client';
+import { Icon, IconText } from '@/components/Icon';
+import { iconSvg, legacyIconNames } from '@/lib/icons';
 import { menuPrice } from '@/lib/pricing';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -617,7 +619,7 @@ export default function CustomerMenu({
         flyer.appendChild(img);
       } else {
         const span = document.createElement('span');
-        span.textContent = options?.icon || '☕';
+        span.innerHTML = iconSvg(legacyIconNames[(options?.icon || '').replace(/\uFE0F/g, '')] || 'coffee');
         span.style.fontSize = '28px';
         span.style.lineHeight = '1';
         flyer.appendChild(span);
@@ -1048,7 +1050,7 @@ export default function CustomerMenu({
           gap: 8,
           boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
         }}>
-          <span>🛑</span> {settings.closedMessage || 'Cafe is currently closed for customer orders.'}
+          <span><Icon name="warning" /></span> {settings.closedMessage || 'Cafe is currently closed for customer orders.'}
         </div>
       )}
       {isOffline && (
@@ -1067,7 +1069,7 @@ export default function CustomerMenu({
           justifyContent: 'center',
           gap: 6,
         }}>
-          <span>📡</span> You are currently offline. Orders will sync once connection returns.
+          <span><Icon name="wifi" /></span> You are currently offline. Orders will sync once connection returns.
         </div>
       )}
       {/* ── SPLASH SCREEN ── */}
@@ -1179,7 +1181,7 @@ export default function CustomerMenu({
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           </svg>
-          <span>{initialTable === 'Takeaway' || initialTable === '0' ? '🥡 Takeaway & In-Flat' : `🍽️ Table ${initialTable}`}</span>
+          <span><IconText>{initialTable === 'Takeaway' || initialTable === '0' ? '🥡 Takeaway & In-Flat' : `🍽️ Table ${initialTable}`}</IconText></span>
         </div>
 
         <div className="veg-indicator" title="100% Pure Vegetarian Cafe">
@@ -1193,11 +1195,11 @@ export default function CustomerMenu({
       {/* ── RECOGNIZED GUEST LOGIN BANNER ── */}
       <div className="guest-login-bar">
         <div className="guest-login-info">
-          <span className="guest-login-icon">👤</span>
+          <span className="guest-login-icon"><Icon name="user" /></span>
           {customerPhone ? (
             <span className="guest-login-text">
               <strong>{customerName || 'Guest'}</strong> · +91 {customerPhone}
-              {(initialTable === 'Takeaway' || initialTable === '0') && customerFlat ? ` · 🏢 Flat ${customerFlat}` : ''}
+              <IconText>{(initialTable === 'Takeaway' || initialTable === '0') && customerFlat ? ` · 🏢 Flat ${customerFlat}` : ''}</IconText>
             </span>
           ) : (
             <span className="guest-login-text" style={{ color: 'var(--text-grey)' }}>
@@ -1261,7 +1263,7 @@ export default function CustomerMenu({
               onClick={() => setMenuSearch('')}
               aria-label="Clear search"
             >
-              ✕
+              <Icon name="close" />
             </button>
           )}
         </div>
@@ -1337,7 +1339,7 @@ export default function CustomerMenu({
         <div className="divider-line"></div>
         <div
           className="divider-icon"
-          dangerouslySetInnerHTML={{ __html: activeCategory?.iconSvg || '☕' }}
+          dangerouslySetInnerHTML={{ __html: activeCategory?.iconSvg || iconSvg('coffee') }}
         />
         <div className="divider-line"></div>
       </div>
@@ -1553,7 +1555,7 @@ export default function CustomerMenu({
                       <div className="directory-cat-left">
                         <div
                           className="directory-cat-icon"
-                          dangerouslySetInnerHTML={{ __html: cat.iconSvg || '☕' }}
+                          dangerouslySetInnerHTML={{ __html: cat.iconSvg || iconSvg('coffee') }}
                         />
                         <div className="directory-cat-title-wrap">
                           <span className="directory-cat-title">{cat.title}</span>
@@ -1606,7 +1608,7 @@ export default function CustomerMenu({
                                       }}
                                     />
                                   ) : (
-                                    <span style={{ fontSize: '18px' }}>☕</span>
+                                    <span style={{ fontSize: '18px' }}><Icon name="coffee" /></span>
                                   )}
                                 </div>
                                 <div className="directory-dish-info">
@@ -1694,7 +1696,7 @@ export default function CustomerMenu({
                     width: '100%',
                   }}
                 >
-                  <span>📱</span> Auto-Select Phone from Device Contacts
+                  <span><Icon name="phone" /></span> Auto-Select Phone from Device Contacts
                 </button>
               )}
 
@@ -1718,7 +1720,7 @@ export default function CustomerMenu({
                 />
                 {phoneError && (
                   <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
-                    ⚠️ {phoneError}
+                    <Icon name="warning" /> {phoneError}
                   </span>
                 )}
               </div>
@@ -1744,7 +1746,7 @@ export default function CustomerMenu({
               {(initialTable === 'Takeaway' || initialTable === '0' || String(initialTable).toLowerCase() === 'takeaway') && (
                 <div style={{ background: '#FFFDF9', padding: '12px 14px', border: `1.5px solid ${flatError ? '#DC2626' : 'var(--brand-gold)'}`, borderRadius: 12 }}>
                   <label style={{ fontSize: 11.5, fontWeight: 700, color: flatError ? '#DC2626' : 'var(--brand-accent)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                    <span>🏢</span> Flat / Apartment Number (Mandatory for Takeaway) *
+                    <span><Icon name="building" /></span> Flat / Apartment Number (Mandatory for Takeaway) *
                   </label>
                   <input
                     type="text"
@@ -1759,7 +1761,7 @@ export default function CustomerMenu({
                   />
                   {flatError ? (
                     <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
-                      ⚠️ {flatError}
+                      <Icon name="warning" /> {flatError}
                     </span>
                   ) : (
                     <span style={{ fontSize: 10.5, color: '#7C4A1E', marginTop: 4, display: 'block' }}>
@@ -1812,7 +1814,7 @@ export default function CustomerMenu({
                   className="btn-solid"
                   style={{ height: 44, fontSize: 14, flex: 1, borderRadius: 12 }}
                 >
-                  ✓ Save Profile & Continue
+                  <Icon name="check" /> Save Profile & Continue
                 </button>
 
                 {customerPhone && (
@@ -1855,7 +1857,7 @@ export default function CustomerMenu({
             <div className="sheet-content">
               {Object.keys(cart).length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-grey)' }}>
-                  <p style={{ fontSize: '2.5rem', marginBottom: 8 }}>☕</p>
+                  <p style={{ fontSize: '2.5rem', marginBottom: 8 }}><Icon name="coffee" /></p>
                   <p style={{ fontWeight: 600 }}>Your order is currently empty</p>
                   <p style={{ fontSize: 12 }}>Select items from the menu to build your feast</p>
                 </div>
@@ -1892,7 +1894,7 @@ export default function CustomerMenu({
                   {/* Add-ons Upsell */}
                   <div className="cart-addons-wrapper">
                     <div className="cart-addons-header">
-                      <span className="cart-addons-title">✨ Extra Flavours & Add-ons</span>
+                      <span className="cart-addons-title"><Icon name="sparkles" /> Extra Flavours & Add-ons</span>
                       <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand-accent)' }}>POPULAR</span>
                     </div>
                     <div className="cart-addons-grid">
@@ -1903,7 +1905,7 @@ export default function CustomerMenu({
                           onClick={(e) => handleAddAddonToCart(ad, e)}
                         >
                           <span style={{ fontSize: 12, fontWeight: 600 }}>
-                            {ad.icon} {ad.name}
+                            <IconText>{ad.icon}</IconText> {ad.name}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-accent)' }}>
                             +₹{ad.price}
@@ -1920,7 +1922,7 @@ export default function CustomerMenu({
                         Guest & Order Identification
                       </h3>
                       <span style={{ fontSize: 11, color: 'var(--brand-accent)', fontWeight: 600 }}>
-                        {initialTable === 'Takeaway' || initialTable === '0' ? '🥡 Takeaway Order' : `🍽️ Table ${initialTable}`}
+                        <IconText>{initialTable === 'Takeaway' || initialTable === '0' ? '🥡 Takeaway Order' : `🍽️ Table ${initialTable}`}</IconText>
                       </span>
                     </div>
 
@@ -1936,14 +1938,14 @@ export default function CustomerMenu({
                       }}>
                         <div>
                           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            ✨ Recognized Guest Login
+                            <Icon name="sparkles" /> Recognized Guest Login
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-dark)', marginTop: 2 }}>
                             {customerName || 'Guest'} · +91 {customerPhone}
                           </div>
                           {(initialTable === 'Takeaway' || initialTable === '0') && customerFlat ? (
                             <div style={{ fontSize: 12, color: 'var(--brand-accent)', fontWeight: 700, marginTop: 2 }}>
-                              🏢 Flat: {customerFlat}
+                              <Icon name="building" /> Flat: {customerFlat}
                             </div>
                           ) : customerFlat ? (
                             <div style={{ fontSize: 11, color: 'var(--text-grey)', marginTop: 2 }}>
@@ -1993,7 +1995,7 @@ export default function CustomerMenu({
                               width: '100%',
                             }}
                           >
-                            <span>📱</span> Auto-Select Phone from Device Contacts
+                            <span><Icon name="phone" /></span> Auto-Select Phone from Device Contacts
                           </button>
                         )}
 
@@ -2043,7 +2045,7 @@ export default function CustomerMenu({
                         {(initialTable === 'Takeaway' || initialTable === '0') ? (
                           <div style={{ background: '#FFFDF9', padding: '10px 12px', border: `1.5px solid ${flatError ? '#DC2626' : 'var(--brand-gold)'}`, borderRadius: 10 }}>
                             <label style={{ fontSize: 11, fontWeight: 700, color: flatError ? '#DC2626' : 'var(--brand-accent)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-                              <span>🏢</span> Flat / Apartment Number (Mandatory for Takeaway) *
+                              <span><Icon name="building" /></span> Flat / Apartment Number (Mandatory for Takeaway) *
                             </label>
                             <input
                               type="text"
@@ -2058,7 +2060,7 @@ export default function CustomerMenu({
                             />
                             {flatError ? (
                               <span style={{ fontSize: 11, color: '#DC2626', marginTop: 4, display: 'block', fontWeight: 600 }}>
-                                ⚠️ {flatError}
+                                <Icon name="warning" /> {flatError}
                               </span>
                             ) : (
                               <span style={{ fontSize: 10.5, color: '#7C4A1E', marginTop: 3, display: 'block' }}>
@@ -2108,7 +2110,7 @@ export default function CustomerMenu({
                             className="btn-solid"
                             style={{ height: 36, fontSize: 12, flex: 1 }}
                           >
-                            ✓ Save Profile
+                            <Icon name="check" /> Save Profile
                           </button>
                           {isGuestProfileSaved && (
                             <button
@@ -2146,7 +2148,7 @@ export default function CustomerMenu({
                     style={{ width: '100%', background: '#78716C', cursor: 'not-allowed', opacity: 0.8 }}
                     disabled={true}
                   >
-                    🛑 Store Currently Closed
+                    <Icon name="warning" /> Store Currently Closed
                   </button>
                 ) : settings.minOrderAmount && cartSubtotal < settings.minOrderAmount ? (
                   <button
@@ -2201,7 +2203,7 @@ export default function CustomerMenu({
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 800, fontSize: 13.5 }}>
-                          ⚠️ Order #{del.orderNumber} Deleted by Admin
+                          <Icon name="warning" /> Order #{del.orderNumber} Deleted by Admin
                         </span>
                         <button
                           type="button"
@@ -2225,8 +2227,8 @@ export default function CustomerMenu({
                             padding: '0 4px',
                           }}
                           title="Dismiss"
-                        >
-                          ✕
+                         aria-label="Close">
+                          <Icon name="close" />
                         </button>
                       </div>
                       <p style={{ margin: '6px 0 0', fontSize: 12, color: '#7F1D1D', lineHeight: 1.4 }}>
@@ -2255,7 +2257,7 @@ export default function CustomerMenu({
                       fontSize: 13,
                     }}
                   >
-                    🔄 Refresh Orders
+                    <Icon name="refresh" /> Refresh Orders
                   </button>
                 </div>
               ) : (
@@ -2287,7 +2289,7 @@ export default function CustomerMenu({
                             ({ord.tableNumber === 'Takeaway' || ord.tableNumber === 0 ? 'Takeaway' : `Table ${ord.tableNumber}`})
                           </span>
                           <div style={{ fontSize: 11, color: 'var(--text-grey)', marginTop: 2 }}>
-                            📅 {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ⏰ {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            <Icon name="calendar" /> {new Date(ord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · <Icon name="clock" /> {new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
                         <span style={{
@@ -2319,7 +2321,7 @@ export default function CustomerMenu({
                         </div>
                         {isServed && (
                           <div className="timeline-step completed">
-                            <span className="step-title">✨ Order Completed</span>
+                            <span className="step-title"><Icon name="sparkles" /> Order Completed</span>
                             <span className="step-desc">Served fresh! Thank you for choosing Anassa.</span>
                           </div>
                         )}
@@ -2330,12 +2332,12 @@ export default function CustomerMenu({
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 13 }}>₹{ord.total.toFixed(2)}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: ord.isPaid ? '#DCFCE7' : '#FEF3C7', color: ord.isPaid ? '#166534' : '#92400E' }}>
-                            {ord.isPaid ? '✓ Paid' : '⏳ Unsettled'}
+                            <IconText>{ord.isPaid ? '✓ Paid' : '⏳ Unsettled'}</IconText>
                           </span>
                         </div>
                         {ord.customerFlat && (
                           <div style={{ width: '100%', fontWeight: 700, color: 'var(--brand-accent)', marginTop: 2 }}>
-                            🏢 Flat: {ord.customerFlat}
+                            <Icon name="building" /> Flat: {ord.customerFlat}
                           </div>
                         )}
                       </div>
@@ -2368,7 +2370,7 @@ export default function CustomerMenu({
             boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
             animation: 'fadeIn 0.3s ease-out',
           }}>
-            <span style={{ fontSize: '2.5rem' }}>🎉</span>
+            <span style={{ fontSize: '2.5rem' }}><Icon name="sparkles" /></span>
             <h3 style={{ fontFamily: 'var(--font-display)', margin: '8px 0 4px', fontSize: '1.4rem' }}>
               Order Placed Successfully!
             </h3>

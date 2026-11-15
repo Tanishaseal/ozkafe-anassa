@@ -1,4 +1,5 @@
 'use client';
+import { Icon } from '@/components/Icon';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { MenuItem } from '@/lib/types';
@@ -15,7 +16,7 @@ export default function SearchableDishPicker({
   items,
   selectedId,
   onSelect,
-  placeholder = '🔍 Search or select dish...',
+  placeholder = 'Search or select dish...',
   className = '',
 }: SearchableDishPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +146,7 @@ export default function SearchableDishPicker({
             marginLeft: 4,
           }}
         >
-          ▼
+          <Icon name="chevron" />
         </span>
       </button>
 
@@ -177,7 +178,7 @@ export default function SearchableDishPicker({
               gap: 8,
             }}
           >
-            <span style={{ fontSize: 13, color: '#78716C' }}>🔍</span>
+            <span style={{ fontSize: 13, color: '#78716C' }}><Icon name="search" /></span>
             <input
               ref={searchInputRef}
               type="text"
@@ -212,8 +213,8 @@ export default function SearchableDishPicker({
                   color: '#44403C',
                   fontWeight: 800,
                 }}
-              >
-                ✕
+               aria-label="Close">
+                <Icon name="close" />
               </button>
             )}
           </div>

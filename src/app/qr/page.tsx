@@ -1,4 +1,5 @@
 'use client';
+import { Icon, IconText } from '@/components/Icon';
 
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
@@ -97,7 +98,7 @@ export default function QRGeneratorPage() {
             onClick={handleDownload}
             disabled={!qrDataUrl}
           >
-            📥 Save PNG
+            <Icon name="download" /> Save PNG
           </button>
 
           <button
@@ -106,7 +107,7 @@ export default function QRGeneratorPage() {
             style={{ height: 38, padding: '0 16px', fontSize: 13, background: '#16A34A', color: '#FFF', borderColor: '#16A34A', fontWeight: 700 }}
             onClick={() => window.print()}
           >
-            🖨️ Print Standee Card
+            <Icon name="printer" /> Print Standee Card
           </button>
         </div>
       </div>
@@ -131,7 +132,7 @@ export default function QRGeneratorPage() {
             letterSpacing: 1.5,
             marginBottom: 4
           }}>
-            ☕ SCAN TO ORDER FOOD
+            <Icon name="coffee" /> SCAN TO ORDER FOOD
           </div>
 
           <h2 className="qr-table-heading" style={{ fontSize: '1.75rem', marginBottom: 2 }}>
@@ -180,12 +181,12 @@ export default function QRGeneratorPage() {
           </div>
 
           <div className="qr-veg-banner" style={{ marginBottom: 12, padding: '5px 14px', fontSize: 11.5 }}>
-            🌱 100% Pure Vegetarian Café
+            <Icon name="leaf" /> 100% Pure Vegetarian Café
           </div>
 
           <div style={{ marginTop: 4, fontSize: 12, color: '#8C7F73' }}>
             <Link href={directLink} target="_blank" style={{ color: '#A66B33', textDecoration: 'none', fontWeight: 600 }}>
-              {displayHost ? `Visit: ${displayHost} ↗` : 'Open Direct Link ↗'}
+              <IconText>{displayHost ? `Visit: ${displayHost} ↗` : 'Open Direct Link ↗'}</IconText>
             </Link>
           </div>
         </div>
