@@ -12,6 +12,7 @@ async function start() {
   const schema = fs.readFileSync('supabase/schema.sql','utf8').replace(/CREATE EXTENSION[^;]+;/g,'').replace(/DO \$\$[\s\S]*?END \$\$;/g,'').replace(/ALTER PUBLICATION[^;]+;/g,'');
   await db.exec(schema);
   await db.exec(fs.readFileSync('supabase/migrations/20261113_workflow.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261115_order_discounts.sql','utf8'));
   const initial = { exports: {} };
   new Function('exports','require','module',ts.transpileModule(fs.readFileSync('src/lib/initialData.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(initial.exports, require, initial);
   for (const i of initial.exports.initialMenuItems) {

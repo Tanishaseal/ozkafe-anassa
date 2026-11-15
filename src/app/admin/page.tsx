@@ -1,5 +1,7 @@
 'use client';
 import { Icon, IconText } from '@/components/Icon';
+import DiscountSummary from '@/components/DiscountSummary';
+import { billTotals } from '@/lib/pricing';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
@@ -1020,10 +1022,7 @@ export default function AdminPage() {
     const previousEditingReceipt = editingReceiptOrder;
     const targetOrderId = editingReceiptOrder.id;
 
-    const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-    const gstRate = settings.gstPercent !== undefined ? settings.gstPercent : 5;
-    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
-    const total = subtotal + taxAmount;
+    const { subtotal, taxAmount, total } = billTotals(editItems, settings.gstPercent ?? 5, editingReceiptOrder.discountPercent ?? 0);
     const createdAt = editDateTime ? new Date(editDateTime).getTime() : editingReceiptOrder.createdAt;
 
     const updates: Partial<Order> = {
@@ -2674,7 +2673,7 @@ export default function AdminPage() {
                                 <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {ord.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
                                 </td>
-                                <td><strong>₹{ord.total}</strong></td>
+                                <td><strong>₹{ord.total.toFixed(2)}</strong><DiscountSummary order={ord} /></td>
                                 <td>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                                       <span className={`admin-status-badge ${
@@ -4154,18 +4153,13 @@ export default function AdminPage() {
           : selectedReceiptOrder.items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
 
         const gstPercent = settings.gstPercent ?? 5;
-        const gstRate = gstPercent / 100;
-        const orderTax = selectedReceiptOrder.taxAmount !== undefined && selectedReceiptOrder.taxAmount > 0
-          ? selectedReceiptOrder.taxAmount
-          : Number((orderSubtotal * gstRate).toFixed(2));
+        const orderTax = selectedReceiptOrder.taxAmount ?? 0;
 
         const halfRate = (gstPercent / 2).toFixed(1);
         const cgst = Number((orderTax / 2).toFixed(2));
         const sgst = Number((orderTax - cgst).toFixed(2));
 
-        const orderTotal = selectedReceiptOrder.total && selectedReceiptOrder.total > 0
-          ? selectedReceiptOrder.total
-          : Number((orderSubtotal + orderTax).toFixed(2));
+        const orderTotal = selectedReceiptOrder.total;
 
         const totalQty = selectedReceiptOrder.items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
 
@@ -4251,7 +4245,8 @@ export default function AdminPage() {
                       <span style={{ fontWeight: 700 }}>₹{orderSubtotal.toFixed(2)}</span>
                     </div>
 
-                    <div style={{ background: '#F5F5F4', padding: '8px 10px', borderRadius: 6, margin: '6px 0', border: '1px solid #E7E5E4' }}>
+                    <DiscountSummary order={selectedReceiptOrder} />
+                  <div style={{ background: '#F5F5F4', padding: '8px 10px', borderRadius: 6, margin: '6px 0', border: '1px solid #E7E5E4' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#44403C', marginBottom: 3 }}>
                         <span>CGST ({halfRate}%):</span>
                         <span>₹{cgst.toFixed(2)}</span>
@@ -4514,17 +4509,16 @@ export default function AdminPage() {
 
                 {/* 5. Live Pricing Breakdown Preview */}
                 {(() => {
-                  const sub = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-                  const gst = Number(((sub * (settings.gstPercent ?? 5)) / 100).toFixed(2));
-                  const tot = sub + gst;
+                  const { subtotal: sub, taxAmount: gst, total: tot } = billTotals(editItems, settings.gstPercent ?? 5, editingReceiptOrder.discountPercent ?? 0);
                   return (
                     <div style={{ background: '#fff', border: '1px solid var(--adm-border)', borderRadius: 8, padding: 12, fontSize: 12.5 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span>Item Subtotal:</span>
                         <strong>₹{sub.toFixed(2)}</strong>
                       </div>
+                      <DiscountSummary order={{ subtotal: sub, discountPercent: editingReceiptOrder.discountPercent }} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, color: 'var(--adm-text-muted)' }}>
-                        <span>GST ({settings.gstPercent || 5}%):</span>
+                        <span>GST ({settings.gstPercent ?? 5}%):</span>
                         <span>₹{gst.toFixed(2)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--adm-border)', fontWeight: 800, fontSize: 14 }}>

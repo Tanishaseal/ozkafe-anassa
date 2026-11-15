@@ -14,6 +14,7 @@ test('PostgreSQL migration: atomic orders, stock, retries, settings, OTP, permis
     const migration = fs.readFileSync('supabase/migrations/20261113_workflow.sql', 'utf8');
     await db.exec(migration);
     await db.exec(migration); // Repeatable rollout.
+    await db.exec(fs.readFileSync('supabase/migrations/20261115_order_discounts.sql','utf8'));
     const payload = (key) => ({ id: crypto.randomUUID(), table_number: '1', session_id: 'test-session', customer_name: 'Test', customer_phone: '9999999999',
       items: [{ id: 'hc-1', name: 'Espresso', quantity: 1, price: 89, isAddon: false }], subtotal: 89, tax_amount: 4.45, total: 93.45,
       status: 'received', created_at: new Date().toISOString(), idempotency_key: key });

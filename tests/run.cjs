@@ -11,6 +11,7 @@ async function main(){
   // Do not reuse an existing database adapter: every run must start with fresh isolated data.
   try { await fetch('http://127.0.0.1:3200/health'); throw Error('Port 3200 is occupied; stop the old test adapter first.'); } catch(e) { if(e.message.startsWith('Port'))throw e; }
   await run(['--test','tests/database.test.cjs']);
+  await run(['--test','tests/pricing.test.cjs']);
   await run(['node_modules/typescript/bin/tsc','--noEmit']);
   await run(['node_modules/next/dist/bin/next','build']);
   await run(['--test','tests/build-output.test.cjs']);

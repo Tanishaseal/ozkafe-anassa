@@ -73,6 +73,7 @@ export interface Order {
   subtotal: number;
   taxAmount: number;
   total: number;
+  discountPercent?: number; // Percentage reduction on subtotal before tax.
   specialInstructions?: string;
   status: OrderStatus;
   isPaid?: boolean; // When true: bill has been settled / customer paid

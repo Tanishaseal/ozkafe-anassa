@@ -1,5 +1,7 @@
 'use client';
 import { Icon, IconText } from '@/components/Icon';
+import DiscountSummary from '@/components/DiscountSummary';
+import { billTotals } from '@/lib/pricing';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Image from 'next/image';
@@ -420,9 +422,14 @@ export default function KitchenDashboard() {
     }
   };
 
+  const [editDiscountPercent, setEditDiscountPercent] = useState(0);
+  const [receiptError, setReceiptError] = useState('');
+
   // Open receipt editor
   const handleOpenEditReceipt = (order: Order) => {
     setEditingReceiptOrder(order);
+    setEditDiscountPercent(order.discountPercent ?? 0);
+    setReceiptError('');
     setEditCustomerName(order.customerName || '');
     setEditCustomerPhone(order.customerPhone || '');
     setEditCustomerFlat(order.customerFlat || '');
@@ -503,10 +510,7 @@ export default function KitchenDashboard() {
     const targetOrderId = editingReceiptOrder.id;
     const previousTargetOrder = { ...editingReceiptOrder };
 
-    const subtotal = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-    const gstRate = kitchenSettings.gstPercent;
-    const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
-    const total = Number((subtotal + taxAmount).toFixed(2));
+    const { subtotal, taxAmount, total, discountPercent } = billTotals(editItems, kitchenSettings.gstPercent, editDiscountPercent);
 
     const updates: Partial<Order> = {
       customerName: editCustomerName.trim() || 'Guest',
@@ -514,6 +518,7 @@ export default function KitchenDashboard() {
       customerFlat: editCustomerFlat.trim() || undefined,
       tableNumber: editTableNumber,
       items: editItems,
+      discountPercent,
       subtotal,
       taxAmount,
       total,
@@ -529,7 +534,7 @@ export default function KitchenDashboard() {
     if (printOrder?.id === targetOrderId) {
       setPrintOrder(updatedOrder);
     }
-    setEditingReceiptOrder(null); // Instantly close modal!
+    setReceiptError('');
     logOptimisticSuccess('Kitchen Edit Receipt Applied Instantly', updatedOrder);
 
     // ── STEP 2: BACKGROUND DATABASE SYNC ──
@@ -561,6 +566,8 @@ export default function KitchenDashboard() {
       setOrders((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
       setHistoryOrders((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
       setRecentServed((prev) => prev.map((o) => (o.id === targetOrderId ? serverUpdated : o)));
+      setEditingReceiptOrder(null);
+      setPrintOrder(serverUpdated);
       logActionSuccess('Kitchen Edit Receipt Persisted to Database', { orderId: targetOrderId });
     } catch (err) {
       // ── STEP 3: ROLLBACK UI STATE ON FAILURE ──
@@ -568,6 +575,7 @@ export default function KitchenDashboard() {
       setHistoryOrders(previousHistory);
       setRecentServed(previousServed);
       setPrintOrder(previousPrint);
+      setReceiptError(err instanceof Error ? err.message : 'Could not save the bill. Please retry.');
 
       logActionError({
         action: 'Kitchen Edit Receipt',
@@ -1328,7 +1336,7 @@ export default function KitchenDashboard() {
                             className="kds-action-btn btn-start-prep"
                             onClick={() => handleUpdateStatus(order.id, 'preparing')}
                           >
-                            <Icon name="play" /> Start Prep
+                            <Icon name="play" /> Start Preparation
                           </button>
 
                           <button
@@ -1340,28 +1348,7 @@ export default function KitchenDashboard() {
                             <Icon name="receipt" /> Bill
                           </button>
 
-                          <button
-                            type="button"
-                            className="btn-kds-edit-receipt"
-                            title="Edit Order / Receipt"
-                            onClick={() => handleOpenEditReceipt(order)}
-                          >
-                            <Icon name="edit" /> Edit
-                          </button>
 
-                          {kitchenSettings.allowOrderCancellation && (
-                            <button
-                              className="btn-reject-order"
-                              title="Reject / Void suspicious order"
-                              onClick={() => {
-                                if (confirm(`Reject / Void suspicious order #${order.orderNumber || order.id.slice(0, 8)}?`)) {
-                                  handleUpdateStatus(order.id, 'cancelled');
-                                }
-                              }}
-                             aria-label="Close">
-                              <Icon name="close" />
-                            </button>
-                          )}
                         </div>
                       </div>
                     );
@@ -1461,14 +1448,6 @@ export default function KitchenDashboard() {
                           >
                             <Icon name="receipt" /> Bill
                           </button>
-                          <button
-                            type="button"
-                            className="btn-kds-edit-receipt"
-                            title="Edit Order / Receipt"
-                            onClick={() => handleOpenEditReceipt(order)}
-                          >
-                            <Icon name="edit" /> Edit
-                          </button>
                         </div>
                       </div>
                     );
@@ -1559,14 +1538,6 @@ export default function KitchenDashboard() {
                             onClick={() => setPrintOrder(order)}
                           >
                             <Icon name="receipt" /> Bill
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-kds-edit-receipt"
-                            title="Edit Order / Receipt"
-                            onClick={() => handleOpenEditReceipt(order)}
-                          >
-                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -1685,15 +1656,6 @@ export default function KitchenDashboard() {
                             style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                           >
                             <Icon name="receipt" /> Bill
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-kds-edit-receipt"
-                            title="Edit Order / Bill"
-                            onClick={() => handleOpenEditReceipt(order)}
-                            style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid #D6D3D1', background: '#FFF', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            <Icon name="edit" /> Edit
                           </button>
                         </div>
                       </div>
@@ -1913,18 +1875,13 @@ export default function KitchenDashboard() {
           : printOrder.items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
 
         const gstPercent = kitchenSettings.gstPercent;
-        const gstRate = gstPercent / 100;
-        const orderTax = printOrder.taxAmount !== undefined && printOrder.taxAmount > 0
-          ? printOrder.taxAmount
-          : Number((orderSubtotal * gstRate).toFixed(2));
+        const orderTax = printOrder.taxAmount ?? 0;
 
         const halfRate = (gstPercent / 2).toFixed(1);
         const cgst = Number((orderTax / 2).toFixed(2));
         const sgst = Number((orderTax - cgst).toFixed(2));
 
-        const orderTotal = printOrder.total && printOrder.total > 0
-          ? printOrder.total
-          : Number((orderSubtotal + orderTax).toFixed(2));
+        const orderTotal = printOrder.total;
 
         const totalQty = printOrder.items.reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
 
@@ -2039,6 +1996,7 @@ export default function KitchenDashboard() {
                     <span style={{ color: '#57534E' }}>Item Subtotal:</span>
                     <span style={{ fontWeight: 700 }}>₹{orderSubtotal.toFixed(2)}</span>
                   </div>
+                  <DiscountSummary order={printOrder} />
                   <div style={{ background: '#F5F5F4', padding: '6px 8px', borderRadius: 4, margin: '4px 0', border: '1px solid #E7E5E4' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#555', marginBottom: 2 }}>
                       <span>CGST ({halfRate}%):</span>
@@ -2088,6 +2046,14 @@ export default function KitchenDashboard() {
                   </button>
                 </div>
 
+                {kitchenSettings.allowOrderCancellation && printOrder.status === 'received' && (
+                  <button type="button" className="btn-reject-order" style={{ minHeight: 42 }} onClick={() => {
+                    if (confirm('Reject order #' + printOrder.orderNumber + '?')) {
+                      handleUpdateStatus(printOrder.id, 'cancelled');
+                      setPrintOrder(null);
+                    }
+                  }}>Reject Order</button>
+                )}
                 {!printOrder.isPaid && (
                   <button
                     type="button"
@@ -2298,27 +2264,22 @@ export default function KitchenDashboard() {
                 </div>
               </div>
 
-              {/* Recalculated Breakdown */}
+              <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                Discount (%) — before tax
+                <input aria-label="Discount percentage" type="number" min="0" max="100" step="0.01"
+                  value={editDiscountPercent} onChange={e => setEditDiscountPercent(Number(e.target.value))}
+                  style={{ width: '100%', minHeight: 44, padding: '10px 12px', border: '1px solid #D6D3D1', borderRadius: 8, boxSizing: 'border-box' }} />
+              </label>
+              {receiptError && <p role="alert" style={{ color: '#B91C1C' }}>{receiptError}</p>}
               {(() => {
-                const sub = editItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
-                const gst = Number(((sub * 5) / 100).toFixed(2));
-                const tot = Number((sub + gst).toFixed(2));
-                return (
-                  <div style={{ background: '#FAF9F6', border: '1px solid #E5DFD7', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#57534E' }}>
-                      <span>Item Subtotal:</span>
-                      <strong>₹{sub.toFixed(2)}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#57534E' }}>
-                      <span>GST (5%):</span>
-                      <strong>₹{gst.toFixed(2)}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid #D6D3D1', fontWeight: 900, fontSize: 14, color: '#1A1410' }}>
-                      <span>Recalculated Total:</span>
-                      <span style={{ color: '#5C381E' }}>₹{tot.toFixed(2)}</span>
-                    </div>
-                  </div>
-                );
+                if (!Number.isFinite(editDiscountPercent) || editDiscountPercent < 0 || editDiscountPercent > 100) return <p role="alert">Enter a discount from 0 to 100%.</p>;
+                const amounts = billTotals(editItems, kitchenSettings.gstPercent, editDiscountPercent);
+                return <div style={{ background: '#FAF9F6', border: '1px solid #E5DFD7', borderRadius: 8, padding: 14, fontSize: 13 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Item Subtotal</span><strong>₹{amounts.subtotal.toFixed(2)}</strong></div>
+                  <DiscountSummary order={amounts} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}><span>GST ({kitchenSettings.gstPercent}%)</span><strong>₹{amounts.taxAmount.toFixed(2)}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: '1px solid #D6D3D1', fontWeight: 800 }}><span>Final Payable</span><strong>₹{amounts.total.toFixed(2)}</strong></div>
+                </div>;
               })()}
 
               {/* Footer buttons */}

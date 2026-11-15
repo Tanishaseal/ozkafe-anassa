@@ -197,6 +197,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error('API POST /api/admin error:', error);
     return NextResponse.json({ error: 'Failed to process admin action' }, { status: 500 });
   }

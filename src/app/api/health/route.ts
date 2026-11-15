@@ -16,14 +16,14 @@ export async function GET() {
       // ordering, stock, settlement and deletion writes despite accepting reads.
       const checks = await Promise.all([
         supabaseServer.from('tables').select('table_number').limit(0),
-        supabaseServer.from('orders').select('idempotency_key,is_deleted,deleted_by,deleted_at,is_paid,paid_at,settled_by').limit(0),
+        supabaseServer.from('orders').select('idempotency_key,is_deleted,deleted_by,deleted_at,is_paid,paid_at,settled_by,discount_percent').limit(0),
         supabaseServer.from('menu_items').select('stock').limit(0),
         supabaseServer.from('order_counter').select('value').limit(0),
       ]);
       const error = checks.find(result => result.error)?.error;
       latencyMs = Date.now() - start;
       if (error) {
-        supabaseError = error.message + ' Check that supabase/migrations/20261113_workflow.sql has been applied.';
+        supabaseError = error.message + ' Check that all SQL files in supabase/migrations have been applied.';
       } else {
         supabaseConnected = true;
       }

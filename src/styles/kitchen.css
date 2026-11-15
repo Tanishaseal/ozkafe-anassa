@@ -507,8 +507,20 @@
 /* Card Action Buttons */
 .kds-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+}
+
+.kds-card-actions > .kds-action-btn {
+  min-width: 0;
+  flex: 1 1 140px;
+  white-space: normal;
+}
+
+.kds-card-actions > .btn-kds-view-receipt {
+  min-height: 42px;
+  flex: 0 0 auto;
 }
 
 .kds-action-btn {

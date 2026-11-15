@@ -555,6 +555,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ error: 'No valid action or status specified' }, { status: 400 });
   } catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error('API PATCH /api/orders error:', error);
     return NextResponse.json({ error: 'Failed to update order' }, { status: 500 });
   }

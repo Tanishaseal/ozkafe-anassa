@@ -17,6 +17,10 @@ test('Two production Next processes share orders, stock, sessions and settlement
     const saved=await Promise.all(replies.map(ok)); assert.equal(saved[0].order.id,saved[1].order.id);
     assert.equal((await ok(await two.get('/api/menu'))).items.find(i=>i.id==='hc-1').stock,1);
     const id=saved[0].order.id;
+    await ok(await two.patch('/api/orders', { headers, data: { id, action: 'edit_receipt', updates: { discountPercent: 10 } } }));
+    const discounted = await ok(await one.get('/api/orders?id=' + id, { headers: customerHeaders }));
+    assert.equal(discounted.discountPercent, 10);
+    assert.equal(discounted.total, 84.11);
     await ok(await two.patch('/api/orders',{headers,data:{id,status:'preparing'}}));
     await ok(await two.post('/api/admin?action=edit_order',{headers,data:{orderId:id,updates:{customerName:'Edited on second instance'}}}));
     assert.equal((await ok(await one.get('/api/orders?id='+id,{headers:customerHeaders}))).customerName,'Edited on second instance');

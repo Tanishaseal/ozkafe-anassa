@@ -18,7 +18,7 @@ For a single-process local demonstration only, leaving Supabase unconfigured use
 ## Existing production deployment
 
 1. Import the ignored `.env.vercel.local` into Vercel's Production environment. Required values: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, and `NEXT_PUBLIC_APP_URL`.
-2. Run [the workflow migration](supabase/migrations/20261113_workflow.sql) in Supabase SQL Editor before deploying this code. It adds missing stock/payment columns and transactional functions without deleting the existing menu or orders.
+2. Run [the workflow migration](supabase/migrations/20261113_workflow.sql), then [the discount migration](supabase/migrations/20261115_order_discounts.sql), in Supabase SQL Editor before deploying this code. These add stock/payment fields, transactional functions, and the pre-tax percentage discount field without deleting existing menu items or orders.
 3. Deploy the source changes. Confirm `/api/health` reports a connected Supabase database. Staff must sign in again when the session secret changes.
 
 For a new empty database only, run `supabase/schema.sql`, then `supabase/seed_76_menu_items.sql`, then the migration. Do not reseed or run the wipe script against an existing live database as part of this repair.

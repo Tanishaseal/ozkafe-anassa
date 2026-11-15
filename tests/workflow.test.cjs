@@ -24,6 +24,18 @@ test('API workflow: authorization, isolation, status, settlement, receipt, menu,
       items: [{ id: 'hc-1', quantity: 1, price: 1 }], idempotencyKey: key };
     const created = await json(await guest.post('/api/orders', { data: payload }));
     assert.equal(created.order.total, 93.45);
+    for (const discountPercent of [-1, 101, '20', null]) {
+      assert.equal((await admin.patch('/api/orders', { data: { id: created.order.id, action: 'edit_receipt', updates: { discountPercent } } })).status(), 400);
+    }
+    const discounted = await json(await admin.patch('/api/orders', { data: { id: created.order.id, action: 'edit_receipt', updates: { discountPercent: 20, total: 1, taxAmount: 0 } } }));
+    assert.equal(discounted.order.subtotal, 89); assert.equal(discounted.order.taxAmount, 3.56); assert.equal(discounted.order.total, 74.76);
+    const free = await json(await admin.patch('/api/orders', { data: { id: created.order.id, action: 'edit_receipt', updates: { discountPercent: 100 } } }));
+    assert.equal(free.order.taxAmount, 0); assert.equal(free.order.total, 0);
+    await json(await admin.post('/api/admin?action=edit_order', { data: { orderId: created.order.id, updates: { items: [{ id: 'hc-1', name: 'Espresso', quantity: 2, price: 89 }], total: 186.9 } } }));
+    const adminEdited = await json(await guest.get('/api/orders?id=' + created.order.id));
+    assert.equal(adminEdited.discountPercent, 100); assert.equal(adminEdited.total, 0);
+    await json(await admin.patch('/api/orders', { data: { id: created.order.id, action: 'edit_receipt', updates: { discountPercent: 0 } } }));
+
     assert.equal((await json(await guest.post('/api/orders', { data: payload }))).order.id, created.order.id);
     assert.deepEqual(await json(await other.get('/api/orders?table=Takeaway&phone=9999999999&session=' + session.sessionId)), []);
     assert.equal((await other.get('/api/orders?id=' + created.order.id)).status(), 404);
@@ -93,8 +105,28 @@ test('Three real browser screens: scan, submit, kitchen buttons, live tracker, s
     await kitchen.locator('input[type="password"]').fill('1234');
     await kitchen.locator('button[type="submit"]').click();
     const card = kitchen.locator('.kds-order-card').filter({ hasText: placed.order.orderNumber });
+
+    await expect(card.locator('.kds-card-actions button')).toHaveCount(2);
+    await kitchen.setViewportSize({ width: 390, height: 844 });
+    await card.getByRole('button', { name: 'Bill', exact: true }).click();
+    await kitchen.getByRole('button', { name: 'Edit Receipt', exact: true }).click();
+    await kitchen.getByLabel('Discount percentage').fill('20');
+    await kitchen.screenshot({ path: 'scratch/discount-mobile-editor.png' });
+    const savedDiscount = kitchen.waitForResponse(r => r.url().endsWith('/api/orders') && r.request().method() === 'PATCH');
+    await kitchen.getByRole('button', { name: /Save & Update Receipt/ }).click();
+    const savedBill = (await json(await savedDiscount)).order;
+    assert.equal(savedBill.discountPercent, 20);
+    assert.equal(savedBill.taxAmount, Number((Number((savedBill.subtotal * 0.8).toFixed(2)) * 0.05).toFixed(2)));
+    await expect(kitchen.locator('.admin-modal-overlay')).toContainText('Discount (20%, before tax)');
+    await kitchen.screenshot({ path: 'scratch/discount-mobile-bill.png' });
+    await kitchen.locator('.admin-modal-overlay').getByRole('button', { name: 'Close Receipt', exact: true }).click();
+    await kitchen.setViewportSize({ width: 1440, height: 1000 });
+    await expect(customer.locator('.bottom-sheet')).toContainText('Discount (20%, before tax)', { timeout: 12000 });
+    await expect(customer.locator('.bottom-sheet')).toContainText('₹' + savedBill.total.toFixed(2));
+    await customer.screenshot({ path: 'scratch/discount-customer.png' });
     let polling = 0; kitchen.on('request', r => { if (r.url().includes('status=active')) polling++; });
     for (const [button, status] of [['.btn-start-prep', 'preparing'], ['.btn-mark-ready', 'ready'], ['.btn-complete', 'served']]) {
+      await expect(card.locator('.kds-card-actions button')).toHaveCount(2);
       await card.locator(button).click();
       await expect.poll(async () => (await (await guestContext.request.get('/api/orders?id=' + placed.order.id)).json()).status).toBe(status);
       await expect.poll(async () => (await customer.locator('.bottom-sheet').innerText()).toLowerCase(), { timeout: 12000 }).toContain(status === 'preparing' ? 'prepar' : status);
@@ -108,7 +140,10 @@ test('Three real browser screens: scan, submit, kitchen buttons, live tracker, s
     await admin.locator('input[type="password"]').fill('1234');
     await admin.locator('button[type="submit"]').click();
     await expect(admin.locator('.admin-layout')).toBeVisible();
+    await expect(card.locator('.kds-card-actions button')).toHaveCount(2);
     const ledger = await json(await adminContext.request.get('/api/orders?all=true'));
+    assert.equal(ledger.find(o => o.id === placed.order.id).discountPercent, 20);
+    assert.equal(ledger.find(o => o.id === placed.order.id).total, savedBill.total);
     assert.ok(ledger.some(o => o.id === placed.order.id));
     await json(await kitchenContext.request.patch('/api/orders', { data: { id: placed.order.id, action: 'settle_bill', staffName: 'Browser Staff' } }));
     await expect(customer.locator('.bottom-sheet')).toContainText('Paid', { timeout: 12000 });

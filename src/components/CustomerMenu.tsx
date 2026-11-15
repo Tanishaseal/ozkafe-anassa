@@ -1,5 +1,6 @@
 'use client';
 import { Icon, IconText } from '@/components/Icon';
+import DiscountSummary from '@/components/DiscountSummary';
 import { iconSvg, legacyIconNames } from '@/lib/icons';
 import { menuPrice } from '@/lib/pricing';
 
@@ -2329,6 +2330,11 @@ export default function CustomerMenu({
 
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-strong)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                         <div><strong>Items:</strong> {ord.items.map((i) => `${i.name} (x${i.quantity})`).join(', ')}</div>
+                        {!!ord.discountPercent && <div style={{ width: '100%' }}>
+                          <div>Subtotal: ₹{ord.subtotal.toFixed(2)}</div>
+                          <DiscountSummary order={ord} />
+                          <div>GST: ₹{ord.taxAmount.toFixed(2)}</div>
+                        </div>}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 13 }}>₹{ord.total.toFixed(2)}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: ord.isPaid ? '#DCFCE7' : '#FEF3C7', color: ord.isPaid ? '#166534' : '#92400E' }}>

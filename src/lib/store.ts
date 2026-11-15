@@ -1,3 +1,4 @@
+import { billTotals } from './pricing';
 import { Category, MenuAddon, MenuItem, Order, OrderStatus, TableSession, CafeSettings, AuditLog, AuditAction, InventoryItem, StaffShift } from './types';
 import { initialCategories, initialMenuItems, initialAddons, initialSettings, initialInventory, initialStaff } from './initialData';
 import { supabaseServer, isSupabaseConfigured, assertStorageConfigured } from './supabaseServer';
@@ -995,13 +996,21 @@ export async function updateOrderDetails(orderId: string, updates: Partial<Order
   assertStorageConfigured();
   const current = await getOrderById(orderId);
   if (!current) return null;
-  const columns: Record<string, string> = { orderNumber: 'order_number', tableNumber: 'table_number', customerName: 'customer_name', customerPhone: 'customer_phone', customerFlat: 'customer_flat', items: 'items', subtotal: 'subtotal', taxAmount: 'tax_amount', total: 'total', specialInstructions: 'special_instructions', status: 'status', isPaid: 'is_paid', paidAt: 'paid_at', settledBy: 'settled_by', createdAt: 'created_at', isDeleted: 'is_deleted', deletedBy: 'deleted_by', deletedAt: 'deleted_at' };
+  const columns: Record<string, string> = { orderNumber: 'order_number', tableNumber: 'table_number', customerName: 'customer_name', customerPhone: 'customer_phone', customerFlat: 'customer_flat', items: 'items', subtotal: 'subtotal', taxAmount: 'tax_amount', total: 'total', discountPercent: 'discount_percent', specialInstructions: 'special_instructions', status: 'status', isPaid: 'is_paid', paidAt: 'paid_at', settledBy: 'settled_by', createdAt: 'created_at', isDeleted: 'is_deleted', deletedBy: 'deleted_by', deletedAt: 'deleted_at' };
   const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([k]) => k in columns)) as Partial<Order>;
   if (safeUpdates.status && !['received', 'preparing', 'ready', 'served', 'cancelled'].includes(safeUpdates.status)) throw new Error('Invalid order status');
   for (const key of ['subtotal', 'taxAmount', 'total'] as const) {
     if (safeUpdates[key] !== undefined && (!Number.isFinite(safeUpdates[key]) || safeUpdates[key]! < 0)) throw new Error('Invalid receipt amount');
   }
   if (safeUpdates.items && (!Array.isArray(safeUpdates.items) || !safeUpdates.items.length || safeUpdates.items.some(i => !Number.isInteger(i.quantity) || i.quantity < 1 || !Number.isFinite(i.price) || i.price < 0))) throw new Error('Invalid receipt items');
+  if ('discountPercent' in safeUpdates && (typeof safeUpdates.discountPercent !== 'number' || !Number.isFinite(safeUpdates.discountPercent) || safeUpdates.discountPercent < 0 || safeUpdates.discountPercent > 100)) {
+    throw new RangeError('Discount must be between 0 and 100 percent.');
+  }
+  if (safeUpdates.items || 'discountPercent' in safeUpdates || (current.discountPercent && ['subtotal', 'taxAmount', 'total'].some(key => key in safeUpdates))) {
+    const settings = await getCafeSettings();
+    const amounts = billTotals(safeUpdates.items || current.items, settings.gstPercent, safeUpdates.discountPercent ?? current.discountPercent ?? 0);
+    Object.assign(safeUpdates, { subtotal: amounts.subtotal, taxAmount: amounts.taxAmount, total: amounts.total, discountPercent: amounts.discountPercent });
+  }
   if (safeUpdates.isPaid && current.isPaid) {
     safeUpdates.paidAt = current.paidAt;
     safeUpdates.settledBy = current.settledBy;
@@ -1541,7 +1550,7 @@ interface OrderRow {
   id: string; order_number: string; table_number: string; table_key?: string; session_id?: string; idempotency_key?: string;
   customer_name: string; customer_phone: string; customer_flat?: string; items: Order['items'];
   subtotal: number | string; tax_amount: number | string; total: number | string; special_instructions?: string;
-  status: OrderStatus; is_paid?: boolean; paid_at?: string; settled_by?: string; is_deleted?: boolean; deleted_by?: string; deleted_at?: string;
+  discount_percent?: number | string; status: OrderStatus; is_paid?: boolean; paid_at?: string; settled_by?: string; is_deleted?: boolean; deleted_by?: string; deleted_at?: string;
   customer_lat?: string | number; customer_lng?: string | number; distance_meters?: string | number; created_at: string; updated_at: string;
 }
 function mapOrderRow(row: OrderRow): Order {
@@ -1554,7 +1563,7 @@ function mapOrderRow(row: OrderRow): Order {
     customerName: row.customer_name, customerPhone: row.customer_phone, customerFlat: row.customer_flat,
     items: row.items || [], subtotal: Number(row.subtotal ?? row.total), taxAmount: Number(row.tax_amount ?? 0), total: Number(row.total),
     specialInstructions: instructions.replace(/\[(?:SETTLED|DELETED_BY_)[^\]]*\]/g, '').trim(),
-    status: row.status, isPaid: Boolean(row.is_paid || settled),
+    discountPercent: Number(row.discount_percent ?? 0), status: row.status, isPaid: Boolean(row.is_paid || settled),
     paidAt: row.paid_at ? Date.parse(row.paid_at) : settled ? Number(settled[1]) : undefined,
     settledBy: row.settled_by || settled?.[2], isDeleted: Boolean(row.is_deleted || deleted),
     deletedBy: row.deleted_by || deleted?.[1]?.toLowerCase(), deletedAt: row.deleted_at ? Date.parse(row.deleted_at) : deleted ? Date.parse(row.updated_at) : undefined,
