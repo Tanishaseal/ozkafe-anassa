@@ -118,6 +118,7 @@ test('Three real browser screens: scan, submit, kitchen buttons, live tracker, s
     assert.equal(savedBill.discountPercent, 20);
     assert.equal(savedBill.taxAmount, Number((Number((savedBill.subtotal * 0.8).toFixed(2)) * 0.05).toFixed(2)));
     await expect(kitchen.locator('.admin-modal-overlay')).toContainText('Discount (20%, before tax)');
+    await expect(kitchen.locator('.admin-modal-overlay').getByRole('button')).toHaveCount(3); // Close, Print, Edit only.
     await kitchen.screenshot({ path: 'scratch/discount-mobile-bill.png' });
     await kitchen.locator('.admin-modal-overlay').getByRole('button', { name: 'Close Receipt', exact: true }).click();
     await kitchen.setViewportSize({ width: 1440, height: 1000 });
@@ -129,6 +130,11 @@ test('Three real browser screens: scan, submit, kitchen buttons, live tracker, s
       await expect(card.locator('.kds-card-actions button')).toHaveCount(2);
       await card.locator(button).click();
       await expect.poll(async () => (await (await guestContext.request.get('/api/orders?id=' + placed.order.id)).json()).status).toBe(status);
+      await card.getByRole('button', { name: 'Bill', exact: true }).click();
+      await expect(kitchen.locator('.admin-modal-overlay').getByRole('button')).toHaveCount(3);
+      await expect(kitchen.locator('.admin-modal-overlay').getByRole('button', { name: 'Print Receipt', exact: true })).toBeVisible();
+      await expect(kitchen.locator('.admin-modal-overlay').getByRole('button', { name: 'Edit Receipt', exact: true })).toBeVisible();
+      await kitchen.getByRole('button', { name: 'Close Receipt', exact: true }).click();
       await expect.poll(async () => (await customer.locator('.bottom-sheet').innerText()).toLowerCase(), { timeout: 12000 }).toContain(status === 'preparing' ? 'prepar' : status);
     }
     await customer.reload();

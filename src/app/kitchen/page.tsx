@@ -2046,24 +2046,6 @@ export default function KitchenDashboard() {
                   </button>
                 </div>
 
-                {kitchenSettings.allowOrderCancellation && printOrder.status === 'received' && (
-                  <button type="button" className="btn-reject-order" style={{ minHeight: 42 }} onClick={() => {
-                    if (confirm('Reject order #' + printOrder.orderNumber + '?')) {
-                      handleUpdateStatus(printOrder.id, 'cancelled');
-                      setPrintOrder(null);
-                    }
-                  }}>Reject Order</button>
-                )}
-                {!printOrder.isPaid && (
-                  <button
-                    type="button"
-                    disabled={isSettlingId === printOrder.id}
-                    onClick={() => handleSettleBill(printOrder.id)}
-                    style={{ height: 40, background: '#15803D', color: '#FFF', border: 'none', borderRadius: 8, fontWeight: 800, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                  >
-                    <IconText>{isSettlingId === printOrder.id ? 'Processing...' : '💳 Mark Settled (Customer Paid)'}</IconText>
-                  </button>
-                )}
               </div>
             </div>
           </div>
