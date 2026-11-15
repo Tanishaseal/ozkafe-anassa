@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       price: numPrice,
       desc: desc || '',
       subheading: subheading || '',
-      img: img || '/images/americano.png',
+      img: img || '/menu-photos/hc-3.webp',
       isVeg: isVeg ?? true,
       isAvailable: stockVal > 0,
       stock: stockVal,

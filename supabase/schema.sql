@@ -208,15 +208,15 @@ ON CONFLICT (id) DO NOTHING;
 -- 13. Initial Seed Data: Sample Starters for Menu Items
 INSERT INTO menu_items (id, category_id, category_name, name, subheading, "desc", price, image_url, is_veg, is_available, sizes, sort_order)
 VALUES
-  ('hc-1', 'hot-coffee', 'Hot Coffee', 'Single Espresso', 'BLACK COFFEES', 'Pure, concentrated coffee extracted under high pressure with thick golden crema.', 89.00, '/images/single_espresso.png', true, true, '["Single Shot", "Double Shot"]'::jsonb, 1),
-  ('hc-3', 'hot-coffee', 'Hot Coffee', 'Americano', 'BLACK COFFEES', 'Rich espresso poured over hot water preserving subtle aromatic floral notes.', 109.00, '/images/americano.png', true, true, '["Regular", "Large"]'::jsonb, 2),
-  ('hc-5', 'hot-coffee', 'Hot Coffee', 'Cappuccino', 'WHITE COFFEES', 'Equal parts dark espresso, warm steamed milk, and velvety thick foam dusted with cocoa.', 129.00, '/images/cappuccino.png', true, true, '["Regular", "Large"]'::jsonb, 3),
-  ('ic-1', 'iced-caffeine', 'Iced Caffeine', 'Berrylicious Mocka Coffee', 'ICED COFFEES', 'Layers of chilled espresso, forest berry coulis, dark mocha, and cold milk foam.', 189.00, '/images/berrylicious_mocka_coffee_highres.png', true, true, '["Regular", "Large"]'::jsonb, 4),
-  ('ic-5', 'iced-caffeine', 'Iced Caffeine', 'Affogato', 'ICED COFFEES', 'A decadent scoop of Madagascan vanilla bean gelato drowned in a piping hot double espresso.', 199.00, '/images/affogato_highres.png', true, true, '["Regular"]'::jsonb, 5),
-  ('cb-1', 'cold-brew', 'Cold Brew', 'Classic Cold Brew', 'SIGNATURE COLD BREWS', 'Bold, intense, less acidic coffee slow steeped for 18 hours using 100% specialty single-origin beans.', 139.00, '/images/classic_cold_brew_cb-1.png', true, true, '["On the Rocks", "With Milk"]'::jsonb, 6),
-  ('tea-1', 'premium-tea', 'Artisan Tea', 'Darjeeling Tea', 'TIMELESS', 'The "Champagne of Teas" harvested from Himalayan high-altitude estates with delicate muscatel aroma.', 69.00, '/images/darjeeling_tea_tea-1.png', true, true, '["Pot for 1", "Pot for 2"]'::jsonb, 7),
-  ('tea-2', 'premium-tea', 'Artisan Tea', 'Cutting Chai', 'TIMELESS', 'A symphony of freshly crushed green cardamom, ginger, and Assam tea boiled in rich milk.', 49.00, '/images/cutting_chai_tea-2.png', true, true, '["Regular"]'::jsonb, 8),
-  ('ss-1', 'shakes-spritzers', 'Shake & Spritzer', 'Classic Mojito', 'MOCKTAILS', 'Muddled fresh mint leaves, cane sugar syrup, lime wedges, and sparkling cold soda.', 129.00, '/images/classic_mojito_ss-1.png', true, true, '["Regular"]'::jsonb, 9)
+  ('hc-1', 'hot-coffee', 'Hot Coffee', 'Single Espresso', 'BLACK COFFEES', 'Pure, concentrated coffee extracted under high pressure with thick golden crema.', 89.00, '/menu-photos/hc-1.webp', true, true, '["Single Shot", "Double Shot"]'::jsonb, 1),
+  ('hc-3', 'hot-coffee', 'Hot Coffee', 'Americano', 'BLACK COFFEES', 'Rich espresso poured over hot water preserving subtle aromatic floral notes.', 109.00, '/menu-photos/hc-3.webp', true, true, '["Regular", "Large"]'::jsonb, 2),
+  ('hc-5', 'hot-coffee', 'Hot Coffee', 'Cappuccino', 'WHITE COFFEES', 'Equal parts dark espresso, warm steamed milk, and velvety thick foam dusted with cocoa.', 129.00, '/menu-photos/hc-5.webp', true, true, '["Regular", "Large"]'::jsonb, 3),
+  ('ic-1', 'iced-caffeine', 'Iced Caffeine', 'Berrylicious Mocka Coffee', 'ICED COFFEES', 'Layers of chilled espresso, forest berry coulis, dark mocha, and cold milk foam.', 189.00, '/menu-photos/ic-1.webp', true, true, '["Regular", "Large"]'::jsonb, 4),
+  ('ic-5', 'iced-caffeine', 'Iced Caffeine', 'Affogato', 'ICED COFFEES', 'A decadent scoop of Madagascan vanilla bean gelato drowned in a piping hot double espresso.', 199.00, '/menu-photos/ic-5.webp', true, true, '["Regular"]'::jsonb, 5),
+  ('cb-1', 'cold-brew', 'Cold Brew', 'Classic Cold Brew', 'SIGNATURE COLD BREWS', 'Bold, intense, less acidic coffee slow steeped for 18 hours using 100% specialty single-origin beans.', 139.00, '/menu-photos/cb-1.webp', true, true, '["On the Rocks", "With Milk"]'::jsonb, 6),
+  ('tea-1', 'premium-tea', 'Artisan Tea', 'Darjeeling Tea', 'TIMELESS', 'The "Champagne of Teas" harvested from Himalayan high-altitude estates with delicate muscatel aroma.', 69.00, '/menu-photos/tea-1.webp', true, true, '["Pot for 1", "Pot for 2"]'::jsonb, 7),
+  ('tea-2', 'premium-tea', 'Artisan Tea', 'Cutting Chai', 'TIMELESS', 'A symphony of freshly crushed green cardamom, ginger, and Assam tea boiled in rich milk.', 49.00, '/menu-photos/tea-2.webp', true, true, '["Regular"]'::jsonb, 8),
+  ('ss-1', 'shakes-spritzers', 'Shake & Spritzer', 'Classic Mojito', 'MOCKTAILS', 'Muddled fresh mint leaves, cane sugar syrup, lime wedges, and sparkling cold soda.', 129.00, '/menu-photos/ss-1.webp', true, true, '["Regular"]'::jsonb, 9)
 ON CONFLICT (id) DO NOTHING;
 
 -- 14. Stock Migration for Live Menu Inventory

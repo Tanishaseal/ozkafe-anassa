@@ -13,14 +13,14 @@ async function main(){
   walk(); let images=0;
   for (const row of rows) {
     if(/\.svg$/i.test(row.file) && fs.readFileSync(row.file,'utf8').includes('<symbol')) row.check='SVG symbol sprite; no standalone raster dimensions';
-    else if(/\.(png|jpe?g|svg)$/i.test(row.file)) { try { const m=await sharp(row.file).metadata(); row.check=`Image decoded: ${m.width} × ${m.height}`;images++; } catch(e) { throw Error(row.file+': '+e.message); } }
+    else if(/\.(png|jpe?g|svg|webp)$/i.test(row.file)) { try { const m=await sharp(row.file).metadata(); row.check=`Image decoded: ${m.width} × ${m.height}`;images++; } catch(e) { throw Error(row.file+': '+e.message); } }
     else if(/\.pdf$/i.test(row.file)) row.check='Reference PDF; not executed by the application';
     else if(row.file.startsWith('src/styles/')) row.check='Existing presentation; unchanged';
     else if(row.file.startsWith('src/')) row.check='Application source; covered by TypeScript/build and workflow review';
     else row.check='Configuration, documentation, SQL, or verification tooling';
   }
   const source=fs.readFileSync('src/lib/initialData.ts','utf8');
-  const references=[...source.matchAll(/['"](\/images\/[^'"]+)['"]/g)].map(m=>m[1]);
+  const references=[...source.matchAll(/['"](\/(?:images|menu-photos)\/[^'"]+)['"]/g)].map(m=>m[1]);
   const missing=[...new Set(references)].filter(p=>!fs.existsSync('public'+p));
   if(missing.length) throw Error('Missing image assets: '+missing.join(', '));
   fs.mkdirSync('docs',{recursive:true});

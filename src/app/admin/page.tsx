@@ -182,7 +182,7 @@ export default function AdminPage() {
   const [formSubheading, setFormSubheading] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formDesc, setFormDesc] = useState('');
-  const [formImg, setFormImg] = useState('/images/americano.png');
+  const [formImg, setFormImg] = useState('/menu-photos/hc-3.webp');
   const [formIsVeg, setFormIsVeg] = useState(true);
   const [formSizes, setFormSizes] = useState('Regular');
   const [formStock, setFormStock] = useState(10);
@@ -3033,11 +3033,11 @@ export default function AdminPage() {
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <Image
-                                  src={item.img || '/images/americano.png'}
+                                  src={item.img || '/menu-photos/hc-3.webp'}
                                   alt={item.name}
                                   width={44}
                                   height={44}
-                                  style={{ borderRadius: 10, objectFit: 'cover' }}
+                                  style={{ borderRadius: 10, objectFit: 'contain' }}
                                 />
                                 <div>
                                   <div style={{ fontWeight: 700, color: 'var(--adm-text-main)' }}>{item.name}</div>

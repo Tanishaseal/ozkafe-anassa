@@ -6,6 +6,7 @@ import { menuPrice } from '@/lib/pricing';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
+import photoLayout from '@/data/menu-photo-layout.json';
 import { Category, MenuItem, MenuAddon, CartItem, Order, CafeSettings } from '@/lib/types';
 import { logActionError, logActionSuccess } from '@/lib/clientLog';
 
@@ -1318,9 +1319,10 @@ export default function CustomerMenu({
               <Image
                 src={activeItem.img}
                 alt={activeItem.name}
-                width={250}
-                height={250}
-                priority
+                width={(photoLayout as Record<string, { width: number; height: number }>)[activeItem.img]?.width || 1200}
+                height={(photoLayout as Record<string, { width: number; height: number }>)[activeItem.img]?.height || 1200}
+                sizes="(max-width: 396px) calc(100vw - 36px), 360px"
+                preload
                 style={{
                   filter: (activeItem.isAvailable && (typeof activeItem.stock !== 'number' || activeItem.stock > 0)) ? 'none' : 'grayscale(80%) brightness(0.7)',
                 }}
@@ -1337,6 +1339,7 @@ export default function CustomerMenu({
       </section>
 
       {/* ── CATEGORY DIVIDER ── */}
+      <a className="menu-photo-credit" href="/photo-credits" target="_blank" rel="noopener noreferrer">Photo credits</a>
       <div className="divider">
         <div className="divider-line"></div>
         <div
