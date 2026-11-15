@@ -43,7 +43,7 @@ export default function CustomerMenu({
   });
 
   // State
-  const [categories] = useState<Category[]>(initialCategories);
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [items, setItems] = useState<MenuItem[]>(initialItems);
   const [addons] = useState<MenuAddon[]>(() =>
     (initialAddons || []).filter(
@@ -416,6 +416,7 @@ export default function CustomerMenu({
         const res = await fetch('/api/menu');
         if (res.ok) {
           const data = await res.json();
+          if (Array.isArray(data.categories)) setCategories(data.categories);
           if (data.items) {
             const selectedIndex = data.items.findIndex((i: MenuItem) => i.id === activeItemIdRef.current);
             if (selectedIndex >= 0) setActiveItemIdx(selectedIndex);
@@ -1253,7 +1254,7 @@ export default function CustomerMenu({
           <input
             type="text"
             className="main-menu-search-input"
-            placeholder="Search all 76 coffees, bites & desserts..."
+            placeholder="Search coffees, bites & desserts..."
             value={menuSearch}
             onChange={(e) => setMenuSearch(e.target.value)}
           />

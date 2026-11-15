@@ -1245,7 +1245,7 @@ export default function AdminPage() {
   const [isSyncingMenu, setIsSyncingMenu] = useState(false);
   const handleSyncMenu = async () => {
     setIsSyncingMenu(true);
-    setSaveSuccessMsg('✓ Synchronizing all 76 PDF menu items & categories to database...');
+    setSaveSuccessMsg('✓ Synchronizing menu items & categories to database...');
     logOptimisticSuccess('Admin Sync PDF Menu Started');
 
     let res: Response | null = null;
@@ -2997,9 +2997,9 @@ export default function AdminPage() {
                         onClick={handleSyncMenu}
                         disabled={isSyncingMenu}
                         className="admin-btn-gps-calibrate"
-                        title="Sync all 76 PDF dishes and categories to Supabase database"
+                        title="Sync menu dishes and categories to Supabase database"
                       >
-                        <IconText>{isSyncingMenu ? 'Syncing...' : '🔄 Sync PDF Menu (76 Items)'}</IconText>
+                        <IconText>{isSyncingMenu ? 'Syncing...' : '🔄 Sync Menu'}</IconText>
                       </button>
                     </div>
                   </div>

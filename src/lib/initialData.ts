@@ -44,6 +44,115 @@ export const initialSettings: CafeSettings = {
   allowOrderCancellation: true,
 };
 
+export const staffCategory: Category = {
+  "id": "staff",
+  "title": "Staff",
+  "subtitle": "Tea & Coffee",
+  "emoji": "",
+  "heroLabel": "STAFF MENU",
+  "sortOrder": 9,
+  "iconSvg": "<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8h1a3 3 0 0 1 0 6h-1M3 8h15v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4ZM6 2v3m4-3v3m4-3v3\"/></svg>"
+};
+
+export const staffMenuItems: MenuItem[] = [
+  {
+    "id": "staff-black-tea",
+    "name": "Black Tea",
+    "price": 4.75,
+    "img": "/images/darjeeling_tea_tea-1.png",
+    "desc": "Black Tea",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Regular"
+    ],
+    "sortOrder": 77,
+    "stock": 10
+  },
+  {
+    "id": "staff-black-ginger-tea",
+    "name": "Black Ginger Tea",
+    "price": 9.5,
+    "img": "/images/darjeeling_tea_tea-1.png",
+    "desc": "Black Ginger Tea",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Regular"
+    ],
+    "sortOrder": 78,
+    "stock": 10
+  },
+  {
+    "id": "staff-milk-tea",
+    "name": "Milk Tea",
+    "price": 9.5,
+    "img": "/images/cutting_chai_tea-2.png",
+    "desc": "Milk Tea",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Regular"
+    ],
+    "sortOrder": 79,
+    "stock": 10
+  },
+  {
+    "id": "staff-black-coffee",
+    "name": "Black Coffee",
+    "price": 14.25,
+    "img": "/images/americano.png",
+    "desc": "Black Coffee",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Regular"
+    ],
+    "sortOrder": 80,
+    "stock": 10
+  },
+  {
+    "id": "staff-milk-coffee",
+    "name": "Milk Coffee",
+    "price": 19,
+    "img": "/images/latte.png",
+    "desc": "Milk Coffee",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Regular"
+    ],
+    "sortOrder": 81,
+    "stock": 10
+  },
+  {
+    "id": "staff-milk-coffee-small",
+    "name": "Milk Coffee Small",
+    "price": 9.5,
+    "img": "/images/latte.png",
+    "desc": "Milk Coffee Small",
+    "category": "Staff",
+    "categoryId": "staff",
+    "isVeg": true,
+    "isAvailable": true,
+    "sizes": [
+      "Small"
+    ],
+    "sortOrder": 82,
+    "stock": 10
+  }
+];
+
 export const initialCategories: Category[] = [
   {
     id: 'hot-coffee',
@@ -155,7 +264,8 @@ export const initialCategories: Category[] = [
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
       <circle cx="12" cy="7" r="4"></circle>
     </svg>`
-  }
+  },
+  staffCategory,
 ];
 
 export const initialAddons: MenuAddon[] = [
@@ -1293,7 +1403,7 @@ const rawMenuItems: MenuItem[] = [
   },
 ];
 
-export const initialMenuItems: MenuItem[] = rawMenuItems.map((it) => ({
+export const initialMenuItems: MenuItem[] = [...rawMenuItems, ...staffMenuItems].map((it) => ({
   ...it,
   stock: typeof it.stock === 'number' ? it.stock : 10,
 }));

@@ -15,8 +15,10 @@ async function start() {
     await db.exec(fs.readFileSync('supabase/migrations/20261115_order_discounts.sql','utf8'));
   const initial = { exports: {} };
   new Function('exports','require','module',ts.transpileModule(fs.readFileSync('src/lib/initialData.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(initial.exports, require, initial);
+  const staff = initial.exports.staffCategory;
+  await db.query('INSERT INTO categories(id,title,subtitle,emoji,hero_label,icon_svg,sort_order) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING', [staff.id,staff.title,staff.subtitle,staff.emoji,staff.heroLabel,staff.iconSvg,staff.sortOrder]);
   for (const i of initial.exports.initialMenuItems) {
-    await db.query('INSERT INTO menu_items(id,category_id,category_name,name,price,image_url,stock,is_available,sizes) VALUES($1,$2,$3,$4,$5,$6,10,true,$7) ON CONFLICT(id) DO NOTHING', [i.id,i.categoryId,i.category,i.name,i.price,i.img,JSON.stringify(i.sizes)]);
+    await db.query('INSERT INTO menu_items(id,category_id,category_name,name,price,image_url,stock,is_available,sizes,sort_order) VALUES($1,$2,$3,$4,$5,$6,10,true,$7,$8) ON CONFLICT(id) DO NOTHING', [i.id,i.categoryId,i.category,i.name,i.price,i.img,JSON.stringify(i.sizes),i.sortOrder ?? 0]);
   }
   const server = http.createServer(async (req,res) => {
     try {

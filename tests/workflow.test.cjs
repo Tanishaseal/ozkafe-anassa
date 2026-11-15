@@ -16,13 +16,22 @@ test('API workflow: authorization, isolation, status, settlement, receipt, menu,
     assert.equal((await guest.get('/api/supabase-proxy/rest/v1/orders')).status(), 401);
     await json(await admin.post('/api/auth/otp', { data: { action: 'login_with_pin', identifier: 'tanishaseal20@gmail.com', pin: '1234', consoleType: 'admin' } }));
     await json(await admin.patch('/api/settings', { data: { geofencingEnabled: false, orderCooldownSeconds: 0, isOpen: true } }));
-    const menu = await json(await guest.get('/api/menu')); assert.equal(menu.items.length, 76);
+    const menu = await json(await guest.get('/api/menu')); assert.equal(menu.items.length, 82);
+    assert.ok(menu.categories.some(c => c.id === 'staff' && c.title === 'Staff'));
+    assert.deepEqual(menu.items.filter(i => i.categoryId === 'staff').map(i => [i.name, i.price]), [['Black Tea',4.75],['Black Ginger Tea',9.5],['Milk Tea',9.5],['Black Coffee',14.25],['Milk Coffee',19],['Milk Coffee Small',9.5]]);
     const session = await json(await guest.get('/api/tables?table=Takeaway'));
     await json(await other.get('/api/tables?table=Takeaway'));
     const key = crypto.randomUUID();
     const payload = { tableNumber: 'Takeaway', sessionId: session.sessionId, customerName: 'API Test', customerPhone: '9999999999', customerFlat: '14B',
       items: [{ id: 'hc-1', quantity: 1, price: 1 }], idempotencyKey: key };
     const created = await json(await guest.post('/api/orders', { data: payload }));
+    const staffOrder = (await json(await guest.post('/api/orders', { data: { ...payload, items: [{ id: 'staff-black-tea', quantity: 1 }], idempotencyKey: crypto.randomUUID() } }))).order;
+    assert.equal(staffOrder.items[0].name, 'Black Tea'); assert.equal(staffOrder.subtotal, 4.75);
+    assert.equal(staffOrder.total, 4.99);
+    assert.ok((await json(await admin.get('/api/orders?status=active'))).some(order => order.id === staffOrder.id && order.items[0].id === 'staff-black-tea'));
+    assert.ok((await json(await admin.get('/api/orders?all=true'))).some(order => order.id === staffOrder.id && order.subtotal === 4.75));
+    await json(await admin.delete('/api/orders?id=' + staffOrder.id));
+
     assert.equal(created.order.total, 93.45);
     for (const discountPercent of [-1, 101, '20', null]) {
       assert.equal((await admin.patch('/api/orders', { data: { id: created.order.id, action: 'edit_receipt', updates: { discountPercent } } })).status(), 400);
@@ -60,7 +69,7 @@ test('API workflow: authorization, isolation, status, settlement, receipt, menu,
     await json(await admin.patch('/api/menu', { data: { id: added.item.id, price: 12, stock: 1 } }));
     assert.equal((await json(await guest.get('/api/menu'))).items.find(i => i.id === added.item.id).price, 12);
     await json(await admin.delete('/api/menu?id=' + added.item.id));
-    assert.equal((await json(await guest.get('/api/menu'))).items.length, 76);
+    assert.equal((await json(await guest.get('/api/menu'))).items.length, 82);
     await json(await admin.post('/api/tables', { data: { numTables: 3 } }));
     await json(await admin.post('/api/tables', { data: { numTables: 1 } }));
     assert.equal((await json(await admin.get('/api/tables'))).length, 2);
@@ -88,7 +97,8 @@ test('Three real browser screens: scan, submit, kitchen buttons, live tracker, s
     const customer = await guestContext.newPage();
     const errors = []; customer.on('pageerror', e => errors.push(e.message));
     await customer.goto('/');
-    await customer.getByPlaceholder('Search all 76 coffees, bites & desserts...').fill('Corn');
+    await expect(customer.locator('.cat-nav-pill').filter({ hasText: 'Staff' })).toContainText('6');
+    await customer.getByPlaceholder('Search coffees, bites & desserts...').fill('Corn');
     await customer.locator('.main-menu-search-result-item').filter({ hasText: 'Corn & Cheese Sandwich' }).click();
     await customer.locator('footer.action-bar button.btn-solid').click();
     await customer.locator('button.header-btn-right').click();

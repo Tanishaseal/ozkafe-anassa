@@ -214,6 +214,7 @@ const categoryOrderMap: Record<string, number> = {
   'sandwiches-appetizers': 6,
   'combo-meals': 7,
   'bakery-desserts': 8,
+  'staff': 9,
 };
 
 // ──────────────────────────────────────────
