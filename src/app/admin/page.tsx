@@ -1,6 +1,7 @@
 'use client';
 import { Icon, IconText } from '@/components/Icon';
 import DiscountSummary from '@/components/DiscountSummary';
+import MenuImageField from '@/components/MenuImageField';
 import { billTotals } from '@/lib/pricing';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -566,6 +567,7 @@ export default function AdminPage() {
     setFormName('');
     setFormPrice('');
     setFormDesc('');
+    setFormImg('/menu-photos/hc-3.webp');
     setFormSubheading('');
     setFormStock(10);
     setSaveSuccessMsg('✓ New menu item created and published live!');
@@ -3724,6 +3726,7 @@ export default function AdminPage() {
                     className="admin-form-textarea"
                   />
                 </div>
+                <MenuImageField value={formImg} onChange={setFormImg} />
                 <div className="admin-form-group">
                   <label className="admin-form-label">Available Sizes (Comma Separated)</label>
                   <input
@@ -3815,6 +3818,7 @@ export default function AdminPage() {
                     className="admin-form-textarea"
                   />
                 </div>
+                <MenuImageField value={editingItem.img} onChange={img => setEditingItem({ ...editingItem, img })} />
                 <div className="admin-form-group">
                   <label className="admin-form-label">Food Items Left in Stock</label>
                   <input

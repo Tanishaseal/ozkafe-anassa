@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isMenuImageUrl } from '@/lib/menuImage';
 import { getCategories, getMenuItems, getAddons, getCafeSettings, addMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability } from '@/lib/store';
 import { verifyAuthHeaderOrCookie } from '@/lib/auth';
 import { checkRateLimit, getClientIdentifier, rateLimitProfiles } from '@/lib/rateLimit';
@@ -56,6 +57,9 @@ export async function POST(request: Request) {
     const { name, category, categoryId, price, desc, subheading, img, isVeg, sizes, stock } = body;
 
     const numPrice = Number(price);
+    if (img !== undefined && !isMenuImageUrl(img)) {
+      return NextResponse.json({ error: 'Enter a valid HTTP/HTTPS image URL or local image path' }, { status: 400 });
+    }
     if (!name || !String(name).trim() || !categoryId || isNaN(numPrice) || numPrice < 0) {
       return NextResponse.json({ error: 'Valid Name, non-negative Price and Category are required' }, { status: 400 });
     }
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
       price: numPrice,
       desc: desc || '',
       subheading: subheading || '',
-      img: img || '/menu-photos/hc-3.webp',
+      img: img?.trim() || '/menu-photos/hc-3.webp',
       isVeg: isVeg ?? true,
       isAvailable: stockVal > 0,
       stock: stockVal,
@@ -94,6 +98,10 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json();
     const { id, isAvailable, ...updates } = body;
+    if (updates.img !== undefined) {
+      if (!isMenuImageUrl(updates.img)) return NextResponse.json({ error: 'Enter a valid HTTP/HTTPS image URL or local image path' }, { status: 400 });
+      updates.img = updates.img.trim();
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
