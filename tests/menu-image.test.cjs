@@ -21,6 +21,24 @@ test('Admin image editor persists, customer refreshes, landscape frame stays sta
     await admin.locator('tr').filter({hasText:'Americano'}).getByRole('button',{name:'Edit',exact:true}).click();
     await admin.getByLabel('Image URL',{exact:true}).fill('/menu-photos/hc-2.webp');
     await expect(admin.getByAltText('Dish image preview')).toHaveAttribute('src','/menu-photos/hc-2.webp');
+    // The form must scroll without clipping its save footer, including short
+    // viewports like a rotated phone or a phone with its keyboard open.
+    for (const [width,height] of [[320,568],[390,420],[844,390],[768,1024],[1440,600]]) {
+      await admin.setViewportSize({width,height});
+      const body=admin.locator('.admin-modal-body');
+      await body.evaluate(el=>{el.scrollTop=0;});
+      const save=admin.getByRole('button',{name:'Save Changes',exact:true});
+      const button=await save.boundingBox();
+      assert(button && button.y>=0 && button.y+button.height<=height, `Save button clipped at ${width}x${height}`);
+      const metrics=await body.evaluate(el=>({client:el.clientHeight,scroll:el.scrollHeight}));
+      assert(metrics.client>0);
+      await body.hover();
+      await admin.mouse.wheel(0,2000);
+      if(metrics.scroll>metrics.client) await expect.poll(()=>body.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+      await expect(save).toBeInViewport();
+      await save.click({trial:true});
+      await admin.screenshot({path:`scratch/admin-scroll-${width}-${height}.png`});
+    }
     const saved=admin.waitForResponse(r=>r.url().endsWith('/api/menu')&&r.request().method()==='PATCH');
     await admin.getByRole('button',{name:'Save Changes',exact:true}).click();assert((await saved).ok());
     const hero=guest.locator('.hero-slide-item img');

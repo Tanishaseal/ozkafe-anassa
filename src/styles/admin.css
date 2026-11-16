@@ -1770,6 +1770,7 @@ input:checked + .admin-slider:before {
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
+  max-height: 90dvh;
   display: flex;
   flex-direction: column;
   box-shadow: var(--adm-shadow-lg);
@@ -1783,6 +1784,7 @@ input:checked + .admin-slider:before {
 }
 
 .admin-modal-header {
+  flex-shrink: 0;
   padding: 18px 22px;
   border-bottom: 1px solid var(--adm-border);
   display: flex;
@@ -1815,15 +1817,32 @@ input:checked + .admin-slider:before {
   color: var(--adm-text-main);
 }
 
+.admin-modal-box > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .admin-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 22px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
+.admin-modal-body > * {
+  flex-shrink: 0;
+}
+
 .admin-modal-footer {
+  flex-shrink: 0;
+  flex-wrap: wrap;
   padding: 16px 22px;
   border-top: 1px solid var(--adm-border);
   display: flex;
@@ -2169,12 +2188,12 @@ input:checked + .admin-slider:before {
 
   .admin-modal-box {
     max-height: 92vh;
+    max-height: 92dvh;
     border-radius: 16px;
   }
 
   .admin-modal-body {
     padding: 16px 14px;
-    max-height: calc(92vh - 120px);
   }
 }
 
