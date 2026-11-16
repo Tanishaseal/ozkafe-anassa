@@ -184,6 +184,7 @@ export default function AdminPage() {
   const [formPrice, setFormPrice] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formImg, setFormImg] = useState('/menu-photos/hc-3.webp');
+  const [imageEditingActive, setImageEditingActive] = useState(false);
   const [formIsVeg, setFormIsVeg] = useState(true);
   const [formSizes, setFormSizes] = useState('Regular');
   const [formStock, setFormStock] = useState(10);
@@ -542,6 +543,7 @@ export default function AdminPage() {
 
   const handleSaveNewItem = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (imageEditingActive) return;
     const previousMenuItems = [...menuItems];
     const sizesArray = formSizes.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -627,7 +629,7 @@ export default function AdminPage() {
 
   const handleSaveEditItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem) return;
+    if (!editingItem || imageEditingActive) return;
     const previousMenuItems = [...menuItems];
     const previousItem = menuItems.find((i) => i.id === editingItem.id);
     const updatedDish = { ...editingItem };
@@ -3726,7 +3728,7 @@ export default function AdminPage() {
                     className="admin-form-textarea"
                   />
                 </div>
-                <MenuImageField value={formImg} onChange={setFormImg} />
+                <MenuImageField value={formImg} onChange={setFormImg} onEditingChange={setImageEditingActive} />
                 <div className="admin-form-group">
                   <label className="admin-form-label">Available Sizes (Comma Separated)</label>
                   <input
@@ -3757,7 +3759,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setQuickAddModalType(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-btn-primary">
+                <button type="submit" className="admin-btn-primary" disabled={imageEditingActive}>
                   Publish Dish Live
                 </button>
               </div>
@@ -3818,7 +3820,7 @@ export default function AdminPage() {
                     className="admin-form-textarea"
                   />
                 </div>
-                <MenuImageField value={editingItem.img} onChange={img => setEditingItem({ ...editingItem, img })} />
+                <MenuImageField value={editingItem.img} onChange={img => setEditingItem({ ...editingItem, img })} onEditingChange={setImageEditingActive} />
                 <div className="admin-form-group">
                   <label className="admin-form-label">Food Items Left in Stock</label>
                   <input
@@ -3863,7 +3865,7 @@ export default function AdminPage() {
                 <button type="button" onClick={() => setEditingItem(null)} className="admin-alert-action-btn">
                   Cancel
                 </button>
-                <button type="submit" className="admin-btn-primary">
+                <button type="submit" className="admin-btn-primary" disabled={imageEditingActive}>
                   Save Changes
                 </button>
               </div>

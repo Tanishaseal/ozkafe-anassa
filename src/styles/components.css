@@ -1745,15 +1745,3 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-
-
-
-
-.menu-photo-credit {
-  display: block;
-  width: fit-content;
-  margin: 6px auto;
-  color: var(--brand-gold-dark);
-  font-size: 11px;
-  text-underline-offset: 3px;
-}

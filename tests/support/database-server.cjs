@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const { PGlite } = require('@electric-sql/pglite');
 const ts = require('typescript');
 const db = new PGlite();
+// Isolated Storage API fixture; image writes never reach production Supabase.
+const storedImages = new Map();
 const ident = s => { if (!/^[a-z_][a-z_0-9]*$/i.test(s)) throw Error('Invalid identifier'); return '"' + s + '"'; };
 const tables = new Set(['orders','menu_items','categories','cafe_settings','tables','audit_logs','order_counter']);
 async function start() {
@@ -24,6 +26,19 @@ async function start() {
     try {
       const url = new URL(req.url, 'http://localhost');
       if (url.pathname === '/health') { res.end('ok'); return; }
+      if (url.pathname.startsWith('/storage/v1/object/menu-images/')) {
+        const key = url.pathname.split('/').pop();
+        if (req.method === 'POST') {
+          const chunks = []; for await (const chunk of req) chunks.push(chunk);
+          storedImages.set(key, Buffer.concat(chunks));
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ Key: 'menu-images/' + key, Id: key })); return;
+        }
+        if (req.method === 'GET' && storedImages.has(key)) {
+          res.setHeader('Content-Type', 'image/webp'); res.end(storedImages.get(key)); return;
+        }
+        res.statusCode = 404; res.end(JSON.stringify({ message: 'Not found' })); return;
+      }
       // Local-only fixture: reproduce the production schema gap after creating
       // test orders. This server binds exclusively to the loopback interface.
       if (url.pathname === '/test/legacy-orders' && req.method === 'POST') {

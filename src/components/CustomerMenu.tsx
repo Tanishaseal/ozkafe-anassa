@@ -58,7 +58,6 @@ export default function CustomerMenu({
 
   const [activeCategoryIdx, setActiveCategoryIdx] = useState(0);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
-  const [selectedSizeIdx, setSelectedSizeIdx] = useState(0);
   const [quantity, setQuantity] = useState(0);
 
   // Modals
@@ -109,7 +108,6 @@ export default function CustomerMenu({
         setActiveItemIdx(itemIdx);
       }
     }
-    setSelectedSizeIdx(0);
     setQuantity(1);
     setMenuSearch('');
     setTimeout(() => {
@@ -499,7 +497,6 @@ export default function CustomerMenu({
     const firstItemIndex = flattenedItems.findIndex((it) => it.categoryId === cat.id);
     if (firstItemIndex !== -1) {
       setActiveItemIdx(firstItemIndex);
-      setSelectedSizeIdx(0);
       setQuantity(0);
 
       // Scroll thumbnail track
@@ -523,7 +520,6 @@ export default function CustomerMenu({
   // Jump to Item
   const handleSelectItem = (itemIdx: number) => {
     setActiveItemIdx(itemIdx);
-    setSelectedSizeIdx(0);
     setQuantity(0);
 
     const it = flattenedItems[itemIdx];
@@ -544,7 +540,7 @@ export default function CustomerMenu({
 
   // Cart operations
   const currentSizes = activeItem?.sizes && activeItem.sizes.length > 0 ? activeItem.sizes : ['Regular'];
-  const selectedSize = currentSizes[selectedSizeIdx] || 'Regular';
+  const selectedSize = currentSizes[0] || 'Regular';
   const selectedPrice = activeItem ? menuPrice(activeItem, selectedSize) : 0;
 
   // Visual Fly-to-Cart Drag Animation using Web Animations API (direct to document.body)
@@ -1339,7 +1335,6 @@ export default function CustomerMenu({
       </section>
 
       {/* ── CATEGORY DIVIDER ── */}
-      <a className="menu-photo-credit" href="/photo-credits" target="_blank" rel="noopener noreferrer">Photo credits</a>
       <div className="divider">
         <div className="divider-line"></div>
         <div
@@ -1420,21 +1415,6 @@ export default function CustomerMenu({
       {/* ── CONTROLS SECTION ── */}
       {activeItem && (
         <section className="controls-section">
-          <div className="control-group">
-            <span className="control-label">SIZE / SELECTION</span>
-            <div className="segmented-control">
-              {currentSizes.map((size, idx) => (
-                <button
-                  key={size}
-                  className={`seg-btn ${idx === selectedSizeIdx ? 'active' : ''}`}
-                  onClick={() => setSelectedSizeIdx(idx)}
-                >
-                  {size}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="control-group align-right">
             <span className="control-label">QUANTITY</span>
             <div className="qty-stepper">
