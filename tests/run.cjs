@@ -19,9 +19,12 @@ async function main(){
   background(['node_modules/next/dist/bin/next','start','--port','3101'],'server-one.log');
   background(['node_modules/next/dist/bin/next','start','--port','3102'],'server-two.log');
   await waitFor('http://localhost:3101/api/health');await waitFor('http://localhost:3102/api/health');
+  await run(['--test','tests/pdf-menu.test.cjs']);
+  await run(['--test','tests/menu-discovery.test.cjs']);
   await run(['--test','tests/workflow.test.cjs']);
   await run(['--test','tests/menu-image.test.cjs']);
   await run(['--test','tests/image-editor.test.cjs']);
+  await run(['--test','tests/coffee-syrups.test.cjs']);
   await run(['--test','tests/instances.test.cjs']);
   await run(['--test','tests/legacy-orders.test.cjs']);
 }

@@ -1,3 +1,4 @@
+import { allowsCoffeeSyrups, coffeeSyrups, syrupPrice } from '@/lib/coffeeSyrups';
 import { customOrderTimestamp } from '@/lib/customOrderDate';
 import { deleteOrderResponse } from '@/lib/orderDeletion';
 import { NextResponse } from 'next/server';
@@ -299,11 +300,18 @@ export async function POST(request: Request) {
         }
         const size = it.selectedSize || regularItem.sizes[0] || 'Regular';
         if (regularItem.sizes.length && !regularItem.sizes.includes(size)) return NextResponse.json({ error: 'Invalid item size' }, { status: 400 });
-        const unitPrice = menuPrice(regularItem, size);
+        const syrupIds = it.syrupIds ?? [];
+        if (!Array.isArray(syrupIds) || syrupIds.length > 3 || new Set(syrupIds).size !== syrupIds.length ||
+          (syrupIds.length > 0 && !allowsCoffeeSyrups(regularItem.id)) ||
+          syrupIds.some((id: unknown) => !coffeeSyrups.some(s => s.id === id) || !availableAddons.some(a => a.id === id && a.isAvailable))) {
+          return NextResponse.json({ error: 'Invalid syrup selection for this coffee' }, { status: 400 });
+        }
+        const syrupNames = coffeeSyrups.filter(s => syrupIds.includes(s.id)).map(s => s.name);
+        const unitPrice = menuPrice(regularItem, size) + syrupIds.length * syrupPrice;
         serverSubtotal += unitPrice * rawQty;
         validatedItems.push({
           id: regularItem.id,
-          name: regularItem.name,
+          name: regularItem.name + (syrupNames.length ? ' — ' + syrupNames.join(' + ') + ' syrup' : ''),
           price: unitPrice,
           quantity: rawQty,
           selectedSize: size,
@@ -311,6 +319,7 @@ export async function POST(request: Request) {
           isAddon: false,
         });
       } else if (addonItem) {
+        if (coffeeSyrups.some(s => s.id === addonItem.id)) return NextResponse.json({ error: 'Select syrup on an eligible coffee item' }, { status: 400 });
         if (!addonItem.isAvailable) return NextResponse.json({ error: 'Add-on is sold out' }, { status: 400 });
         const unitPrice = Number(addonItem.price);
         serverSubtotal += unitPrice * rawQty;

@@ -2,6 +2,7 @@
 import { Icon, IconText } from '@/components/Icon';
 import DiscountSummary from '@/components/DiscountSummary';
 import { iconSvg, legacyIconNames } from '@/lib/icons';
+import { allowsCoffeeSyrups, coffeeSyrups, syrupPrice } from '@/lib/coffeeSyrups';
 import { menuPrice } from '@/lib/pricing';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -277,7 +278,7 @@ export default function CustomerMenu({
         try {
           const savedCart = JSON.parse(savedCartStr);
           if (savedCart && Object.keys(savedCart).length > 0) {
-            setCart(savedCart);
+            setCart(Object.fromEntries(Object.entries(savedCart as Record<string, CartItem>).filter(([, item]) => !item.isAddon)));
           }
         } catch {
           // ignore error
@@ -709,6 +710,7 @@ export default function CustomerMenu({
         name: activeItem.name,
         price: selectedPrice,
         quantity: newQty,
+        syrupSelections: Array.from({ length: newQty }, (_, index) => existing?.syrupSelections?.[index] || []),
         selectedSize,
         category: activeItem.category,
       },
@@ -723,26 +725,14 @@ export default function CustomerMenu({
     setQuantity(0);
   };
 
-  const handleAddAddonToCart = (addon: MenuAddon, e?: React.MouseEvent) => {
-    const cartKey = `addon_${addon.id}`;
-    const existing = cart[cartKey];
-    const newQty = existing ? existing.quantity + 1 : 1;
-
-    setCart((prev) => ({
-      ...prev,
-      [cartKey]: {
-        id: addon.id,
-        cartKey,
-        name: addon.name,
-        price: addon.price,
-        quantity: newQty,
-        category: 'Add-on',
-        isAddon: true,
-        icon: addon.icon,
-      },
-    }));
-
-    triggerFlyAnimation(e?.currentTarget as HTMLElement, { icon: addon.icon || '✨' });
+  const toggleSyrup = (key: string, index: number, syrupId: string) => {
+    setCart(prev => {
+      const item = prev[key];
+      if (!item || !allowsCoffeeSyrups(item.id) || index >= item.quantity) return prev;
+      const selections = Array.from({ length: item.quantity }, (_, i) => item.syrupSelections?.[i] || []);
+      selections[index] = selections[index].includes(syrupId) ? selections[index].filter(id => id !== syrupId) : [...selections[index], syrupId];
+      return { ...prev, [key]: { ...item, syrupSelections: selections } };
+    });
   };
 
   const updateCartItemQuantity = (cartKey: string, delta: number) => {
@@ -757,7 +747,7 @@ export default function CustomerMenu({
       }
       return {
         ...prev,
-        [cartKey]: { ...existing, quantity: nextQty },
+        [cartKey]: { ...existing, quantity: nextQty, syrupSelections: Array.from({ length: nextQty }, (_, i) => existing.syrupSelections?.[i] || []) },
       };
     });
   };
@@ -768,7 +758,7 @@ export default function CustomerMenu({
   };
 
   const totalCartCount = Object.values(cart).reduce((sum, it) => sum + it.quantity, 0);
-  const cartSubtotal = Object.values(cart).reduce((sum, it) => sum + it.price * it.quantity, 0);
+  const cartSubtotal = Object.values(cart).reduce((sum, it) => sum + it.price * it.quantity + (allowsCoffeeSyrups(it.id) ? (it.syrupSelections || []).slice(0, it.quantity).reduce((n, ids) => n + ids.length * syrupPrice, 0) : 0), 0);
   const gstRate = (settings.gstPercent ?? 5) / 100;
   // Calculate 5% GST accurately with 2 decimal precision without integer truncating/rounding
   const cartTax = Number((cartSubtotal * gstRate).toFixed(2));
@@ -876,15 +866,16 @@ export default function CustomerMenu({
         customerFlat: customerFlat.trim(),
         customerLat,
         customerLng,
-        items: Object.values(cart).map((it) => ({
+        items: Object.values(cart).flatMap((it) => Array.from({ length: it.quantity }, (_, index) => ({
           id: it.id,
           name: it.name,
           price: it.price,
-          quantity: it.quantity,
+          quantity: 1,
+          syrupIds: allowsCoffeeSyrups(it.id) ? (it.syrupSelections?.[index] || []) : [],
           selectedSize: it.selectedSize,
           category: it.category,
           isAddon: it.isAddon,
-        })),
+        }))),
         subtotal: cartSubtotal,
         taxAmount: cartTax,
         total: cartGrandTotal,
@@ -1440,6 +1431,7 @@ export default function CustomerMenu({
 
       {/* ── BOTTOM ACTION BAR ── */}
       <footer className="action-bar">
+        {activeItem && allowsCoffeeSyrups(activeItem.id) && (
         <button
           className="btn-outline"
           onClick={() => setIsCartOpen(true)}
@@ -1451,6 +1443,7 @@ export default function CustomerMenu({
           </svg>
           ADD-ONS
         </button>
+        )}
 
         <button
           className="btn-solid"
@@ -1855,7 +1848,22 @@ export default function CustomerMenu({
                         {item.selectedSize && (
                           <span className="cart-item-sub">Size: {item.selectedSize}</span>
                         )}
-                        <span className="cart-item-price">₹{item.price * item.quantity}</span>
+                        <span className="cart-item-price">₹{item.price * item.quantity + (allowsCoffeeSyrups(item.id) ? (item.syrupSelections || []).slice(0, item.quantity).reduce((sum, ids) => sum + ids.length * syrupPrice, 0) : 0)}</span>
+                        {allowsCoffeeSyrups(item.id) && Array.from({ length: item.quantity }, (_, index) => (
+                          <div className="cart-addons-wrapper" key={index}>
+                            <div className="cart-addons-title">{item.name} · Item {index + 1} · Syrups</div>
+                            <div className="cart-addons-grid">
+                              {coffeeSyrups.filter(syrup => addons.some(ad => ad.id === syrup.id && ad.isAvailable)).map(syrup => (
+                                <button type="button" key={syrup.id} className="cart-addon-card"
+                                  aria-pressed={!!item.syrupSelections?.[index]?.includes(syrup.id)}
+                                  aria-label={item.name + ' item ' + (index + 1) + ': ' + syrup.name}
+                                  onClick={() => toggleSyrup(item.cartKey, index, syrup.id)}>
+                                  {syrup.name} +₹{syrupPrice}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
 
                       <div className="qty-stepper" style={{ transform: 'scale(0.9)' }}>
@@ -1875,30 +1883,6 @@ export default function CustomerMenu({
                       </div>
                     </div>
                   ))}
-
-                  {/* Add-ons Upsell */}
-                  <div className="cart-addons-wrapper">
-                    <div className="cart-addons-header">
-                      <span className="cart-addons-title"><Icon name="sparkles" /> Extra Flavours & Add-ons</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand-accent)' }}>POPULAR</span>
-                    </div>
-                    <div className="cart-addons-grid">
-                      {addons.map((ad) => (
-                        <div
-                          key={ad.id}
-                          className={`cart-addon-card ${cart[`addon_${ad.id}`] ? 'in-cart' : ''}`}
-                          onClick={(e) => handleAddAddonToCart(ad, e)}
-                        >
-                          <span style={{ fontSize: 12, fontWeight: 600 }}>
-                            <IconText>{ad.icon}</IconText> {ad.name}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-accent)' }}>
-                            +₹{ad.price}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
 
                   {/* Guest Identification & Frictionless Details */}
                   <div style={{ marginTop: 18, borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 16 }}>

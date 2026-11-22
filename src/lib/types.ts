@@ -38,6 +38,7 @@ export interface MenuAddon {
 }
 
 export interface CartItem {
+  syrupSelections?: string[][];
   id: string;
   cartKey: string;
   name: string;
