@@ -845,6 +845,10 @@ export default function AdminPage() {
     const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = subtotal + taxAmount;
     const customCreatedAt = manualDateTime ? new Date(manualDateTime).getTime() : Date.now();
+    if (!Number.isFinite(customCreatedAt) || customCreatedAt > Date.now()) {
+      alert("Custom orders must use a valid past or present date and time.");
+      return;
+    }
 
     const optId = `opt-manual-${Date.now()}`;
     const optNum = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
@@ -3916,6 +3920,7 @@ export default function AdminPage() {
                   </div>
                   <input
                     type="datetime-local"
+                    max={getNowLocalDateTimeString()}
                     value={manualDateTime}
                     onChange={(e) => setManualDateTime(e.target.value)}
                     required
@@ -3923,7 +3928,7 @@ export default function AdminPage() {
                     style={{ fontWeight: 600, fontSize: 13.5 }}
                   />
                   <div style={{ fontSize: 11, color: 'var(--adm-text-muted)', marginTop: 4 }}>
-                    Orders can be timestamped for right now, backdated, or scheduled for a specific date and time.
+                    Orders can be timestamped for now or a previous date and time. Future dates are not allowed.
                   </div>
                 </div>
 

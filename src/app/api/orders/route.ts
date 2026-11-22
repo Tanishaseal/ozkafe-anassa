@@ -1,3 +1,4 @@
+import { customOrderTimestamp } from '@/lib/customOrderDate';
 import { deleteOrderResponse } from '@/lib/orderDeletion';
 import { NextResponse } from 'next/server';
 import { menuPrice } from '@/lib/pricing';
@@ -153,7 +154,8 @@ export async function POST(request: Request) {
         }
       }
 
-      const customCreatedAt = createdAt ? Number(createdAt) : Date.now();
+      const customCreatedAt = customOrderTimestamp(createdAt);
+      if (customCreatedAt === null) return NextResponse.json({ error: 'Custom orders must use a valid past or present date and time' }, { status: 400 });
       const order = await createOrder({
         tableNumber: tableNumber || 'Takeaway',
         customerName: customerName ? customerName.trim() : 'Counter Guest',

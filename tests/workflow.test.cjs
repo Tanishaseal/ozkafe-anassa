@@ -17,6 +17,17 @@ test('API workflow: authorization, isolation, status, settlement, receipt, menu,
     await json(await admin.post('/api/auth/otp', { data: { action: 'login_with_pin', identifier: 'tanishaseal20@gmail.com', pin: '1234', consoleType: 'admin' } }));
     await json(await admin.patch('/api/settings', { data: { geofencingEnabled: false, orderCooldownSeconds: 0, isOpen: true } }));
     const menu = await json(await guest.get('/api/menu')); assert.equal(menu.items.length, 82);
+    for (const endpoint of ['/api/admin?action=manual_order', '/api/orders']) {
+      const payload = { action: 'kitchen_custom_order', items: [{ id: 'hc-3', name: 'Americano', price: 109, quantity: 1 }], subtotal: 109, taxAmount: 5.45, total: 114.45 };
+      for (const createdAt of [Date.now() + 86400000, 'invalid-date']) {
+        assert.equal((await admin.post(endpoint, { data: { ...payload, createdAt } })).status(), 400);
+      }
+      for (const createdAt of [Date.now() - 86400000, Date.now() - 1000]) {
+        const result = await json(await admin.post(endpoint, { data: { ...payload, createdAt } }));
+        assert.equal(result.order.createdAt, createdAt);
+        await json(await admin.delete('/api/orders?id=' + result.order.id + '&permanent=true'));
+      }
+    }
     assert.ok(menu.categories.some(c => c.id === 'staff' && c.title === 'Staff'));
     assert.deepEqual(menu.items.filter(i => i.categoryId === 'staff').map(i => [i.name, i.price]), [['Black Tea',4.75],['Black Ginger Tea',9.5],['Milk Tea',9.5],['Black Coffee',14.25],['Milk Coffee',19],['Milk Coffee Small',9.5]]);
     const session = await json(await guest.get('/api/tables?table=Takeaway'));

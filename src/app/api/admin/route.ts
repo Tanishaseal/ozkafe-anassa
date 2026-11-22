@@ -1,3 +1,4 @@
+import { customOrderTimestamp } from '@/lib/customOrderDate';
 import { deleteOrderResponse } from '@/lib/orderDeletion';
 import { NextResponse } from 'next/server';
 import { 
@@ -156,6 +157,8 @@ export async function POST(request: Request) {
     // Action 5: Create a manual in-person counter order from Admin
     if (action === 'manual_order' || body.action === 'manual_order') {
       const { tableNumber, customerName, customerPhone, customerFlat, items, subtotal, taxAmount, total, specialInstructions, createdAt, status, isPaid, settledBy } = body;
+      const timestamp = customOrderTimestamp(createdAt);
+      if (timestamp === null) return NextResponse.json({ error: 'Custom orders must use a valid past or present date and time' }, { status: 400 });
       const order = await createOrder({
         tableNumber: tableNumber || 'Takeaway',
         customerName: customerName || 'Counter Walk-in',
@@ -166,7 +169,7 @@ export async function POST(request: Request) {
         taxAmount: Number(taxAmount) || 0,
         total: Number(total) || 0,
         specialInstructions: specialInstructions || 'Admin custom / counter order',
-        createdAt: createdAt ? Number(createdAt) : undefined,
+        createdAt: timestamp,
         status: status || 'served',
         isPaid: Boolean(isPaid),
         settledBy: isPaid ? (settledBy || 'Admin') : undefined,

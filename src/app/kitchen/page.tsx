@@ -710,6 +710,10 @@ export default function KitchenDashboard() {
     const taxAmount = Number(((subtotal * gstRate) / 100).toFixed(2));
     const total = subtotal + taxAmount;
     const customCreatedAt = customBillDateTime ? new Date(customBillDateTime).getTime() : Date.now();
+    if (!Number.isFinite(customCreatedAt) || customCreatedAt > Date.now()) {
+      alert("Custom orders must use a valid past or present date and time.");
+      return;
+    }
 
     const optId = `opt-custom-${Date.now()}`;
     const optNum = `oz-anassa-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
@@ -2347,6 +2351,7 @@ export default function KitchenDashboard() {
                 </div>
                 <input
                   type="datetime-local"
+                    max={getNowLocalDateTimeString()}
                   value={customBillDateTime}
                   onChange={(e) => setCustomBillDateTime(e.target.value)}
                   required
